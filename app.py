@@ -2,29 +2,46 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, time
 import os
+import io
+import zipfile
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
 
-# Arquivo de dados
-ARQUIVO_DADOS = "banco_de_dados_caruru.csv"
+# Arquivos de dados
+ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
+ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
 CHAVE_PIX = "seu-pix-aqui"
 
 # --- OPÇÕES ---
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
-# --- FUNÇÕES ---
-def carregar_dados():
+# --- FUNÇÕES DE CARREGAMENTO ---
+def carregar_clientes():
+    colunas = ["Nome", "Contato", "Observacoes"]
+    if os.path.exists(ARQUIVO_CLIENTES):
+        try:
+            df = pd.read_csv(ARQUIVO_CLIENTES)
+            for col in colunas:
+                if col not in df.columns: df[col] = ""
+            df['Nome'] = df['Nome'].astype(str)
+            df['Contato'] = df['Contato'].astype(str).replace('nan', '')
+            df['Observacoes'] = df['Observacoes'].astype(str).replace('nan', '')
+            return df
+        except:
+            return pd.DataFrame(columns=colunas)
+    else:
+        return pd.DataFrame(columns=colunas)
+
+def carregar_pedidos():
     colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
     
-    if os.path.exists(ARQUIVO_DADOS):
+    if os.path.exists(ARQUIVO_PEDIDOS):
         try:
-            df = pd.read_csv(ARQUIVO_DADOS)
-            
+            df = pd.read_csv(ARQUIVO_PEDIDOS)
             for col in colunas_padrao:
-                if col not in df.columns:
-                    df[col] = None
+                if col not in df.columns: df[col] = None
             
             # Limpezas
             cols_num = ['Caruru', 'Bobo', 'Desconto', 'Valor']
@@ -35,7 +52,7 @@ def carregar_dados():
             for col in cols_txt:
                 df[col] = df[col].astype(str).replace('nan', '')
 
-            # Migração Status Antigo
+            # Migração Status
             mapa_status = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
             df['Status'] = df['Status'].replace(mapa_status)
             
@@ -51,16 +68,18 @@ def carregar_dados():
                     return None
 
             df['Hora'] = df['Hora'].apply(limpar_hora)
-            
             return df
-        except Exception as e:
-            st.error(f"Erro ao ler banco: {e}")
+        except:
             return pd.DataFrame(columns=colunas_padrao)
     else:
         return pd.DataFrame(columns=colunas_padrao)
 
-def salvar_dados(df):
-    df.to_csv(ARQUIVO_DADOS, index=False)
+# --- FUNÇÕES DE SALVAMENTO ---
+def salvar_pedidos(df):
+    df.to_csv(ARQUIVO_PEDIDOS, index=False)
+
+def salvar_clientes(df):
+    df.to_csv(ARQUIVO_CLIENTES, index=False)
 
 def calcular_total(caruru, bobo, desconto):
     preco_base = 70.0
@@ -69,8 +88,11 @@ def calcular_total(caruru, bobo, desconto):
         total = total * (1 - (desconto/100))
     return total
 
+# Inicializa Sessão
 if 'pedidos' not in st.session_state:
-    st.session_state.pedidos = carregar_dados()
+    st.session_state.pedidos = carregar_pedidos()
+if 'clientes' not in st.session_state:
+    st.session_state.clientes = carregar_clientes()
 
 # CSS
 st.markdown("""
@@ -83,18 +105,66 @@ st.markdown("""
 # --- MENU ---
 with st.sidebar:
     st.title("🦐 Menu")
-    menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo"])
+    menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "👥 Cadastrar Clientes", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v3.6 (Restore)")
+    st.caption("Sistema Online v4.0 (Clientes)")
 
-# --- DASHBOARD ---
-if menu == "Dashboard do Dia":
+# =================================================================================
+# PÁGINA: CADASTRAR CLIENTES (NOVA)
+# =================================================================================
+if menu == "👥 Cadastrar Clientes":
+    st.title("👥 Base de Clientes")
+    
+    with st.expander("➕ Adicionar Novo Cliente", expanded=True):
+        with st.form("form_cliente", clear_on_submit=True):
+            c_nome = st.text_input("Nome Completo")
+            c_zap = st.text_input("WhatsApp (DDD+Número)")
+            c_obs = st.text_area("Obs. Fixa (Ex: Não gosta de coentro)")
+            
+            sub_cli = st.form_submit_button("CADASTRAR CLIENTE")
+            
+            if sub_cli and c_nome:
+                # Verifica se já existe
+                if c_nome in st.session_state.clientes['Nome'].values:
+                    st.warning("Este nome já existe no cadastro!")
+                else:
+                    novo_cli = {"Nome": c_nome, "Contato": c_zap, "Observacoes": c_obs}
+                    st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame([novo_cli])], ignore_index=True)
+                    salvar_clientes(st.session_state.clientes)
+                    st.success(f"Cliente {c_nome} cadastrado!")
+                    st.rerun()
+
+    st.divider()
+    st.subheader("Lista de Clientes")
+    
+    if not st.session_state.clientes.empty:
+        # Tabela editável de clientes
+        cli_editado = st.data_editor(
+            st.session_state.clientes,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Nome": st.column_config.TextColumn("Nome", disabled=False),
+                "Contato": st.column_config.TextColumn("WhatsApp"),
+            },
+            hide_index=True
+        )
+        
+        if not cli_editado.equals(st.session_state.clientes):
+            st.session_state.clientes = cli_editado
+            salvar_clientes(cli_editado)
+            st.toast("Lista de clientes atualizada!", icon="💾")
+
+# =================================================================================
+# PÁGINA: DASHBOARD
+# =================================================================================
+elif menu == "Dashboard do Dia":
     st.title("🚚 Expedição do Dia")
     
     df = st.session_state.pedidos
     
     if df.empty:
-        st.info("Banco de dados vazio.")
+        st.info("Nenhum pedido no sistema.")
     else:
         data_analise = st.date_input("📅 Data de Entrega:", date.today(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == data_analise].copy()
@@ -135,52 +205,61 @@ if menu == "Dashboard do Dia":
             if not df_baixa.equals(df_dia):
                 df.update(df_baixa)
                 st.session_state.pedidos = df
-                salvar_dados(df)
+                salvar_pedidos(df)
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
                 
-    # --- ÁREA DE SEGURANÇA (BACKUP E RESTORE) ---
+    # --- ÁREA DE SEGURANÇA (ZIP) ---
     st.divider()
-    with st.expander("💾 Área de Segurança (Backup & Restaurar)"):
-        st.write("### 1. Fazer Backup")
-        st.caption("Baixe seus dados regularmente para garantir segurança.")
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Baixar Backup Completo", data=csv, file_name=f"backup_caruru_{date.today()}.csv", mime="text/csv")
+    with st.expander("💾 Área de Segurança (Backup Completo)"):
+        st.write("Baixe todos os dados (Pedidos + Clientes).")
         
-        st.divider()
-        st.write("### 2. Restaurar Backup")
-        st.caption("⚠️ Cuidado: Isso vai substituir TODOS os dados atuais pelo arquivo que você enviar.")
+        # Cria ZIP na memória
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            zip_file.writestr("pedidos.csv", df.to_csv(index=False))
+            zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
         
-        arquivo_upload = st.file_uploader("Arraste o arquivo CSV aqui para restaurar:", type=["csv"])
-        
-        if arquivo_upload is not None:
-            if st.button("🚨 CONFIRMAR RESTAURAÇÃO"):
-                try:
-                    # Lê o arquivo enviado
-                    df_novo = pd.read_csv(arquivo_upload)
-                    # Salva no sistema
-                    salvar_dados(df_novo)
-                    # Recarrega a memória
-                    st.session_state.pedidos = carregar_dados()
-                    st.success("Sistema restaurado com sucesso! A página irá recarregar.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao restaurar arquivo: {e}")
+        st.download_button(
+            label="📥 Baixar Backup Geral (.zip)",
+            data=zip_buffer.getvalue(),
+            file_name=f"backup_caruru_geral_{date.today()}.zip",
+            mime="application/zip",
+        )
 
-# --- NOVO PEDIDO ---
+# =================================================================================
+# PÁGINA: NOVO PEDIDO (INTEGRADO COM CLIENTES)
+# =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    with st.form("form_pedido", clear_on_submit=True):
+    # Lista de clientes cadastrados
+    lista_clientes = st.session_state.clientes['Nome'].tolist()
+    lista_clientes.sort()
+    # Adiciona opção vazia no início
+    lista_clientes.insert(0, "")
+    
+    with st.form("form_pedido", clear_on_submit=False): # False para manter o contato preenchido visualmente
         col_nome, col_hora = st.columns([3, 1])
+        
         with col_nome:
-            nome = st.text_input("Nome Cliente")
+            # SELECTBOX DE CLIENTES
+            nome_selecionado = st.selectbox("Selecione o Cliente", lista_clientes)
+        
         with col_hora:
             hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
         
+        # Busca o contato automático se tiver cliente selecionado
+        contato_auto = ""
+        if nome_selecionado:
+            filtro = st.session_state.clientes[st.session_state.clientes['Nome'] == nome_selecionado]
+            if not filtro.empty:
+                contato_auto = filtro.iloc[0]['Contato']
+        
         col_contato, col_data = st.columns(2)
         with col_contato:
-            contato = st.text_input("WhatsApp")
+            # Preenche automático, mas permite editar
+            contato = st.text_input("WhatsApp", value=contato_auto)
         with col_data:
             data_entrega = st.date_input("Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
             
@@ -192,7 +271,7 @@ elif menu == "Novo Pedido":
         with col_desc:
             desconto = st.number_input("Desc %", 0, 100)
             
-        obs = st.text_area("Observações")
+        obs = st.text_area("Observações do Pedido")
             
         col_pag, col_st = st.columns(2)
         with col_pag:
@@ -202,24 +281,30 @@ elif menu == "Novo Pedido":
             
         submitted = st.form_submit_button("SALVAR PEDIDO")
         
-        if submitted and nome:
-            valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
-            hora_str = hora_entrega.strftime("%H:%M")
-            
-            novo = {
-                "Cliente": nome, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
-                "Valor": valor, "Data": data_entrega, "Hora": hora_str, 
-                "Status": status, "Pagamento": pagamento, "Contato": contato, 
-                "Desconto": desconto, "Observacoes": obs
-            }
-            novo_df = pd.DataFrame([novo])
-            df_atual = st.session_state.pedidos
-            st.session_state.pedidos = pd.concat([df_atual, novo_df], ignore_index=True)
-            salvar_dados(st.session_state.pedidos)
-            st.session_state.pedidos = carregar_dados()
-            st.success("Pedido Salvo!")
+        if submitted:
+            if not nome_selecionado:
+                st.error("Por favor, selecione um cliente (ou cadastre um novo na aba Clientes).")
+            else:
+                valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
+                hora_str = hora_entrega.strftime("%H:%M")
+                
+                novo = {
+                    "Cliente": nome_selecionado, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
+                    "Valor": valor, "Data": data_entrega, "Hora": hora_str, 
+                    "Status": status, "Pagamento": pagamento, "Contato": contato, 
+                    "Desconto": desconto, "Observacoes": obs
+                }
+                novo_df = pd.DataFrame([novo])
+                st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
+                salvar_pedidos(st.session_state.pedidos)
+                
+                # Recarrega para limpar
+                st.success(f"Pedido de {nome_selecionado} Salvo!")
+                # Reset manual visual (opcional) ou apenas avisar
 
-# --- GERENCIAR TUDO ---
+# =================================================================================
+# PÁGINA: GERENCIAR TUDO
+# =================================================================================
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     
@@ -254,7 +339,7 @@ elif menu == "Gerenciar Tudo":
             df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
             
             st.session_state.pedidos = df_editado
-            salvar_dados(df_editado)
+            salvar_pedidos(df_editado)
             st.toast("Salvo!", icon="💾")
             st.rerun()
             
@@ -266,6 +351,7 @@ elif menu == "Gerenciar Tudo":
         if sel_cli:
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
+            
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
             try:
                 hora_str = dados['Hora'].strftime('%H:%M')
