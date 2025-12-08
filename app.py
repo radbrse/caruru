@@ -10,6 +10,10 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 ARQUIVO_DADOS = "banco_de_dados_caruru.csv"
 CHAVE_PIX = "seu-pix-aqui"
 
+# --- LISTAS DE OPÇÕES COM CORES (EMOJIS) ---
+OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
+OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
+
 # --- FUNÇÕES ---
 def carregar_dados():
     colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
@@ -18,33 +22,41 @@ def carregar_dados():
         try:
             df = pd.read_csv(ARQUIVO_DADOS)
             
-            # 1. Garante colunas
             for col in colunas_padrao:
                 if col not in df.columns:
                     df[col] = None
             
-            # 2. Limpeza Numérica (NaN -> 0.0)
+            # Limpezas
             cols_num = ['Caruru', 'Bobo', 'Desconto', 'Valor']
             for col in cols_num:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
-            # 3. Limpeza de Texto (NaN -> "")
             cols_txt = ['Cliente', 'Status', 'Pagamento', 'Contato', 'Observacoes']
             for col in cols_txt:
                 df[col] = df[col].astype(str).replace('nan', '')
 
-            # 4. Limpeza de DATA (NaN -> Data de Hoje ou None)
+            # --- MIGRAÇÃO AUTOMÁTICA DE STATUS ANTIGO PARA NOVO (COM EMOJI) ---
+            # Isso garante que seus dados antigos não quebrem
+            mapa_status = {
+                "Pendente": "🔴 Pendente",
+                "Em Produção": "🟡 Em Produção",
+                "Entregue": "✅ Entregue",
+                "Cancelado": "🚫 Cancelado"
+            }
+            # Se o status estiver no formato antigo (sem emoji), substitui
+            df['Status'] = df['Status'].replace(mapa_status)
+            
+            # Se tiver algum status estranho que não esteja no mapa, joga para Pendente
+            mask_valido = df['Status'].isin(OPCOES_STATUS)
+            df.loc[~mask_valido, 'Status'] = "🔴 Pendente"
+
+            # Datas e Horas
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
 
-            # 5. Limpeza de HORA (A correção que você pediu)
-            # Converte tudo para string, tenta virar relógio, se falhar vira None (que o Streamlit aceita)
             def limpar_hora(h):
-                if pd.isna(h) or str(h).strip() == "" or str(h).lower() == "nan":
-                    return None
+                if pd.isna(h) or str(h).strip() == "" or str(h).lower() == "nan": return None
                 try:
-                    # Se já for objeto time, retorna ele
                     if isinstance(h, time): return h
-                    # Se for string, converte
                     return pd.to_datetime(str(h), format='%H:%M').time()
                 except:
                     return None
@@ -68,7 +80,6 @@ def calcular_total(caruru, bobo, desconto):
         total = total * (1 - (desconto/100))
     return total
 
-# Inicializa Sessão
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_dados()
 
@@ -80,14 +91,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- MENU LATERAL ---
+# --- MENU ---
 with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v3.3")
+    st.caption("Sistema Online v3.5 (Status Visual)")
 
-# --- PÁGINA 1: DASHBOARD ---
+# --- DASHBOARD ---
 if menu == "Dashboard do Dia":
     st.title("🚚 Expedição do Dia")
     
@@ -98,19 +109,17 @@ if menu == "Dashboard do Dia":
     else:
         data_analise = st.date_input("📅 Data de Entrega:", date.today(), format="DD/MM/YYYY")
         
-        # Filtra
         df_dia = df[df['Data'] == data_analise].copy()
         
-        # Ordenação segura
         try:
             df_dia['Hora_Sort'] = df_dia['Hora'].apply(lambda x: x if x is not None else time(0,0))
             df_dia = df_dia.sort_values(by="Hora_Sort")
         except:
             pass
         
-        # Métricas
         col1, col2, col3, col4 = st.columns(4)
-        pendentes = df_dia[df_dia['Status'] != 'Entregue']
+        # Filtra diferente de "✅ Entregue"
+        pendentes = df_dia[df_dia['Status'] != '✅ Entregue']
         
         col1.metric("Caruru a Entregar", f"{int(pendentes['Caruru'].sum())} Unid")
         col2.metric("Bobó a Entregar", f"{int(pendentes['Bobo'].sum())} Unid")
@@ -123,7 +132,6 @@ if menu == "Dashboard do Dia":
         if df_dia.empty:
             st.warning("Nenhuma entrega para este dia.")
         else:
-            # Editor
             df_baixa = st.data_editor(
                 df_dia,
                 column_order=["Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
@@ -132,22 +140,27 @@ if menu == "Dashboard do Dia":
                 use_container_width=True,
                 key="editor_dashboard",
                 column_config={
-                    "Status": st.column_config.SelectboxColumn("Status", options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True),
+                    "Status": st.column_config.SelectboxColumn("Status", options=OPCOES_STATUS, required=True),
                     "Observacoes": st.column_config.TextColumn("Obs", width="large"),
                     "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
                     "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 }
             )
             
-            # Salvar
             if not df_baixa.equals(df_dia):
                 df.update(df_baixa)
                 st.session_state.pedidos = df
                 salvar_dados(df)
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
+                
+        st.divider()
+        with st.expander("💾 Área de Segurança (Backup)"):
+            st.write("Baixar cópia de segurança.")
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Baixar Backup Completo", data=csv, file_name=f"backup_caruru_{date.today()}.csv", mime="text/csv")
 
-# --- PÁGINA 2: NOVO PEDIDO ---
+# --- NOVO PEDIDO ---
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
@@ -176,9 +189,9 @@ elif menu == "Novo Pedido":
             
         col_pag, col_st = st.columns(2)
         with col_pag:
-            pagamento = st.selectbox("Pagamento", ["PAGO", "NÃO PAGO", "METADE"])
+            pagamento = st.selectbox("Pagamento", OPCOES_PAGAMENTO)
         with col_st:
-            status = st.selectbox("Status", ["Pendente", "Em Produção", "Entregue"])
+            status = st.selectbox("Status", OPCOES_STATUS, index=0) # Padrão: Pendente
             
         submitted = st.form_submit_button("SALVAR PEDIDO")
         
@@ -192,41 +205,25 @@ elif menu == "Novo Pedido":
                 "Status": status, "Pagamento": pagamento, "Contato": contato, 
                 "Desconto": desconto, "Observacoes": obs
             }
-            # Converte para DF
             novo_df = pd.DataFrame([novo])
-            # Recarrega DF atual para garantir tipos
             df_atual = st.session_state.pedidos
-            
-            # Concatena
             st.session_state.pedidos = pd.concat([df_atual, novo_df], ignore_index=True)
-            
-            # Antes de salvar, recarrega via função de limpeza para garantir que a nova linha esteja certa
-            # Mas como está na memória, vamos forçar a limpeza manual apenas na hora de carregar de volta
-            # O ideal é salvar string no CSV, o carregador lida com isso.
             salvar_dados(st.session_state.pedidos)
-            
-            # Força recarregamento para aplicar a limpeza de tipos na nova linha
             st.session_state.pedidos = carregar_dados()
-            
             st.success("Pedido Salvo!")
 
-# --- PÁGINA 3: GERENCIAR TUDO ---
+# --- GERENCIAR TUDO ---
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     
     df = st.session_state.pedidos
     
     if not df.empty:
-        # Ordenação Segura
         try:
             df['Hora_Sort'] = df['Hora'].apply(lambda x: x if x is not None else time(0,0))
             df = df.sort_values(by=["Data", "Hora_Sort"], ascending=[True, True]).drop(columns=['Hora_Sort'])
         except:
             df = df.sort_values(by="Data", ascending=True)
-        
-        # --- AQUI ESTAVA O ERRO DO EDITOR ---
-        # Certificamos que não há NaNs na hora antes de passar pro editor
-        # (Isso já foi feito no carregar_dados, mas reforçamos)
         
         df_editado = st.data_editor(
             df,
@@ -236,8 +233,8 @@ elif menu == "Gerenciar Tudo":
                 "Valor": st.column_config.NumberColumn("Valor Total", format="R$ %.2f", disabled=True),
                 "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
                 "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
-                "Status": st.column_config.SelectboxColumn(options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True),
-                "Pagamento": st.column_config.SelectboxColumn(options=["PAGO", "NÃO PAGO", "METADE"], required=True),
+                "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
+                "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
                 "Caruru": st.column_config.NumberColumn(format="%d", step=1),
                 "Bobo": st.column_config.NumberColumn(format="%d", step=1),
                 "Observacoes": st.column_config.TextColumn("Obs", width="large"),
@@ -245,7 +242,6 @@ elif menu == "Gerenciar Tudo":
             hide_index=True
         )
         
-        # Salvar Edições
         if not df_editado.equals(df):
             preco_base = 70.0
             df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
@@ -255,7 +251,6 @@ elif menu == "Gerenciar Tudo":
             st.toast("Salvo!", icon="💾")
             st.rerun()
             
-        # WhatsApp
         st.divider()
         st.subheader("💬 Enviar Mensagem")
         clientes_ordenados = sorted(df['Cliente'].unique())
@@ -264,10 +259,8 @@ elif menu == "Gerenciar Tudo":
         if sel_cli:
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
-            
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
             
-            # Tratamento seguro da hora para mensagem
             try:
                 hora_str = dados['Hora'].strftime('%H:%M')
             except:
@@ -278,6 +271,7 @@ elif menu == "Gerenciar Tudo":
             msg += f"📦 Pedido: {int(dados['Caruru'])} Caruru, {int(dados['Bobo'])} Bobó\n"
             msg += f"💰 Valor: R$ {dados['Valor']:.2f}\n"
             
+            # Detecta se pagou
             if dados['Pagamento'] == "NÃO PAGO" or dados['Pagamento'] == "METADE":
                 msg += f"\n⚠️ Pagamento pendente. Segue chave PIX:\n🔑 {CHAVE_PIX}\n"
             
