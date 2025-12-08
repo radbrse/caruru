@@ -10,7 +10,7 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 ARQUIVO_DADOS = "banco_de_dados_caruru.csv"
 
 # --- SUA CHAVE PIX AQUI ---
-CHAVE_PIX = "seu-email-ou-cpf@pix.com"  # <--- EDITE AQUI DEPOIS
+CHAVE_PIX = "seu-pix-aqui" 
 
 # --- FUNÇÕES ---
 def carregar_dados():
@@ -19,22 +19,29 @@ def carregar_dados():
     if os.path.exists(ARQUIVO_DADOS):
         try:
             df = pd.read_csv(ARQUIVO_DADOS)
-            # Garante colunas
+            
+            # 1. Garante que todas as colunas existem
             for col in colunas_padrao:
                 if col not in df.columns:
                     df[col] = "" if col in ["Observacoes", "Hora"] else 0
             
-            # Tipagem
+            # 2. Converte números (evita erros de cálculo)
             df['Caruru'] = df['Caruru'].fillna(0).astype(float)
             df['Bobo'] = df['Bobo'].fillna(0).astype(float)
             df['Desconto'] = df['Desconto'].fillna(0).astype(float)
             df['Valor'] = df['Valor'].fillna(0).astype(float)
+            
+            # 3. Converte DATA (Texto -> Data)
             df['Data'] = pd.to_datetime(df['Data']).dt.date
-            df['Observacoes'] = df['Observacoes'].fillna("").astype(str)
-            df['Hora'] = df['Hora'].fillna("").astype(str) # Garante que Hora seja texto
+            
+            # 4. CORREÇÃO DO ERRO DA HORA (Texto -> Relógio)
+            # O 'errors=coerce' transforma erros em NaT (vazio) para não travar o app
+            df['Hora'] = pd.to_datetime(df['Hora'].astype(str), format='%H:%M', errors='coerce').dt.time
             
             return df
-        except:
+        except Exception as e:
+            # Se der erro grave, st.error mostra o motivo, mas retorna tabela vazia para não fechar o app
+            st.error(f"Erro ao carregar banco de dados: {e}")
             return pd.DataFrame(columns=colunas_padrao)
     else:
         return pd.DataFrame(columns=colunas_padrao)
@@ -67,7 +74,7 @@ with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v3.0")
+    st.caption("Sistema Online v3.1 (Correção Hora)")
 
 # --- PÁGINA 1: DASHBOARD ---
 if menu == "Dashboard do Dia":
@@ -80,9 +87,14 @@ if menu == "Dashboard do Dia":
     else:
         data_analise = st.date_input("📅 Data de Entrega:", date.today(), format="DD/MM/YYYY")
         
-        # Filtra e ORDENA por Hora
+        # Filtra
         df_dia = df[df['Data'] == data_analise].copy()
-        df_dia = df_dia.sort_values(by="Hora")
+        
+        # Ordena (Precisa tratar Hora vazia para não dar erro na ordenação)
+        try:
+            df_dia = df_dia.sort_values(by="Hora", na_position='last')
+        except:
+            pass # Se falhar a ordenação, mostra como está
         
         # Métricas
         col1, col2, col3, col4 = st.columns(4)
@@ -111,7 +123,7 @@ if menu == "Dashboard do Dia":
                     "Status": st.column_config.SelectboxColumn("Status", options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True, width="medium"),
                     "Observacoes": st.column_config.TextColumn("Obs", width="large"),
                     "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
-                    "Hora": st.column_config.TextColumn("Hora", width="small"),
+                    "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 }
             )
             
@@ -142,7 +154,6 @@ elif menu == "Novo Pedido":
         with col_nome:
             nome = st.text_input("Nome Cliente")
         with col_hora:
-            # NOVO CAMPO DE HORA
             hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
         
         col_contato, col_data = st.columns(2)
@@ -171,10 +182,12 @@ elif menu == "Novo Pedido":
         
         if submitted and nome:
             valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
+            # Salvar Hora formatada como texto para o CSV
+            # O carregador depois converte de volta para tempo
             novo = {
                 "Cliente": nome, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
                 "Valor": valor, "Data": data_entrega, 
-                "Hora": hora_entrega.strftime("%H:%M"), # Salva hora como texto bonitinho
+                "Hora": hora_entrega.strftime("%H:%M"), 
                 "Status": status, "Pagamento": pagamento, "Contato": contato, 
                 "Desconto": desconto, "Observacoes": obs
             }
@@ -182,17 +195,18 @@ elif menu == "Novo Pedido":
             salvar_dados(st.session_state.pedidos)
             st.success("Pedido Salvo!")
 
-# --- PÁGINA 3: GERENCIAR TUDO (COM ORDENAÇÃO) ---
+# --- PÁGINA 3: GERENCIAR TUDO ---
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
-    st.caption("Organizado por Data de Entrega (Do mais próximo para o mais distante).")
     
     df = st.session_state.pedidos
     
     if not df.empty:
-        # --- AQUI ESTÁ A ORDENAÇÃO AUTOMÁTICA ---
-        # Ordena por Data e depois por Hora
-        df = df.sort_values(by=["Data", "Hora"], ascending=[True, True])
+        # Ordenação Segura
+        try:
+            df = df.sort_values(by=["Data", "Hora"], ascending=[True, True])
+        except:
+            df = df.sort_values(by="Data", ascending=True)
         
         # Editor
         df_editado = st.data_editor(
@@ -202,7 +216,8 @@ elif menu == "Gerenciar Tudo":
             column_config={
                 "Valor": st.column_config.NumberColumn("Valor Total", format="R$ %.2f", disabled=True),
                 "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"), # Coluna de hora editável
+                # Configuração segura da coluna de Hora
+                "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 "Status": st.column_config.SelectboxColumn(options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True),
                 "Pagamento": st.column_config.SelectboxColumn(options=["PAGO", "NÃO PAGO", "METADE"], required=True),
                 "Caruru": st.column_config.NumberColumn(format="%d", step=1),
@@ -214,11 +229,6 @@ elif menu == "Gerenciar Tudo":
         
         # Salvar Edições
         if not df_editado.equals(df):
-            # Como reordenamos a visualização (df), precisamos ter cuidado ao salvar.
-            # O st.data_editor retorna o dataframe já editado na ordem nova.
-            # Podemos salvar direto, pois a ordem do CSV não importa tanto, o sistema reordena ao abrir.
-            
-            # Recalculo de valor (caso tenha mudado qtd)
             preco_base = 70.0
             df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
             
@@ -227,25 +237,25 @@ elif menu == "Gerenciar Tudo":
             st.toast("Salvo!", icon="💾")
             st.rerun()
             
-        # --- WHATSAPP INTELIGENTE COM PIX ---
+        # WhatsApp
         st.divider()
         st.subheader("💬 Enviar Mensagem")
-        clientes_ordenados = df['Cliente'].unique() # Pega da lista já ordenada
+        clientes_ordenados = df['Cliente'].unique()
         sel_cli = st.selectbox("Cliente:", clientes_ordenados)
         
         if sel_cli:
-            # Pega o último pedido deste cliente
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
             
-            # Monta a mensagem
-            data_str = dados['Data'].strftime('%d/%m/%Y')
+            data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
+            # Pega a hora. Se for objeto time, formata. Se for string, usa direto.
+            hora_str = dados['Hora'].strftime('%H:%M') if hasattr(dados['Hora'], 'strftime') else str(dados['Hora'])
+
             msg = f"Olá {sel_cli}, seu pedido no Cantinho do Caruru está confirmado!\n\n"
-            msg += f"🗓 Data: {data_str} às {dados['Hora']}\n"
+            msg += f"🗓 Data: {data_str} às {hora_str}\n"
             msg += f"📦 Pedido: {int(dados['Caruru'])} Caruru, {int(dados['Bobo'])} Bobó\n"
             msg += f"💰 Valor: R$ {dados['Valor']:.2f}\n"
             
-            # Adiciona PIX se não tiver pago
             if dados['Pagamento'] == "NÃO PAGO" or dados['Pagamento'] == "METADE":
                 msg += f"\n⚠️ Pagamento pendente. Segue chave PIX:\n🔑 {CHAVE_PIX}\n"
             
