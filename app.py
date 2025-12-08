@@ -10,7 +10,7 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 ARQUIVO_DADOS = "banco_de_dados_caruru.csv"
 CHAVE_PIX = "seu-pix-aqui"
 
-# --- LISTAS DE OPÇÕES COM CORES (EMOJIS) ---
+# --- OPÇÕES ---
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
@@ -35,22 +35,11 @@ def carregar_dados():
             for col in cols_txt:
                 df[col] = df[col].astype(str).replace('nan', '')
 
-            # --- MIGRAÇÃO AUTOMÁTICA DE STATUS ANTIGO PARA NOVO (COM EMOJI) ---
-            # Isso garante que seus dados antigos não quebrem
-            mapa_status = {
-                "Pendente": "🔴 Pendente",
-                "Em Produção": "🟡 Em Produção",
-                "Entregue": "✅ Entregue",
-                "Cancelado": "🚫 Cancelado"
-            }
-            # Se o status estiver no formato antigo (sem emoji), substitui
+            # Migração Status Antigo
+            mapa_status = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
             df['Status'] = df['Status'].replace(mapa_status)
             
-            # Se tiver algum status estranho que não esteja no mapa, joga para Pendente
-            mask_valido = df['Status'].isin(OPCOES_STATUS)
-            df.loc[~mask_valido, 'Status'] = "🔴 Pendente"
-
-            # Datas e Horas
+            # Data e Hora
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
 
             def limpar_hora(h):
@@ -65,7 +54,7 @@ def carregar_dados():
             
             return df
         except Exception as e:
-            st.error(f"Erro ao ler banco de dados: {e}")
+            st.error(f"Erro ao ler banco: {e}")
             return pd.DataFrame(columns=colunas_padrao)
     else:
         return pd.DataFrame(columns=colunas_padrao)
@@ -96,7 +85,7 @@ with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v3.5 (Status Visual)")
+    st.caption("Sistema Online v3.6 (Restore)")
 
 # --- DASHBOARD ---
 if menu == "Dashboard do Dia":
@@ -105,10 +94,9 @@ if menu == "Dashboard do Dia":
     df = st.session_state.pedidos
     
     if df.empty:
-        st.info("Cadastre pedidos para começar.")
+        st.info("Banco de dados vazio.")
     else:
         data_analise = st.date_input("📅 Data de Entrega:", date.today(), format="DD/MM/YYYY")
-        
         df_dia = df[df['Data'] == data_analise].copy()
         
         try:
@@ -118,7 +106,6 @@ if menu == "Dashboard do Dia":
             pass
         
         col1, col2, col3, col4 = st.columns(4)
-        # Filtra diferente de "✅ Entregue"
         pendentes = df_dia[df_dia['Status'] != '✅ Entregue']
         
         col1.metric("Caruru a Entregar", f"{int(pendentes['Caruru'].sum())} Unid")
@@ -129,9 +116,7 @@ if menu == "Dashboard do Dia":
         st.divider()
         st.subheader(f"📋 Entregas")
         
-        if df_dia.empty:
-            st.warning("Nenhuma entrega para este dia.")
-        else:
+        if not df_dia.empty:
             df_baixa = st.data_editor(
                 df_dia,
                 column_order=["Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
@@ -154,11 +139,33 @@ if menu == "Dashboard do Dia":
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
                 
+    # --- ÁREA DE SEGURANÇA (BACKUP E RESTORE) ---
+    st.divider()
+    with st.expander("💾 Área de Segurança (Backup & Restaurar)"):
+        st.write("### 1. Fazer Backup")
+        st.caption("Baixe seus dados regularmente para garantir segurança.")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Baixar Backup Completo", data=csv, file_name=f"backup_caruru_{date.today()}.csv", mime="text/csv")
+        
         st.divider()
-        with st.expander("💾 Área de Segurança (Backup)"):
-            st.write("Baixar cópia de segurança.")
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Baixar Backup Completo", data=csv, file_name=f"backup_caruru_{date.today()}.csv", mime="text/csv")
+        st.write("### 2. Restaurar Backup")
+        st.caption("⚠️ Cuidado: Isso vai substituir TODOS os dados atuais pelo arquivo que você enviar.")
+        
+        arquivo_upload = st.file_uploader("Arraste o arquivo CSV aqui para restaurar:", type=["csv"])
+        
+        if arquivo_upload is not None:
+            if st.button("🚨 CONFIRMAR RESTAURAÇÃO"):
+                try:
+                    # Lê o arquivo enviado
+                    df_novo = pd.read_csv(arquivo_upload)
+                    # Salva no sistema
+                    salvar_dados(df_novo)
+                    # Recarrega a memória
+                    st.session_state.pedidos = carregar_dados()
+                    st.success("Sistema restaurado com sucesso! A página irá recarregar.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao restaurar arquivo: {e}")
 
 # --- NOVO PEDIDO ---
 elif menu == "Novo Pedido":
@@ -191,7 +198,7 @@ elif menu == "Novo Pedido":
         with col_pag:
             pagamento = st.selectbox("Pagamento", OPCOES_PAGAMENTO)
         with col_st:
-            status = st.selectbox("Status", OPCOES_STATUS, index=0) # Padrão: Pendente
+            status = st.selectbox("Status", OPCOES_STATUS, index=0)
             
         submitted = st.form_submit_button("SALVAR PEDIDO")
         
@@ -260,7 +267,6 @@ elif menu == "Gerenciar Tudo":
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
-            
             try:
                 hora_str = dados['Hora'].strftime('%H:%M')
             except:
@@ -271,7 +277,6 @@ elif menu == "Gerenciar Tudo":
             msg += f"📦 Pedido: {int(dados['Caruru'])} Caruru, {int(dados['Bobo'])} Bobó\n"
             msg += f"💰 Valor: R$ {dados['Valor']:.2f}\n"
             
-            # Detecta se pagou
             if dados['Pagamento'] == "NÃO PAGO" or dados['Pagamento'] == "METADE":
                 msg += f"\n⚠️ Pagamento pendente. Segue chave PIX:\n🔑 {CHAVE_PIX}\n"
             
