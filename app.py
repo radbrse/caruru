@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date
 import os
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -86,7 +86,6 @@ elif menu == "Novo Pedido":
         with col_contato:
             contato = st.text_input("WhatsApp (DDD+Número)")
         with col_data:
-            # O input mostra dd/mm/aaaa
             data_entrega = st.date_input("Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
             
         col_qtd1, col_qtd2, col_desc = st.columns(3)
@@ -112,6 +111,7 @@ elif menu == "Novo Pedido":
                 "Valor": valor, "Data": data_entrega, "Status": status,
                 "Pagamento": pagamento, "Contato": contato, "Desconto": desconto
             }
+            # Concatena o novo pedido
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, pd.DataFrame([novo])], ignore_index=True)
             salvar_dados(st.session_state.pedidos)
             st.success("Pedido Salvo!")
@@ -124,14 +124,13 @@ elif menu == "Gerenciar Pedidos":
     df = st.session_state.pedidos
     
     if not df.empty:
-        # Tabela Editável com Formato Brasileiro
+        # Tabela Editável
         df_editado = st.data_editor(
             df,
             num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
-                # AQUI ESTÁ A MÁGICA DA DATA BRASILEIRA:
                 "Data": st.column_config.DateColumn("Data Entrega", format="DD/MM/YYYY"),
                 "Status": st.column_config.SelectboxColumn(options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True),
                 "Pagamento": st.column_config.SelectboxColumn(options=["PAGO", "NÃO PAGO", "METADE"], required=True),
