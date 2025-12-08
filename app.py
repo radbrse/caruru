@@ -99,7 +99,6 @@ def atualizar_contato_novo_pedido():
         df_cli = st.session_state.clientes
         busca = df_cli[df_cli['Nome'] == cliente_atual]
         if not busca.empty:
-            # Atualiza o session_state que está ligado ao campo de texto do formulário
             st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
         else:
             st.session_state['chave_contato_automatico'] = ""
@@ -122,7 +121,6 @@ st.markdown("""
 
 # --- MENU LATERAL (COM LOGO) ---
 with st.sidebar:
-    # Lógica da Logo
     if os.path.exists("logo.png"):
         st.image("logo.png", width=250)
     else:
@@ -131,7 +129,7 @@ with st.sidebar:
     st.divider()
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "👥 Cadastrar Clientes"])
     st.divider()
-    st.caption("Sistema Online v4.5")
+    st.caption("Sistema Online v4.6")
 
 # =================================================================================
 # PÁGINA: DASHBOARD
@@ -188,15 +186,13 @@ if menu == "Dashboard do Dia":
                 st.rerun()
 
 # =================================================================================
-# PÁGINA: NOVO PEDIDO (CORRIGIDA)
+# PÁGINA: NOVO PEDIDO
 # =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
     lista_clientes = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     
-    # --- ÁREA 1: IDENTIFICAÇÃO (FORA DO FORMULÁRIO) ---
-    # Isso permite que o 'on_change' funcione e preencha o WhatsApp automaticamente
     st.markdown("### 1. Identificação")
     col_sel, col_hora_sel = st.columns([3, 1])
     
@@ -209,16 +205,13 @@ elif menu == "Novo Pedido":
         )
     
     with col_hora_sel:
-        # Hora também fora para garantir que não trave, mas poderia ser dentro
         hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
 
-    # --- ÁREA 2: DETALHES (DENTRO DO FORMULÁRIO) ---
     st.markdown("### 2. Detalhes do Pedido")
     with st.form("form_pedido", clear_on_submit=True): 
         
         col_contato, col_data = st.columns(2)
         with col_contato:
-            # Este campo recebe o valor automático do session_state
             contato = st.text_input("WhatsApp", key="chave_contato_automatico")
         with col_data:
             data_entrega = st.date_input("Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
@@ -242,9 +235,7 @@ elif menu == "Novo Pedido":
         submitted = st.form_submit_button("💾 SALVAR PEDIDO")
         
         if submitted:
-            # Como o nome está fora do form, pegamos ele do session_state
             cliente_final = st.session_state.chave_cliente_selecionado
-            
             if not cliente_final:
                 st.error("Erro: Selecione um cliente na lista acima.")
             else:
@@ -262,7 +253,6 @@ elif menu == "Novo Pedido":
                 salvar_pedidos(st.session_state.pedidos)
                 
                 st.success(f"Pedido de {cliente_final} Salvo!")
-                # Força limpeza do contato visual
                 st.session_state['chave_contato_automatico'] = "" 
                 st.rerun()
 
@@ -334,32 +324,25 @@ elif menu == "Gerenciar Tudo":
             link = f"https://wa.me/55{tel}?text={msg.replace(' ', '%20').replace(chr(10), '%0A')}"
             st.link_button(f"Enviar WhatsApp para {sel_cli}", link)
             
-    # --- ÁREA DE SEGURANÇA (BACKUP E RESTAURAR) ---
     st.divider()
     with st.expander("💾 Segurança (Backup & Restaurar)"):
-        st.write("### 1. Fazer Backup")
+        st.write("### 1. Fazer Backup Geral")
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             zip_file.writestr("pedidos.csv", df.to_csv(index=False))
             zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
         
-        st.download_button(
-            label="📥 Baixar Backup Geral (.zip)",
-            data=zip_buffer.getvalue(),
-            file_name=f"backup_caruru_geral_{date.today()}.zip",
-            mime="application/zip",
-        )
+        st.download_button("📥 Baixar Backup Geral (.zip)", data=zip_buffer.getvalue(), file_name=f"backup_caruru_geral_{date.today()}.zip", mime="application/zip")
         
-        st.write("### 2. Restaurar Backup")
-        st.caption("Envie o arquivo CSV de PEDIDOS para restaurar.")
-        arquivo_upload = st.file_uploader("Restaurar PEDIDOS (banco_de_dados_caruru.csv)", type=["csv"])
+        st.write("### 2. Restaurar Pedidos")
+        arquivo_upload = st.file_uploader("Restaurar PEDIDOS (csv)", type=["csv"])
         if arquivo_upload is not None:
             if st.button("🚨 CONFIRMAR RESTAURAÇÃO DE PEDIDOS"):
                 try:
                     df_novo = pd.read_csv(arquivo_upload)
                     salvar_pedidos(df_novo)
                     st.session_state.pedidos = carregar_pedidos()
-                    st.success("Pedidos restaurados! O sistema irá recarregar.")
+                    st.success("Pedidos restaurados!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
@@ -388,12 +371,40 @@ elif menu == "👥 Cadastrar Clientes":
                         st.rerun()
 
         st.divider()
+        st.subheader("📝 Lista de Clientes")
+        
         if not st.session_state.clientes.empty:
             cli_editado = st.data_editor(st.session_state.clientes, num_rows="dynamic", use_container_width=True, hide_index=True)
             if not cli_editado.equals(st.session_state.clientes):
                 st.session_state.clientes = cli_editado
                 salvar_clientes(cli_editado)
                 st.toast("Salvo!", icon="💾")
+        
+        # --- ÁREA DE BACKUP ESPECÍFICA PARA CLIENTES ---
+        st.divider()
+        with st.expander("💾 Backup e Restauração (Apenas Clientes)"):
+            st.write("### 1. Fazer Backup de Clientes")
+            csv_cli = st.session_state.clientes.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Baixar Lista de Clientes (.csv)", data=csv_cli, file_name=f"clientes_caruru_{date.today()}.csv", mime="text/csv")
+
+            st.divider()
+            st.write("### 2. Restaurar Clientes")
+            st.warning("⚠️ Isso substituirá toda a sua lista atual de clientes.")
+            arquivo_cli = st.file_uploader("Envie o arquivo de clientes (csv)", type=["csv"], key="upload_cli")
+            
+            if arquivo_cli is not None:
+                if st.button("🚨 CONFIRMAR RESTAURAÇÃO DE CLIENTES"):
+                    try:
+                        df_novo = pd.read_csv(arquivo_cli)
+                        if "Nome" in df_novo.columns and "Contato" in df_novo.columns:
+                            salvar_clientes(df_novo)
+                            st.session_state.clientes = carregar_clientes()
+                            st.success("Lista de clientes restaurada!")
+                            st.rerun()
+                        else:
+                            st.error("Arquivo inválido (faltam colunas Nome/Contato).")
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
     
     with tab2:
         lista_excluir = st.session_state.clientes['Nome'].unique()
