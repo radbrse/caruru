@@ -14,37 +14,57 @@ CHAVE_PIX = "seu-pix-aqui"
 
 # --- FUNÇÕES ---
 def carregar_dados():
-    colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    # Estrutura padrão com Tipos de Dados já definidos para evitar erro na nuvem
+    dados_vazios = {
+        "Cliente": pd.Series(dtype='str'),
+        "Caruru": pd.Series(dtype='float'),
+        "Bobo": pd.Series(dtype='float'),
+        "Valor": pd.Series(dtype='float'),
+        "Data": pd.Series(dtype='object'), # Será convertido para data depois
+        "Hora": pd.Series(dtype='object'), # Será convertido para hora depois
+        "Status": pd.Series(dtype='str'),
+        "Pagamento": pd.Series(dtype='str'),
+        "Contato": pd.Series(dtype='str'),
+        "Desconto": pd.Series(dtype='float'),
+        "Observacoes": pd.Series(dtype='str')
+    }
+    
+    df = pd.DataFrame(dados_vazios)
     
     if os.path.exists(ARQUIVO_DADOS):
         try:
-            df = pd.read_csv(ARQUIVO_DADOS)
-            
-            # 1. Garante que todas as colunas existem
-            for col in colunas_padrao:
-                if col not in df.columns:
-                    df[col] = "" if col in ["Observacoes", "Hora"] else 0
-            
-            # 2. Converte números (evita erros de cálculo)
-            df['Caruru'] = df['Caruru'].fillna(0).astype(float)
-            df['Bobo'] = df['Bobo'].fillna(0).astype(float)
-            df['Desconto'] = df['Desconto'].fillna(0).astype(float)
-            df['Valor'] = df['Valor'].fillna(0).astype(float)
-            
-            # 3. Converte DATA (Texto -> Data)
-            df['Data'] = pd.to_datetime(df['Data']).dt.date
-            
-            # 4. CORREÇÃO DO ERRO DA HORA (Texto -> Relógio)
-            # O 'errors=coerce' transforma erros em NaT (vazio) para não travar o app
-            df['Hora'] = pd.to_datetime(df['Hora'].astype(str), format='%H:%M', errors='coerce').dt.time
-            
-            return df
-        except Exception as e:
-            # Se der erro grave, st.error mostra o motivo, mas retorna tabela vazia para não fechar o app
-            st.error(f"Erro ao carregar banco de dados: {e}")
-            return pd.DataFrame(columns=colunas_padrao)
-    else:
-        return pd.DataFrame(columns=colunas_padrao)
+            df_temp = pd.read_csv(ARQUIVO_DADOS)
+            # Combina com o df vazio para garantir que todas colunas existam
+            df = pd.concat([df, df_temp], ignore_index=True)
+        except:
+            pass 
+    
+    # --- FORÇAR TIPOS (BLINDAGEM CONTRA ERRO) ---
+    # 1. Garante que números sejam números (e não texto vazio)
+    df['Caruru'] = df['Caruru'].fillna(0).astype(float)
+    df['Bobo'] = df['Bobo'].fillna(0).astype(float)
+    df['Desconto'] = df['Desconto'].fillna(0).astype(float)
+    df['Valor'] = df['Valor'].fillna(0).astype(float)
+    
+    # 2. Garante que textos sejam textos (remove 'nan')
+    for col in ['Cliente', 'Status', 'Pagamento', 'Contato', 'Observacoes']:
+        df[col] = df[col].astype(str).replace('nan', '')
+        
+    # 3. Conversão segura de DATA
+    df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
+    
+    # 4. Conversão segura de HORA (Onde costuma dar erro)
+    def fix_hora(h):
+        if pd.isna(h) or str(h).strip() == "" or str(h).lower() == "nan": return None
+        try:
+            # Tenta converter string "12:30" para objeto time
+            return pd.to_datetime(str(h), format='%H:%M').time()
+        except:
+            return None
+    
+    df['Hora'] = df['Hora'].apply(fix_hora)
+    
+    return df
 
 def salvar_dados(df):
     df.to_csv(ARQUIVO_DADOS, index=False)
@@ -74,7 +94,7 @@ with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v3.1 (Correção Hora)")
+    st.caption("Sistema Online v3.2 (Blindado)")
 
 # --- PÁGINA 1: DASHBOARD ---
 if menu == "Dashboard do Dia":
@@ -90,11 +110,12 @@ if menu == "Dashboard do Dia":
         # Filtra
         df_dia = df[df['Data'] == data_analise].copy()
         
-        # Ordena (Precisa tratar Hora vazia para não dar erro na ordenação)
+        # Ordenação segura (trata erro se hora for vazia)
         try:
-            df_dia = df_dia.sort_values(by="Hora", na_position='last')
+            df_dia['Hora_Sort'] = df_dia['Hora'].apply(lambda x: x if x is not None else time(0,0))
+            df_dia = df_dia.sort_values(by="Hora_Sort")
         except:
-            pass # Se falhar a ordenação, mostra como está
+            pass # Segue sem ordenar se falhar
         
         # Métricas
         col1, col2, col3, col4 = st.columns(4)
@@ -128,18 +149,9 @@ if menu == "Dashboard do Dia":
             )
             
             # Salvar alterações
-            indices_dia = df_dia.index
-            mudou = False
-            for i in indices_dia:
-                if (df.loc[i, 'Status'] != df_baixa.loc[i, 'Status']) or \
-                   (df.loc[i, 'Pagamento'] != df_baixa.loc[i, 'Pagamento']) or \
-                   (df.loc[i, 'Observacoes'] != df_baixa.loc[i, 'Observacoes']):
-                    df.loc[i, 'Status'] = df_baixa.loc[i, 'Status']
-                    df.loc[i, 'Pagamento'] = df_baixa.loc[i, 'Pagamento']
-                    df.loc[i, 'Observacoes'] = df_baixa.loc[i, 'Observacoes']
-                    mudou = True
-            
-            if mudou:
+            if not df_baixa.equals(df_dia):
+                # Atualiza o DF principal com as mudanças do dia
+                df.update(df_baixa)
                 st.session_state.pedidos = df
                 salvar_dados(df)
                 st.toast("Atualizado!", icon="✅")
@@ -182,16 +194,19 @@ elif menu == "Novo Pedido":
         
         if submitted and nome:
             valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
-            # Salvar Hora formatada como texto para o CSV
-            # O carregador depois converte de volta para tempo
+            # Salva hora formatada como string
+            hora_str = hora_entrega.strftime("%H:%M")
+            
             novo = {
                 "Cliente": nome, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
                 "Valor": valor, "Data": data_entrega, 
-                "Hora": hora_entrega.strftime("%H:%M"), 
+                "Hora": hora_str, 
                 "Status": status, "Pagamento": pagamento, "Contato": contato, 
                 "Desconto": desconto, "Observacoes": obs
             }
-            st.session_state.pedidos = pd.concat([st.session_state.pedidos, pd.DataFrame([novo])], ignore_index=True)
+            # Converte para DF e adiciona
+            novo_df = pd.DataFrame([novo])
+            st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
             salvar_dados(st.session_state.pedidos)
             st.success("Pedido Salvo!")
 
@@ -204,7 +219,8 @@ elif menu == "Gerenciar Tudo":
     if not df.empty:
         # Ordenação Segura
         try:
-            df = df.sort_values(by=["Data", "Hora"], ascending=[True, True])
+            df['Hora_Sort'] = df['Hora'].apply(lambda x: x if x is not None else time(0,0))
+            df = df.sort_values(by=["Data", "Hora_Sort"], ascending=[True, True]).drop(columns=['Hora_Sort'])
         except:
             df = df.sort_values(by="Data", ascending=True)
         
@@ -216,7 +232,6 @@ elif menu == "Gerenciar Tudo":
             column_config={
                 "Valor": st.column_config.NumberColumn("Valor Total", format="R$ %.2f", disabled=True),
                 "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                # Configuração segura da coluna de Hora
                 "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 "Status": st.column_config.SelectboxColumn(options=["Pendente", "Em Produção", "Entregue", "Cancelado"], required=True),
                 "Pagamento": st.column_config.SelectboxColumn(options=["PAGO", "NÃO PAGO", "METADE"], required=True),
@@ -230,8 +245,10 @@ elif menu == "Gerenciar Tudo":
         # Salvar Edições
         if not df_editado.equals(df):
             preco_base = 70.0
+            # Recalcula valor
             df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
             
+            # Atualiza e salva
             st.session_state.pedidos = df_editado
             salvar_dados(df_editado)
             st.toast("Salvo!", icon="💾")
@@ -240,7 +257,8 @@ elif menu == "Gerenciar Tudo":
         # WhatsApp
         st.divider()
         st.subheader("💬 Enviar Mensagem")
-        clientes_ordenados = df['Cliente'].unique()
+        # Garante clientes únicos para o selectbox
+        clientes_ordenados = sorted(df['Cliente'].astype(str).unique())
         sel_cli = st.selectbox("Cliente:", clientes_ordenados)
         
         if sel_cli:
@@ -248,7 +266,6 @@ elif menu == "Gerenciar Tudo":
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
             
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
-            # Pega a hora. Se for objeto time, formata. Se for string, usa direto.
             hora_str = dados['Hora'].strftime('%H:%M') if hasattr(dados['Hora'], 'strftime') else str(dados['Hora'])
 
             msg = f"Olá {sel_cli}, seu pedido no Cantinho do Caruru está confirmado!\n\n"
