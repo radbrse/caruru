@@ -4,10 +4,21 @@ from datetime import date, datetime, time
 import os
 import io
 import zipfile
-import numpy as np
+import time as tm
+import logging # Biblioteca de Logs
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+
+# --- CONFIGURAÇÃO DE LOGS (NOVO!) ---
+# Configura o sistema para gravar erros num arquivo texto
+ARQUIVO_LOG = "system_errors.log"
+logging.basicConfig(
+    filename=ARQUIVO_LOG,
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True
+)
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
@@ -15,23 +26,19 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 # Arquivos
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
 ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
-
-# --- ATUALIZAÇÃO DO PIX ---
 CHAVE_PIX = "79999296722"
 
 # Opções
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
-# --- FUNÇÕES DE PDF (RECIBO ATUALIZADO) ---
+# --- FUNÇÕES DE PDF ---
 def desenhar_cabecalho(p, titulo):
-    # LOGO NO RECIBO
     if os.path.exists("logo.png"):
         try:
-            # Posição X, Y, Largura, Altura
             p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Erro ao desenhar logo no PDF: {e}")
     
     p.setFont("Helvetica-Bold", 16)
     p.drawString(150, 775, "Cantinho do Caruru")
@@ -39,172 +46,153 @@ def desenhar_cabecalho(p, titulo):
     p.drawString(150, 760, "Comprovante de Encomenda")
     
     p.setFont("Helvetica-Bold", 14)
-    p.drawRightString(565, 765, titulo) # Título alinhado à direita
+    p.drawRightString(565, 765, titulo)
     
     p.setLineWidth(1)
-    p.line(30, 740, 565, 740) # Linha horizontal
+    p.line(30, 740, 565, 740)
 
 def gerar_recibo_pdf(dados):
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    
-    desenhar_cabecalho(p, f"Pedido #{str(int(dados.name) if isinstance(dados.name, int) else 'UNK')}")
-    
-    # --- DADOS DO CLIENTE ---
-    y = 700
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(30, y, "DADOS DO CLIENTE")
-    y -= 20
-    p.setFont("Helvetica", 12)
-    p.drawString(30, y, f"Nome: {dados['Cliente']}")
-    p.drawString(300, y, f"WhatsApp: {dados['Contato']}")
-    y -= 20
-    
-    # Formata data e hora
-    data_str = dados['Data'].strftime('%d/%m/%Y')
     try:
-        hora_str = str(dados['Hora'])[:5]
-    except:
-        hora_str = "--:--"
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
         
-    p.drawString(30, y, f"Data de Entrega: {data_str}")
-    p.drawString(300, y, f"Horário: {hora_str}")
-    
-    # --- CAIXA DO PEDIDO ---
-    y -= 40
-    p.setFillColor(colors.lightgrey)
-    p.rect(30, y-5, 535, 20, fill=1, stroke=0) # Fundo cinza cabeçalho
-    p.setFillColor(colors.black)
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(40, y, "ITEM")
-    p.drawString(400, y, "QUANTIDADE")
-    p.drawString(480, y, "TOTAL")
-    
-    y -= 25
-    p.setFont("Helvetica", 10)
-    
-    # Item 1: Caruru
-    if dados['Caruru'] > 0:
-        p.drawString(40, y, "Caruru Tradicional (Kg/Unid)")
-        p.drawString(400, y, f"{int(dados['Caruru'])}")
-        y -= 15
+        desenhar_cabecalho(p, f"Pedido #{str(int(dados.name) if isinstance(dados.name, int) else 'UNK')}")
         
-    # Item 2: Bobó
-    if dados['Bobo'] > 0:
-        p.drawString(40, y, "Bobó de Camarão (Kg/Unid)")
-        p.drawString(400, y, f"{int(dados['Bobo'])}")
-        y -= 15
+        y = 700
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(30, y, "DADOS DO CLIENTE")
+        y -= 20
+        p.setFont("Helvetica", 12)
+        p.drawString(30, y, f"Nome: {dados['Cliente']}")
+        p.drawString(300, y, f"WhatsApp: {dados['Contato']}")
+        y -= 20
         
-    p.line(30, y-5, 565, y-5) # Linha fim itens
-    
-    # --- TOTAIS E STATUS ---
-    y -= 40
-    p.setFont("Helvetica-Bold", 14)
-    
-    # LÓGICA INTELIGENTE DO RÓTULO
-    rotulo_valor = "TOTAL PAGO" if dados['Pagamento'] == "PAGO" else "VALOR A PAGAR"
-    
-    p.drawString(350, y, f"{rotulo_valor}: R$ {dados['Valor']:.2f}")
-    
-    # Status Pagamento Visual
-    y -= 25
-    p.setFont("Helvetica-Bold", 12)
-    if dados['Pagamento'] == "PAGO":
-        p.setFillColor(colors.green)
-        p.drawString(30, y+25, "SITUAÇÃO: PAGO ✅")
-    elif dados['Pagamento'] == "METADE":
-        p.setFillColor(colors.orange)
-        p.drawString(30, y+25, "SITUAÇÃO: PARCIAL (50%) ⚠️")
+        data_str = dados['Data'].strftime('%d/%m/%Y')
+        try:
+            hora_str = str(dados['Hora'])[:5]
+        except:
+            hora_str = "--:--"
+            
+        p.drawString(30, y, f"Data de Entrega: {data_str}")
+        p.drawString(300, y, f"Horário: {hora_str}")
+        
+        y -= 40
+        p.setFillColor(colors.lightgrey)
+        p.rect(30, y-5, 535, 20, fill=1, stroke=0)
         p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(40, y, "ITEM")
+        p.drawString(400, y, "QUANTIDADE")
+        
+        y -= 25
         p.setFont("Helvetica", 10)
-        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
-    else:
-        p.setFillColor(colors.red)
-        p.drawString(30, y+25, "SITUAÇÃO: NÃO PAGO ❌")
+        
+        if dados['Caruru'] > 0:
+            p.drawString(40, y, "Caruru Tradicional (Kg/Unid)")
+            p.drawString(400, y, f"{int(dados['Caruru'])}")
+            y -= 15
+            
+        if dados['Bobo'] > 0:
+            p.drawString(40, y, "Bobó de Camarão (Kg/Unid)")
+            p.drawString(400, y, f"{int(dados['Bobo'])}")
+            y -= 15
+            
+        p.line(30, y-5, 565, y-5)
+        
+        y -= 40
+        p.setFont("Helvetica-Bold", 14)
+        rotulo_valor = "TOTAL PAGO" if dados['Pagamento'] == "PAGO" else "VALOR A PAGAR"
+        p.drawString(350, y, f"{rotulo_valor}: R$ {dados['Valor']:.2f}")
+        
+        y -= 25
+        p.setFont("Helvetica-Bold", 12)
+        if dados['Pagamento'] == "PAGO":
+            p.setFillColor(colors.green)
+            p.drawString(30, y+25, "SITUAÇÃO: PAGO ✅")
+        elif dados['Pagamento'] == "METADE":
+            p.setFillColor(colors.orange)
+            p.drawString(30, y+25, "SITUAÇÃO: PARCIAL (50%) ⚠️")
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 10)
+            p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
+        else:
+            p.setFillColor(colors.red)
+            p.drawString(30, y+25, "SITUAÇÃO: NÃO PAGO ❌")
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 10)
+            p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
+        
         p.setFillColor(colors.black)
+        if dados['Observacoes'] and dados['Observacoes'] != "nan":
+            y -= 30
+            p.setFont("Helvetica-Oblique", 10)
+            p.drawString(30, y, f"Obs: {dados['Observacoes']}")
+        
+        y_ass = 150
+        p.setLineWidth(1)
+        p.line(150, y_ass, 450, y_ass)
         p.setFont("Helvetica", 10)
-        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
-    
-    # Observações
-    p.setFillColor(colors.black)
-    if dados['Observacoes'] and dados['Observacoes'] != "nan":
-        y -= 30
-        p.setFont("Helvetica-Oblique", 10)
-        p.drawString(30, y, f"Obs: {dados['Observacoes']}")
-    
-    # --- ÁREA DE ASSINATURA (NOVA) ---
-    y_ass = 150 # Posição fixa no fim da página
-    p.setLineWidth(1)
-    p.line(150, y_ass, 450, y_ass) # Linha da assinatura
-    
-    p.setFont("Helvetica", 10)
-    p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
-    
-    # Data de Emissão (Data de Hoje)
-    data_hoje = datetime.now().strftime('%d/%m/%Y')
-    p.setFont("Helvetica-Oblique", 8)
-    p.drawCentredString(300, y_ass - 30, f"Recibo emitido em: {data_hoje}")
-    
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return buffer
+        p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
+        data_hoje = datetime.now().strftime('%d/%m/%Y')
+        p.setFont("Helvetica-Oblique", 8)
+        p.drawCentredString(300, y_ass - 30, f"Emitido em: {data_hoje}")
+        
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logging.error(f"Erro ao gerar Recibo PDF: {e}")
+        return None
 
 def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    y = 700
-    
-    desenhar_cabecalho(p, titulo_relatorio)
-    
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(30, y, "Data")
-    p.drawString(90, y, "Cliente")
-    p.drawString(230, y, "Caruru")
-    p.drawString(280, y, "Bobó")
-    p.drawString(330, y, "Valor")
-    p.drawString(400, y, "Status")
-    p.drawString(480, y, "Pagto")
-    
-    y -= 20
-    p.setFont("Helvetica", 9)
-    
-    total_valor = 0
-    total_caruru = 0
-    
-    for index, row in df_filtrado.iterrows():
-        if y < 50:
-            p.showPage()
-            desenhar_cabecalho(p, titulo_relatorio)
-            y = 700
-            
-        data_str = row['Data'].strftime('%d/%m') if hasattr(row['Data'], 'strftime') else str(row['Data'])
+    try:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        y = 700
+        desenhar_cabecalho(p, titulo_relatorio)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(30, y, "Data")
+        p.drawString(90, y, "Cliente")
+        p.drawString(230, y, "Caruru")
+        p.drawString(280, y, "Bobó")
+        p.drawString(330, y, "Valor")
+        p.drawString(400, y, "Status")
+        p.drawString(480, y, "Pagto")
+        y -= 20
+        p.setFont("Helvetica", 9)
         
-        p.drawString(30, y, data_str)
-        p.drawString(90, y, str(row['Cliente'])[:20])
-        p.drawString(230, y, str(int(row['Caruru'])))
-        p.drawString(280, y, str(int(row['Bobo'])))
-        p.drawString(330, y, f"R$ {row['Valor']:.2f}")
+        total_valor = 0
+        for index, row in df_filtrado.iterrows():
+            if y < 50:
+                p.showPage()
+                desenhar_cabecalho(p, titulo_relatorio)
+                y = 700
+            data_str = row['Data'].strftime('%d/%m') if hasattr(row['Data'], 'strftime') else str(row['Data'])
+            p.drawString(30, y, data_str)
+            p.drawString(90, y, str(row['Cliente'])[:20])
+            p.drawString(230, y, str(int(row['Caruru'])))
+            p.drawString(280, y, str(int(row['Bobo'])))
+            p.drawString(330, y, f"R$ {row['Valor']:.2f}")
+            status_clean = row['Status'].replace("✅ ", "").replace("🔴 ", "").replace("🟡 ", "").replace("🚫 ", "")
+            p.drawString(400, y, status_clean[:12])
+            p.drawString(480, y, row['Pagamento'])
+            total_valor += row['Valor']
+            y -= 15
         
-        status_clean = row['Status'].replace("✅ ", "").replace("🔴 ", "").replace("🟡 ", "").replace("🚫 ", "")
-        p.drawString(400, y, status_clean[:12])
-        p.drawString(480, y, row['Pagamento'])
-        
-        total_valor += row['Valor']
-        total_caruru += row['Caruru']
-        y -= 15
-        
-    p.line(30, y, 565, y)
-    y -= 20
-    p.setFont("Helvetica-Bold", 11)
-    p.drawString(30, y, f"TOTAL GERAL: R$ {total_valor:,.2f}")
-    
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return buffer
+        p.line(30, y, 565, y)
+        y -= 20
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(30, y, f"TOTAL GERAL: R$ {total_valor:,.2f}")
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logging.error(f"Erro ao gerar Relatório PDF: {e}")
+        return None
 
-# --- CARREGAMENTO E DADOS ---
+# --- CARREGAMENTO ---
 def carregar_clientes():
     colunas = ["Nome", "Contato", "Observacoes"]
     if os.path.exists(ARQUIVO_CLIENTES):
@@ -216,21 +204,20 @@ def carregar_clientes():
             df['Contato'] = df['Contato'].astype(str).replace('nan', '')
             df['Observacoes'] = df['Observacoes'].astype(str).replace('nan', '')
             return df
-        except:
+        except Exception as e:
+            logging.error(f"Erro ao carregar clientes: {e}")
             return pd.DataFrame(columns=colunas)
     else:
         return pd.DataFrame(columns=colunas)
 
 def carregar_pedidos():
     colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
-    
     if os.path.exists(ARQUIVO_PEDIDOS):
         try:
             df = pd.read_csv(ARQUIVO_PEDIDOS)
             for col in colunas_padrao:
                 if col not in df.columns: df[col] = None
             
-            # Limpezas
             cols_num = ['Caruru', 'Bobo', 'Desconto', 'Valor']
             for col in cols_num:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
@@ -258,35 +245,51 @@ def carregar_pedidos():
 
             df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
             return df
-        except:
+        except Exception as e:
+            logging.error(f"Erro ao carregar pedidos: {e}")
+            st.error("Erro crítico ao carregar banco de dados. Verifique a aba Manutenção.")
             return pd.DataFrame(columns=colunas_padrao)
     else:
         return pd.DataFrame(columns=colunas_padrao)
 
 def salvar_pedidos(df):
-    df.to_csv(ARQUIVO_PEDIDOS, index=False)
+    try:
+        df.to_csv(ARQUIVO_PEDIDOS, index=False)
+    except Exception as e:
+        logging.error(f"Erro ao salvar pedidos: {e}")
+        st.error("Erro ao salvar! Tente novamente.")
 
 def salvar_clientes(df):
-    df.to_csv(ARQUIVO_CLIENTES, index=False)
+    try:
+        df.to_csv(ARQUIVO_CLIENTES, index=False)
+    except Exception as e:
+        logging.error(f"Erro ao salvar clientes: {e}")
 
 def calcular_total(caruru, bobo, desconto):
-    preco_base = 70.0
-    total = (caruru * preco_base) + (bobo * preco_base)
-    if desconto > 0:
-        total = total * (1 - (desconto/100))
-    return total
+    try:
+        preco_base = 70.0
+        total = (caruru * preco_base) + (bobo * preco_base)
+        if desconto > 0:
+            total = total * (1 - (desconto/100))
+        return total
+    except Exception as e:
+        logging.error(f"Erro de cálculo: {e}")
+        return 0.0
 
 def atualizar_contato_novo_pedido():
-    cliente_atual = st.session_state.get('chave_cliente_selecionado')
-    if cliente_atual:
-        df_cli = st.session_state.clientes
-        busca = df_cli[df_cli['Nome'] == cliente_atual]
-        if not busca.empty:
-            st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
+    try:
+        cliente_atual = st.session_state.get('chave_cliente_selecionado')
+        if cliente_atual:
+            df_cli = st.session_state.clientes
+            busca = df_cli[df_cli['Nome'] == cliente_atual]
+            if not busca.empty:
+                st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
+            else:
+                st.session_state['chave_contato_automatico'] = ""
         else:
             st.session_state['chave_contato_automatico'] = ""
-    else:
-        st.session_state['chave_contato_automatico'] = ""
+    except Exception as e:
+        logging.error(f"Erro ao atualizar contato automático: {e}")
 
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_pedidos()
@@ -307,11 +310,11 @@ with st.sidebar:
         st.image("logo.png", width=250)
     else:
         st.title("🦐 Cantinho do Caruru")
-        
     st.divider()
-    menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes"])
+    # NOVA ABA AQUI NO FINAL
+    menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes", "🛠️ Manutenção/Admin"])
     st.divider()
-    st.caption("Sistema Online v5.1")
+    st.caption("Sistema Online v6.0")
 
 # =================================================================================
 # DASHBOARD
@@ -421,24 +424,28 @@ elif menu == "Novo Pedido":
             if not cliente_final:
                 st.error("Erro: Selecione um cliente na lista acima.")
             else:
-                valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
-                hora_str = hora_entrega.strftime("%H:%M")
-                
-                novo = {
-                    "Cliente": cliente_final, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
-                    "Valor": valor, "Data": data_entrega, "Hora": hora_str, 
-                    "Status": status, "Pagamento": pagamento, "Contato": contato, 
-                    "Desconto": desconto, "Observacoes": obs
-                }
-                novo_df = pd.DataFrame([novo])
-                novo_df['Data'] = pd.to_datetime(novo_df['Data']).dt.date
-                
-                st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
-                salvar_pedidos(st.session_state.pedidos)
-                
-                st.success(f"Pedido de {cliente_final} Salvo!")
-                st.session_state['chave_contato_automatico'] = "" 
-                st.rerun()
+                try:
+                    valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
+                    hora_str = hora_entrega.strftime("%H:%M")
+                    
+                    novo = {
+                        "Cliente": cliente_final, "Caruru": qtd_caruru, "Bobo": qtd_bobo,
+                        "Valor": valor, "Data": data_entrega, "Hora": hora_str, 
+                        "Status": status, "Pagamento": pagamento, "Contato": contato, 
+                        "Desconto": desconto, "Observacoes": obs
+                    }
+                    novo_df = pd.DataFrame([novo])
+                    novo_df['Data'] = pd.to_datetime(novo_df['Data']).dt.date
+                    
+                    st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
+                    salvar_pedidos(st.session_state.pedidos)
+                    
+                    st.success(f"Pedido de {cliente_final} Salvo!")
+                    tm.sleep(0.5) 
+                    st.rerun()
+                except Exception as e:
+                    logging.error(f"Erro ao salvar novo pedido: {e}")
+                    st.error("Erro ao salvar. Verifique o Log.")
 
 # =================================================================================
 # GERENCIAR TUDO
@@ -473,12 +480,16 @@ elif menu == "Gerenciar Tudo":
         )
         
         if not df_editado.equals(df):
-            preco_base = 70.0
-            df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
-            st.session_state.pedidos = df_editado
-            salvar_pedidos(df_editado)
-            st.toast("Salvo!", icon="💾")
-            st.rerun()
+            try:
+                preco_base = 70.0
+                df_editado['Valor'] = ((df_editado['Caruru'] * preco_base) + (df_editado['Bobo'] * preco_base)) * (1 - (df_editado['Desconto'] / 100))
+                st.session_state.pedidos = df_editado
+                salvar_pedidos(df_editado)
+                st.toast("Salvo!", icon="💾")
+                st.rerun()
+            except Exception as e:
+                logging.error(f"Erro ao editar tabela: {e}")
+                st.error("Erro ao salvar edição. Verifique o Log.")
             
         st.divider()
         st.subheader("💬 Enviar Mensagem")
@@ -508,11 +519,15 @@ elif menu == "Gerenciar Tudo":
     st.divider()
     with st.expander("💾 Segurança (Backup & Restaurar)"):
         st.write("### 1. Fazer Backup Geral")
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            zip_file.writestr("pedidos.csv", df.to_csv(index=False))
-            zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
-        st.download_button("📥 Baixar Backup Geral (.zip)", data=zip_buffer.getvalue(), file_name=f"backup_caruru_geral_{date.today()}.zip", mime="application/zip")
+        try:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                zip_file.writestr("pedidos.csv", df.to_csv(index=False))
+                zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
+            st.download_button("📥 Baixar Backup Geral (.zip)", data=zip_buffer.getvalue(), file_name=f"backup_caruru_geral_{date.today()}.zip", mime="application/zip")
+        except Exception as e:
+            logging.error(f"Erro ao gerar backup ZIP: {e}")
+            st.error("Erro ao criar backup.")
         
         st.write("### 2. Restaurar Pedidos")
         arquivo_upload = st.file_uploader("Restaurar PEDIDOS (csv)", type=["csv"])
@@ -526,15 +541,14 @@ elif menu == "Gerenciar Tudo":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
+                    logging.error(f"Erro restaurar pedidos: {e}")
 
 # =================================================================================
-# RELATÓRIOS E RECIBOS
+# RECIBOS E RELATÓRIOS
 # =================================================================================
 elif menu == "🖨️ Relatórios & Recibos":
     st.title("🖨️ Central de Impressão")
-    
     tab_recibo, tab_relatorio = st.tabs(["🧾 Emitir Recibo", "📊 Relatórios PDF"])
-    
     df = st.session_state.pedidos
     
     with tab_recibo:
@@ -544,7 +558,6 @@ elif menu == "🖨️ Relatórios & Recibos":
         else:
             clientes_disp = sorted(df['Cliente'].unique())
             cli_recibo = st.selectbox("Selecione o Cliente:", clientes_disp)
-            
             pedidos_cli = df[df['Cliente'] == cli_recibo].sort_values(by="Data", ascending=False)
             
             if not pedidos_cli.empty:
@@ -552,25 +565,21 @@ elif menu == "🖨️ Relatórios & Recibos":
                     i: f"{p['Data'].strftime('%d/%m/%Y')} - R$ {p['Valor']:.2f} ({p['Status']})" 
                     for i, p in pedidos_cli.iterrows()
                 }
-                
                 id_pedido = st.selectbox("Pedido:", options=opcoes_pedidos.keys(), format_func=lambda x: opcoes_pedidos[x])
                 
                 if st.button("📄 Gerar PDF do Recibo"):
                     dados_pedido = pedidos_cli.loc[id_pedido]
                     pdf_bytes = gerar_recibo_pdf(dados_pedido)
-                    st.download_button(
-                        label="📥 Baixar Recibo PDF",
-                        data=pdf_bytes,
-                        file_name=f"Recibo_{cli_recibo}.pdf",
-                        mime="application/pdf"
-                    )
+                    if pdf_bytes:
+                        st.download_button("📥 Baixar Recibo PDF", data=pdf_bytes, file_name=f"Recibo_{cli_recibo}.pdf", mime="application/pdf")
+                    else:
+                        st.error("Erro ao gerar PDF. Verifique os logs.")
             else:
                 st.info("Este cliente não tem pedidos.")
 
     with tab_relatorio:
         st.subheader("Relatórios Gerenciais")
         tipo_relatorio = st.radio("Tipo:", ["Entregas do Dia", "Todos os Pedidos"])
-        
         if tipo_relatorio == "Entregas do Dia":
             data_rel = st.date_input("Selecione o dia:", date.today(), format="DD/MM/YYYY")
             df_rel = df[df['Data'] == data_rel]
@@ -578,25 +587,20 @@ elif menu == "🖨️ Relatórios & Recibos":
         else:
             df_rel = df
             titulo = "Relatório Geral de Vendas"
-            
         st.write(f"Total: {len(df_rel)} registros")
-        
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório PDF"):
                 pdf_rel = gerar_relatorio_pdf(df_rel, titulo)
-                st.download_button(
-                    label="📥 Baixar Relatório PDF",
-                    data=pdf_rel,
-                    file_name=f"Relatorio_{date.today()}.pdf",
-                    mime="application/pdf"
-                )
+                if pdf_rel:
+                    st.download_button("📥 Baixar Relatório PDF", data=pdf_rel, file_name=f"Relatorio_{date.today()}.pdf", mime="application/pdf")
+                else:
+                    st.error("Erro ao gerar Relatório. Verifique os logs.")
 
 # =================================================================================
 # CLIENTES
 # =================================================================================
 elif menu == "👥 Cadastrar Clientes":
     st.title("👥 Base de Clientes")
-    
     tab1, tab2 = st.tabs(["➕ Novo / Editar", "🗑️ Excluir"])
     
     with tab1:
@@ -605,7 +609,6 @@ elif menu == "👥 Cadastrar Clientes":
                 c_nome = st.text_input("Nome Completo")
                 c_zap = st.text_input("WhatsApp (DDD+Número)")
                 c_obs = st.text_area("Obs. Fixa")
-                
                 if st.form_submit_button("CADASTRAR"):
                     if c_nome:
                         novo_cli = {"Nome": c_nome, "Contato": c_zap, "Observacoes": c_obs}
@@ -613,7 +616,6 @@ elif menu == "👥 Cadastrar Clientes":
                         salvar_clientes(st.session_state.clientes)
                         st.success("Cadastrado!")
                         st.rerun()
-
         st.divider()
         if not st.session_state.clientes.empty:
             cli_editado = st.data_editor(st.session_state.clientes, num_rows="dynamic", use_container_width=True, hide_index=True)
@@ -625,8 +627,11 @@ elif menu == "👥 Cadastrar Clientes":
         st.divider()
         with st.expander("💾 Backup e Restauração (Apenas Clientes)"):
             st.write("### 1. Fazer Backup")
-            csv_cli = st.session_state.clientes.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Baixar Lista de Clientes", data=csv_cli, file_name=f"clientes_caruru_{date.today()}.csv", mime="text/csv")
+            try:
+                csv_cli = st.session_state.clientes.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Baixar Lista de Clientes", data=csv_cli, file_name=f"clientes_caruru_{date.today()}.csv", mime="text/csv")
+            except Exception as e:
+                logging.error(f"Erro backup clientes: {e}")
 
             st.write("### 2. Restaurar")
             arquivo_cli = st.file_uploader("Envie arquivo de clientes", type=["csv"], key="upload_cli")
@@ -640,6 +645,7 @@ elif menu == "👥 Cadastrar Clientes":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
+                        logging.error(f"Erro restaurar clientes: {e}")
     
     with tab2:
         lista_excluir = st.session_state.clientes['Nome'].unique()
@@ -649,3 +655,45 @@ elif menu == "👥 Cadastrar Clientes":
             salvar_clientes(st.session_state.clientes)
             st.success("Excluído!")
             st.rerun()
+
+# =================================================================================
+# NOVA ABA: MANUTENÇÃO / ADMIN
+# =================================================================================
+elif menu == "🛠️ Manutenção/Admin":
+    st.title("🛠️ Painel de Manutenção")
+    st.warning("Área técnica para diagnóstico de erros.")
+    
+    # 1. VISUALIZAR LOGS
+    st.subheader("📄 Logs de Erro do Sistema")
+    if os.path.exists(ARQUIVO_LOG):
+        with open(ARQUIVO_LOG, "r") as f:
+            log_content = f.read()
+        
+        st.text_area("Conteúdo do Log:", log_content, height=300)
+        
+        col_log1, col_log2 = st.columns(2)
+        with col_log1:
+            st.download_button("📥 Baixar Arquivo de Log", log_content, "system_errors.log")
+        with col_log2:
+            if st.button("🗑️ Limpar Arquivo de Log"):
+                open(ARQUIVO_LOG, 'w').close()
+                st.success("Logs limpos!")
+                st.rerun()
+    else:
+        st.info("Nenhum erro registrado até o momento. O sistema está saudável! ✅")
+        
+    st.divider()
+    
+    # 2. STATUS DO SISTEMA
+    st.subheader("📊 Status dos Arquivos")
+    if os.path.exists(ARQUIVO_PEDIDOS):
+        size_ped = os.path.getsize(ARQUIVO_PEDIDOS) / 1024
+        st.write(f"📁 Banco de Pedidos: {size_ped:.2f} KB ({len(st.session_state.pedidos)} registros)")
+    else:
+        st.write("📁 Banco de Pedidos: Não encontrado")
+        
+    if os.path.exists(ARQUIVO_CLIENTES):
+        size_cli = os.path.getsize(ARQUIVO_CLIENTES) / 1024
+        st.write(f"📁 Banco de Clientes: {size_cli:.2f} KB ({len(st.session_state.clientes)} registros)")
+    else:
+        st.write("📁 Banco de Clientes: Não encontrado")
