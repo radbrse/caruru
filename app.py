@@ -20,7 +20,7 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 # Arquivos
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
 ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
-CHAVE_PIX = "79999296722" # <--- SUA CHAVE PIX
+CHAVE_PIX = "79999296722"
 
 # Opções
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
@@ -28,23 +28,16 @@ OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
 # --- FUNÇÕES PDF ---
 def desenhar_cabecalho(p, titulo):
-    # Tenta desenhar a logo
     if os.path.exists("logo.png"):
         try:
-            # x, y, width, height
             p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
-        except Exception as e:
-            logging.error(f"Erro ao desenhar logo: {e}")
-            p.drawString(30, 770, "[LOGO ERRO]")
-    
+        except: pass
     p.setFont("Helvetica-Bold", 16)
     p.drawString(150, 775, "Cantinho do Caruru")
     p.setFont("Helvetica", 10)
     p.drawString(150, 760, "Comprovante de Encomenda")
-    
     p.setFont("Helvetica-Bold", 14)
     p.drawRightString(565, 765, titulo)
-    
     p.setLineWidth(1)
     p.line(30, 740, 565, 740)
 
@@ -52,7 +45,6 @@ def gerar_recibo_pdf(dados):
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
-        
         desenhar_cabecalho(p, f"Pedido #{str(int(dados.name) if isinstance(dados.name, int) else 'UNK')}")
         
         y = 700
@@ -64,13 +56,9 @@ def gerar_recibo_pdf(dados):
         p.drawString(300, y, f"WhatsApp: {dados['Contato']}")
         y -= 20
         
-        # Datas
         data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
-        try:
-            hora_str = str(dados['Hora'])[:5]
-        except:
-            hora_str = "--:--"
-            
+        try: hora_str = str(dados['Hora'])[:5]
+        except: hora_str = "--:--"
         p.drawString(30, y, f"Data de Entrega: {data_str}")
         p.drawString(300, y, f"Horário: {hora_str}")
         
@@ -81,26 +69,22 @@ def gerar_recibo_pdf(dados):
         p.setFont("Helvetica-Bold", 10)
         p.drawString(40, y, "ITEM")
         p.drawString(400, y, "QUANTIDADE")
-        
         y -= 25
         p.setFont("Helvetica", 10)
-        
         if dados['Caruru'] > 0:
             p.drawString(40, y, "Caruru Tradicional (Kg/Unid)")
             p.drawString(400, y, f"{int(dados['Caruru'])}")
             y -= 15
-            
         if dados['Bobo'] > 0:
             p.drawString(40, y, "Bobó de Camarão (Kg/Unid)")
             p.drawString(400, y, f"{int(dados['Bobo'])}")
             y -= 15
-            
         p.line(30, y-5, 565, y-5)
         
         y -= 40
         p.setFont("Helvetica-Bold", 14)
-        rotulo = "TOTAL PAGO" if dados['Pagamento'] == "PAGO" else "VALOR A PAGAR"
-        p.drawString(350, y, f"{rotulo}: R$ {dados['Valor']:.2f}")
+        rotulo_valor = "TOTAL PAGO" if dados['Pagamento'] == "PAGO" else "VALOR A PAGAR"
+        p.drawString(350, y, f"{rotulo_valor}: R$ {dados['Valor']:.2f}")
         
         y -= 25
         p.setFont("Helvetica-Bold", 12)
@@ -140,7 +124,7 @@ def gerar_recibo_pdf(dados):
         buffer.seek(0)
         return buffer
     except Exception as e:
-        logging.error(f"Erro PDF: {e}")
+        logging.error(f"PDF Recibo Erro: {e}")
         return None
 
 def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
@@ -149,7 +133,6 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         p = canvas.Canvas(buffer, pagesize=A4)
         y = 700
         desenhar_cabecalho(p, titulo_relatorio)
-        
         p.setFont("Helvetica-Bold", 10)
         p.drawString(30, y, "Data")
         p.drawString(90, y, "Cliente")
@@ -160,40 +143,33 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         p.drawString(480, y, "Pagto")
         y -= 20
         p.setFont("Helvetica", 9)
-        
         total_valor = 0
         for index, row in df_filtrado.iterrows():
             if y < 50:
                 p.showPage()
                 desenhar_cabecalho(p, titulo_relatorio)
                 y = 700
-            
             data_str = row['Data'].strftime('%d/%m') if hasattr(row['Data'], 'strftime') else str(row['Data'])
-            
             p.drawString(30, y, data_str)
             p.drawString(90, y, str(row['Cliente'])[:20])
             p.drawString(230, y, str(int(row['Caruru'])))
             p.drawString(280, y, str(int(row['Bobo'])))
             p.drawString(330, y, f"R$ {row['Valor']:.2f}")
-            
             status_clean = row['Status'].replace("✅ ", "").replace("🔴 ", "").replace("🟡 ", "").replace("🚫 ", "")
             p.drawString(400, y, status_clean[:12])
             p.drawString(480, y, row['Pagamento'])
-            
             total_valor += row['Valor']
             y -= 15
-            
         p.line(30, y, 565, y)
         y -= 20
         p.setFont("Helvetica-Bold", 11)
         p.drawString(30, y, f"TOTAL GERAL: R$ {total_valor:,.2f}")
-        
         p.showPage()
         p.save()
         buffer.seek(0)
         return buffer
     except Exception as e:
-        logging.error(f"Erro Relatorio: {e}")
+        logging.error(f"PDF Relatorio Erro: {e}")
         return None
 
 # --- CARREGAMENTO ---
@@ -219,6 +195,7 @@ def carregar_pedidos():
             for col in colunas_padrao:
                 if col not in df.columns: df[col] = None
             
+            # Limpezas Seguras
             cols_num = ['Caruru', 'Bobo', 'Desconto', 'Valor']
             for col in cols_num:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
@@ -230,9 +207,7 @@ def carregar_pedidos():
             mapa_status = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
             df['Status'] = df['Status'].replace(mapa_status)
             
-            # BLINDAGEM DE DATA E HORA
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
-            # Se for NaT, vira None (Streamlit exige isso)
             df['Data'] = df['Data'].where(pd.notnull(df['Data']), None)
 
             def limpar_hora_rigoroso(h):
@@ -245,21 +220,27 @@ def carregar_pedidos():
 
             df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
             return df
-        except: return pd.DataFrame(columns=colunas_padrao)
+        except Exception as e:
+            logging.error(f"Erro carregar_pedidos: {e}")
+            return pd.DataFrame(columns=colunas_padrao)
     else: return pd.DataFrame(columns=colunas_padrao)
 
 def salvar_pedidos(df):
-    df.to_csv(ARQUIVO_PEDIDOS, index=False)
+    try: df.to_csv(ARQUIVO_PEDIDOS, index=False)
+    except Exception as e: logging.error(f"Erro salvar pedidos: {e}")
 
 def salvar_clientes(df):
-    df.to_csv(ARQUIVO_CLIENTES, index=False)
+    try: df.to_csv(ARQUIVO_CLIENTES, index=False)
+    except Exception as e: logging.error(f"Erro salvar clientes: {e}")
 
 def calcular_total(caruru, bobo, desconto):
-    preco_base = 70.0
-    total = (caruru * preco_base) + (bobo * preco_base)
-    if desconto > 0:
-        total = total * (1 - (desconto/100))
-    return total
+    try:
+        preco_base = 70.0
+        total = (caruru * preco_base) + (bobo * preco_base)
+        if desconto > 0:
+            total = total * (1 - (desconto/100))
+        return total
+    except: return 0.0
 
 def atualizar_contato_novo_pedido():
     try:
@@ -284,20 +265,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- MENU LATERAL ---
+# --- MENU LATERAL (SEMLOGO CARREGADA TEXTO) ---
 with st.sidebar:
-    # DETECTOR DE LOGO (PARA VOCÊ SABER SE ESTÁ CARREGANDO)
     if os.path.exists("logo.png"):
         st.image("logo.png", width=250)
-        st.success("✅ Logo Carregada")
     else:
         st.title("🦐 Cantinho do Caruru")
-        st.warning("⚠️ Logo não encontrada (Envie logo.png)")
         
     st.divider()
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes", "🛠️ Manutenção"])
     st.divider()
-    st.caption("Sistema Online v6.2")
+    st.caption("Sistema Online v6.3")
 
 # =================================================================================
 # DASHBOARD
@@ -310,7 +288,6 @@ if menu == "Dashboard do Dia":
         data_analise = st.date_input("📅 Data:", date.today(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == data_analise].copy()
         
-        # Ordenação simplificada para evitar erro
         try:
             df_dia['Hora_Temp'] = df_dia['Hora'].apply(lambda x: x if x is not None else time(23,59))
             df_dia = df_dia.sort_values(by="Hora_Temp").drop(columns=['Hora_Temp'])
@@ -326,30 +303,36 @@ if menu == "Dashboard do Dia":
         st.divider()
         st.subheader(f"📋 Entregas")
         if not df_dia.empty:
-            df_baixa = st.data_editor(
-                df_dia,
-                column_order=["Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
-                disabled=["Cliente", "Caruru", "Bobo", "Valor", "Hora"], 
-                hide_index=True, use_container_width=True, key="dash_edit",
-                column_config={
-                    "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
-                    "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
-                    "Hora": st.column_config.TimeColumn(format="HH:mm"),
-                }
-            )
-            if not df_baixa.equals(df_dia):
-                df.update(df_baixa)
-                st.session_state.pedidos = df
-                salvar_pedidos(df)
-                st.toast("Atualizado!", icon="✅")
-                st.rerun()
+            try:
+                df_baixa = st.data_editor(
+                    df_dia,
+                    column_order=["Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
+                    disabled=["Cliente", "Caruru", "Bobo", "Valor", "Hora"], 
+                    hide_index=True, use_container_width=True, key="dash_edit",
+                    column_config={
+                        "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
+                        "Valor": st.column_config.NumberColumn(format="R$ %.2f"),
+                        "Hora": st.column_config.TimeColumn(format="HH:mm"),
+                    }
+                )
+                if not df_baixa.equals(df_dia):
+                    df.update(df_baixa)
+                    st.session_state.pedidos = df
+                    salvar_pedidos(df)
+                    st.toast("Atualizado!", icon="✅")
+                    st.rerun()
+            except Exception as e:
+                st.error("Erro ao exibir tabela. Vá em Manutenção para ver detalhes.")
+                logging.error(f"Erro Dashboard Editor: {e}")
 
 # =================================================================================
-# NOVO PEDIDO
+# NOVO PEDIDO (CORRIGIDO SEM ERRO API)
 # =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
-    lista_cli = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
+    try:
+        lista_cli = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
+    except: lista_cli = []
     
     st.markdown("### 1. Identificação")
     c1, c2 = st.columns([3,1])
@@ -363,8 +346,8 @@ elif menu == "Novo Pedido":
         with c2: dt_ent = st.date_input("Data", min_value=date.today(), format="DD/MM/YYYY")
         
         c3, c4, c5 = st.columns(3)
-        with c3: caruru = st.number_input("Caruru", 0.0, step=1.0)
-        with c4: bobo = st.number_input("Bobó", 0.0, step=1.0)
+        with c3: caruru = st.number_input("Caruru", min_value=0, step=1)
+        with c4: bobo = st.number_input("Bobó", min_value=0, step=1)
         with c5: desc = st.number_input("Desc %", 0, 100)
         
         obs = st.text_area("Obs")
@@ -376,35 +359,40 @@ elif menu == "Novo Pedido":
             cli_final = st.session_state.chave_cliente_selecionado
             if not cli_final: st.error("Selecione um cliente.")
             else:
-                val = calcular_total(caruru, bobo, desc)
-                h_str = hora_ent.strftime("%H:%M")
-                novo = {"Cliente": cli_final, "Caruru": caruru, "Bobo": bobo, "Valor": val, "Data": dt_ent, "Hora": h_str, "Status": status, "Pagamento": pgto, "Contato": cont, "Desconto": desc, "Observacoes": obs}
-                df_novo = pd.DataFrame([novo])
-                df_novo['Data'] = pd.to_datetime(df_novo['Data']).dt.date
-                st.session_state.pedidos = pd.concat([st.session_state.pedidos, df_novo], ignore_index=True)
-                salvar_pedidos(st.session_state.pedidos)
-                st.session_state.pedidos = carregar_pedidos() # Recarrega para limpar tipos
-                st.success("Salvo!")
-                st.session_state['chave_contato_automatico'] = ""
-                tm.sleep(0.5)
-                st.rerun()
+                try:
+                    val = calcular_total(caruru, bobo, desc)
+                    h_str = hora_ent.strftime("%H:%M")
+                    novo = {"Cliente": cli_final, "Caruru": caruru, "Bobo": bobo, "Valor": val, "Data": dt_ent, "Hora": h_str, "Status": status, "Pagamento": pgto, "Contato": cont, "Desconto": desc, "Observacoes": obs}
+                    # Conversão segura para DF
+                    df_novo = pd.DataFrame([novo])
+                    df_novo['Data'] = pd.to_datetime(df_novo['Data']).dt.date
+                    
+                    st.session_state.pedidos = pd.concat([st.session_state.pedidos, df_novo], ignore_index=True)
+                    salvar_pedidos(st.session_state.pedidos)
+                    st.success("Salvo!")
+                    
+                    # CORREÇÃO DO ERRO DE API:
+                    # Não limpamos o session_state manualmente aqui para evitar conflito.
+                    # O st.rerun() recarrega a página e o formulário limpa sozinho (clear_on_submit=True)
+                    tm.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error("Erro ao salvar.")
+                    logging.error(f"Erro Salvar Pedido: {e}")
 
 # =================================================================================
-# GERENCIAR TUDO (CORRIGIDO)
+# GERENCIAR TUDO
 # =================================================================================
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     df = st.session_state.pedidos
     
     if not df.empty:
-        # Ordenação Segura
         try:
             df['Hora_Temp'] = df['Hora'].apply(lambda x: x if x is not None else time(0,0))
             df = df.sort_values(by=["Data", "Hora_Temp"], ascending=[True, True]).drop(columns=['Hora_Temp'])
-        except:
-            df = df.sort_values(by="Data")
+        except: df = df.sort_values(by="Data")
         
-        # --- TABELA BLINDADA ---
         try:
             df_editado = st.data_editor(
                 df,
@@ -413,7 +401,7 @@ elif menu == "Gerenciar Tudo":
                 column_config={
                     "Valor": st.column_config.NumberColumn("Total", format="R$ %.2f", disabled=True),
                     "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                    "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"), # Se tiver string aqui, crasha. O carregar_dados já limpou.
+                    "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                     "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
                     "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
                     "Caruru": st.column_config.NumberColumn(format="%d"),
@@ -430,11 +418,9 @@ elif menu == "Gerenciar Tudo":
                 st.toast("Salvo!", icon="💾")
                 st.rerun()
         except Exception as e:
-            st.error("Erro ao exibir a tabela. Possível erro de formato de data/hora nos dados antigos.")
-            st.warning("Vá na aba Manutenção e baixe os logs para análise.")
-            logging.error(f"Erro DataEditor: {e}")
-
-        # ZAP
+            st.error(f"Erro na tabela: {e}")
+            logging.error(f"Erro Table Editor: {e}")
+            
         st.divider()
         st.subheader("💬 Zap")
         try:
@@ -446,15 +432,35 @@ elif menu == "Gerenciar Tudo":
                 dt = d['Data'].strftime('%d/%m') if hasattr(d['Data'], 'strftime') else str(d['Data'])
                 try: hr = d['Hora'].strftime('%H:%M')
                 except: hr = str(d['Hora'])
+                
                 msg = f"Olá {sel}, pedido confirmado!\n🗓 {dt} às {hr}\n📦 {int(d['Caruru'])} Caruru, {int(d['Bobo'])} Bobó\n💰 R$ {d['Valor']:.2f}"
                 if d['Pagamento'] in ["NÃO PAGO", "METADE"]: msg += f"\n🔑 Pix: {CHAVE_PIX}"
+                
                 lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20').replace(chr(10), '%0A')}"
                 st.link_button("Enviar Zap", lnk)
         except: pass
+        
+    st.divider()
+    with st.expander("💾 Backup & Restauração"):
+        try:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                zip_file.writestr("pedidos.csv", df.to_csv(index=False))
+                zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
+            st.download_button("📥 Baixar Tudo (ZIP)", zip_buffer.getvalue(), f"backup_{date.today()}.zip", "application/zip")
+        except: st.error("Erro ao gerar backup.")
+        
+        up = st.file_uploader("Restaurar PEDIDOS (CSV):", type=["csv"])
+        if up and st.button("🚨 Restaurar"):
+            try:
+                df_new = pd.read_csv(up)
+                salvar_pedidos(df_new)
+                st.session_state.pedidos = carregar_pedidos()
+                st.success("Restaurado!")
+                st.rerun()
+            except: st.error("Erro.")
 
-# =================================================================================
-# RELATÓRIOS
-# =================================================================================
+# --- RECIBOS ---
 elif menu == "🖨️ Relatórios & Recibos":
     st.title("🖨️ Impressão")
     t1, t2 = st.tabs(["Recibo", "Relatório"])
@@ -471,6 +477,7 @@ elif menu == "🖨️ Relatórios & Recibos":
                 if st.button("Gerar Recibo"):
                     pdf = gerar_recibo_pdf(ped_cli.loc[id_p])
                     if pdf: st.download_button("Baixar PDF", pdf, f"Recibo_{cli}.pdf", "application/pdf")
+                    else: st.error("Erro no PDF.")
     
     with t2:
         tipo = st.radio("Tipo:", ["Dia", "Geral"])
@@ -481,14 +488,13 @@ elif menu == "🖨️ Relatórios & Recibos":
         else:
             df_rel = df
             tit = "Geral"
+        
         if not df_rel.empty:
             if st.button("Gerar Relatório"):
                 pdf = gerar_relatorio_pdf(df_rel, tit)
                 if pdf: st.download_button("Baixar Relatório", pdf, "relatorio.pdf", "application/pdf")
 
-# =================================================================================
-# CLIENTES
-# =================================================================================
+# --- CLIENTES ---
 elif menu == "👥 Cadastrar Clientes":
     st.title("👥 Clientes")
     t1, t2 = st.tabs(["Novo", "Excluir"])
@@ -503,26 +509,25 @@ elif menu == "👥 Cadastrar Clientes":
                 salvar_clientes(st.session_state.clientes)
                 st.success("Ok!")
                 st.rerun()
+        
         if not st.session_state.clientes.empty:
             df_c = st.data_editor(st.session_state.clientes, num_rows="dynamic", use_container_width=True, hide_index=True)
             if not df_c.equals(st.session_state.clientes):
                 st.session_state.clientes = df_c
                 salvar_clientes(df_c)
+    
     with t2:
         l_exc = st.session_state.clientes['Nome'].unique()
         exc = st.selectbox("Excluir:", l_exc)
-        if st.button("Confirmar"):
+        if st.button("Confirmar Exclusão"):
             st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != exc]
             salvar_clientes(st.session_state.clientes)
             st.rerun()
 
-# =================================================================================
-# MANUTENÇÃO
-# =================================================================================
+# --- MANUTENÇÃO ---
 elif menu == "🛠️ Manutenção":
     st.title("🛠️ Admin")
-    
-    st.subheader("Logs de Erro")
+    st.write("Logs de Erro:")
     if os.path.exists(ARQUIVO_LOG):
         with open(ARQUIVO_LOG, "r") as f: log = f.read()
         st.text_area("Log", log, height=200)
@@ -530,30 +535,4 @@ elif menu == "🛠️ Manutenção":
         if st.button("Limpar Log"):
             open(ARQUIVO_LOG, 'w').close()
             st.rerun()
-    else: st.success("Sistema OK.")
-    
-    st.divider()
-    st.subheader("Backup & Restauração")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("📦 **Backup Geral**")
-        try:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                zip_file.writestr("pedidos.csv", df.to_csv(index=False))
-                zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
-            st.download_button("📥 Baixar Tudo (ZIP)", zip_buffer.getvalue(), f"backup_{date.today()}.zip", "application/zip")
-        except: st.error("Erro ao gerar backup.")
-        
-    with col2:
-        st.write("⚠️ **Restaurar Pedidos**")
-        up = st.file_uploader("Arquivo CSV:", type=["csv"])
-        if up and st.button("🚨 Restaurar"):
-            try:
-                df_new = pd.read_csv(up)
-                salvar_pedidos(df_new)
-                st.session_state.pedidos = carregar_pedidos()
-                st.success("Restaurado!")
-                st.rerun()
-            except: st.error("Erro.")
+    else: st.success("Sistema saudável.")
