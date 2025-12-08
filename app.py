@@ -88,24 +88,6 @@ def calcular_total(caruru, bobo, desconto):
         total = total * (1 - (desconto/100))
     return total
 
-# --- LÓGICA DE ATUALIZAÇÃO AUTOMÁTICA DO CONTATO ---
-def atualizar_contato_novo_pedido():
-    # Pega o cliente selecionado no session_state
-    cliente_atual = st.session_state.get('chave_cliente_selecionado')
-    
-    if cliente_atual:
-        # Busca na tabela de clientes
-        df_cli = st.session_state.clientes
-        busca = df_cli[df_cli['Nome'] == cliente_atual]
-        
-        if not busca.empty:
-            # Atualiza o campo de contato automaticamente
-            st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
-        else:
-            st.session_state['chave_contato_automatico'] = ""
-    else:
-        st.session_state['chave_contato_automatico'] = ""
-
 # Inicializa Sessão
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_pedidos()
@@ -125,7 +107,7 @@ with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "👥 Cadastrar Clientes", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v4.1")
+    st.caption("Sistema Online v4.2")
 
 # =================================================================================
 # PÁGINA: CADASTRAR CLIENTES
@@ -156,7 +138,6 @@ if menu == "👥 Cadastrar Clientes":
 
         st.divider()
         st.subheader("📝 Editar Lista de Clientes")
-        st.caption("Edite os dados diretamente na tabela abaixo. As alterações são salvas automaticamente.")
         
         if not st.session_state.clientes.empty:
             cli_editado = st.data_editor(
@@ -178,8 +159,6 @@ if menu == "👥 Cadastrar Clientes":
     
     with tab2:
         st.subheader("🗑️ Excluir Clientes")
-        st.warning("Cuidado: A exclusão é permanente.")
-        
         clientes_para_excluir = st.selectbox("Selecione o cliente para excluir:", st.session_state.clientes['Nome'].unique())
         
         if st.button("CONFIRMAR EXCLUSÃO"):
@@ -243,9 +222,11 @@ elif menu == "Dashboard do Dia":
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
                 
+    # --- ÁREA DE SEGURANÇA (BACKUP E RESTAURAR) ---
     st.divider()
-    with st.expander("💾 Área de Segurança (Backup Completo)"):
-        st.write("Baixe todos os dados (Pedidos + Clientes).")
+    with st.expander("💾 Segurança (Backup & Restaurar)"):
+        st.write("### 1. Fazer Backup")
+        # Cria ZIP na memória
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             zip_file.writestr("pedidos.csv", df.to_csv(index=False))
@@ -257,9 +238,24 @@ elif menu == "Dashboard do Dia":
             file_name=f"backup_caruru_geral_{date.today()}.zip",
             mime="application/zip",
         )
+        
+        st.write("### 2. Restaurar Backup")
+        st.caption("Envie o arquivo CSV de PEDIDOS para restaurar.")
+        arquivo_upload = st.file_uploader("Restaurar PEDIDOS (banco_de_dados_caruru.csv)", type=["csv"])
+        
+        if arquivo_upload is not None:
+            if st.button("🚨 CONFIRMAR RESTAURAÇÃO DE PEDIDOS"):
+                try:
+                    df_novo = pd.read_csv(arquivo_upload)
+                    salvar_pedidos(df_novo)
+                    st.session_state.pedidos = carregar_pedidos()
+                    st.success("Pedidos restaurados! O sistema irá recarregar.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
 # =================================================================================
-# PÁGINA: NOVO PEDIDO (CORRIGIDO)
+# PÁGINA: NOVO PEDIDO (CORRIGIDO - SEM ON_CHANGE DENTRO DO FORM)
 # =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
@@ -267,26 +263,33 @@ elif menu == "Novo Pedido":
     lista_clientes = st.session_state.clientes['Nome'].tolist()
     lista_clientes.sort()
     
-    # Formulário sem clear_on_submit para não limpar o contato antes de salvar
-    with st.form("form_pedido", clear_on_submit=True): 
-        col_nome, col_hora = st.columns([3, 1])
-        
-        with col_nome:
-            # O Segredo: on_change chama a função que atualiza o contato
-            nome_selecionado = st.selectbox(
-                "Selecione o Cliente", 
-                options=[""] + lista_clientes,
-                key="chave_cliente_selecionado",
-                on_change=atualizar_contato_novo_pedido
-            )
-        
-        with col_hora:
-            hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
+    # 1. SELEÇÃO DE CLIENTE (FORA DO FORMULÁRIO PARA FUNCIONAR O PREENCHIMENTO)
+    st.subheader("1. Identificação")
+    col_sel, col_hora_sel = st.columns([3, 1])
+    
+    with col_sel:
+        nome_selecionado = st.selectbox("Selecione o Cliente", options=[""] + lista_clientes)
+    
+    with col_hora_sel:
+        hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
+    
+    # Busca contato automático
+    contato_inicial = ""
+    obs_inicial = ""
+    if nome_selecionado:
+        filtro = st.session_state.clientes[st.session_state.clientes['Nome'] == nome_selecionado]
+        if not filtro.empty:
+            contato_inicial = filtro.iloc[0]['Contato']
+            obs_inicial = filtro.iloc[0]['Observacoes'] # Puxa obs fixa se tiver
+    
+    # 2. FORMULÁRIO DE PEDIDO (DENTRO DA CAIXA)
+    st.subheader("2. Detalhes do Pedido")
+    with st.form("form_pedido", clear_on_submit=False): 
         
         col_contato, col_data = st.columns(2)
         with col_contato:
-            # O valor vem do session_state atualizado pela função
-            contato = st.text_input("WhatsApp", key="chave_contato_automatico")
+            # O valor vem preenchido da seleção acima
+            contato = st.text_input("WhatsApp", value=contato_inicial)
         with col_data:
             data_entrega = st.date_input("Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
             
@@ -298,7 +301,7 @@ elif menu == "Novo Pedido":
         with col_desc:
             desconto = st.number_input("Desc %", 0, 100)
             
-        obs = st.text_area("Observações do Pedido")
+        obs = st.text_area("Observações do Pedido", value=obs_inicial)
             
         col_pag, col_st = st.columns(2)
         with col_pag:
@@ -306,11 +309,11 @@ elif menu == "Novo Pedido":
         with col_st:
             status = st.selectbox("Status", OPCOES_STATUS, index=0)
             
-        submitted = st.form_submit_button("SALVAR PEDIDO")
+        submitted = st.form_submit_button("💾 SALVAR PEDIDO")
         
         if submitted:
             if not nome_selecionado:
-                st.error("Por favor, selecione um cliente.")
+                st.error("Erro: Selecione um cliente na lista acima antes de salvar.")
             else:
                 valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
                 hora_str = hora_entrega.strftime("%H:%M")
@@ -325,10 +328,7 @@ elif menu == "Novo Pedido":
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
                 salvar_pedidos(st.session_state.pedidos)
                 
-                st.success(f"Pedido de {nome_selecionado} Salvo!")
-                # Atualiza para limpar campos
-                st.session_state.pop('chave_contato_automatico', None)
-                st.rerun()
+                st.success(f"Pedido de {nome_selecionado} Salvo com Sucesso!")
 
 # =================================================================================
 # PÁGINA: GERENCIAR TUDO
@@ -379,6 +379,7 @@ elif menu == "Gerenciar Tudo":
         if sel_cli:
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
+            
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
             try:
                 hora_str = dados['Hora'].strftime('%H:%M')
