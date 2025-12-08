@@ -15,73 +15,136 @@ st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wi
 # Arquivos
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
 ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
-CHAVE_PIX = "seu-pix-aqui"
+
+# --- ATUALIZAÇÃO DO PIX ---
+CHAVE_PIX = "79999296722"
 
 # Opções
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
-# --- FUNÇÕES DE PDF (NOVO!) ---
+# --- FUNÇÕES DE PDF (RECIBO ATUALIZADO) ---
 def desenhar_cabecalho(p, titulo):
-    # Desenha Logo se existir
+    # LOGO NO RECIBO
     if os.path.exists("logo.png"):
         try:
-            p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto')
+            # Posição X, Y, Largura, Altura
+            p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
         except:
             pass
+    
     p.setFont("Helvetica-Bold", 16)
-    p.drawString(150, 770, "Cantinho do Caruru - Sistema de Gestão")
-    p.setFont("Helvetica", 12)
-    p.drawString(150, 755, titulo)
+    p.drawString(150, 775, "Cantinho do Caruru")
+    p.setFont("Helvetica", 10)
+    p.drawString(150, 760, "Comprovante de Encomenda")
+    
+    p.setFont("Helvetica-Bold", 14)
+    p.drawRightString(565, 765, titulo) # Título alinhado à direita
+    
+    p.setLineWidth(1)
     p.line(30, 740, 565, 740) # Linha horizontal
 
 def gerar_recibo_pdf(dados):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     
-    desenhar_cabecalho(p, "RECIBO DE ENCOMENDA")
+    desenhar_cabecalho(p, f"Pedido #{str(int(dados.name) if isinstance(dados.name, int) else 'UNK')}")
     
-    # Dados do Cliente
+    # --- DADOS DO CLIENTE ---
+    y = 700
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(30, 700, f"Cliente: {dados['Cliente']}")
+    p.drawString(30, y, "DADOS DO CLIENTE")
+    y -= 20
     p.setFont("Helvetica", 12)
-    p.drawString(30, 680, f"Data da Entrega: {dados['Data'].strftime('%d/%m/%Y')} às {str(dados['Hora'])[:5]}")
-    p.drawString(30, 660, f"WhatsApp: {dados['Contato']}")
+    p.drawString(30, y, f"Nome: {dados['Cliente']}")
+    p.drawString(300, y, f"WhatsApp: {dados['Contato']}")
+    y -= 20
     
-    # Caixa do Pedido
-    p.rect(30, 550, 535, 90, fill=0)
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(40, 620, "Item")
-    p.drawString(400, 620, "Quantidade")
+    # Formata data e hora
+    data_str = dados['Data'].strftime('%d/%m/%Y')
+    try:
+        hora_str = str(dados['Hora'])[:5]
+    except:
+        hora_str = "--:--"
+        
+    p.drawString(30, y, f"Data de Entrega: {data_str}")
+    p.drawString(300, y, f"Horário: {hora_str}")
     
-    p.setFont("Helvetica", 12)
-    p.drawString(40, 595, "Caruru Tradicional")
-    p.drawString(400, 595, f"{int(dados['Caruru'])} unidades")
+    # --- CAIXA DO PEDIDO ---
+    y -= 40
+    p.setFillColor(colors.lightgrey)
+    p.rect(30, y-5, 535, 20, fill=1, stroke=0) # Fundo cinza cabeçalho
+    p.setFillColor(colors.black)
+    p.setFont("Helvetica-Bold", 10)
+    p.drawString(40, y, "ITEM")
+    p.drawString(400, y, "QUANTIDADE")
+    p.drawString(480, y, "TOTAL")
     
-    p.drawString(40, 575, "Bobó de Camarão")
-    p.drawString(400, 575, f"{int(dados['Bobo'])} unidades")
+    y -= 25
+    p.setFont("Helvetica", 10)
     
-    # Totais
+    # Item 1: Caruru
+    if dados['Caruru'] > 0:
+        p.drawString(40, y, "Caruru Tradicional (Kg/Unid)")
+        p.drawString(400, y, f"{int(dados['Caruru'])}")
+        y -= 15
+        
+    # Item 2: Bobó
+    if dados['Bobo'] > 0:
+        p.drawString(40, y, "Bobó de Camarão (Kg/Unid)")
+        p.drawString(400, y, f"{int(dados['Bobo'])}")
+        y -= 15
+        
+    p.line(30, y-5, 565, y-5) # Linha fim itens
+    
+    # --- TOTAIS E STATUS ---
+    y -= 40
     p.setFont("Helvetica-Bold", 14)
-    p.drawString(350, 520, f"Total a Pagar: R$ {dados['Valor']:.2f}")
     
-    # Status Pagamento
-    p.setFont("Helvetica", 12)
+    # LÓGICA INTELIGENTE DO RÓTULO
+    rotulo_valor = "TOTAL PAGO" if dados['Pagamento'] == "PAGO" else "VALOR A PAGAR"
+    
+    p.drawString(350, y, f"{rotulo_valor}: R$ {dados['Valor']:.2f}")
+    
+    # Status Pagamento Visual
+    y -= 25
+    p.setFont("Helvetica-Bold", 12)
     if dados['Pagamento'] == "PAGO":
         p.setFillColor(colors.green)
-        p.drawString(30, 520, "STATUS: PAGO ✅")
+        p.drawString(30, y+25, "SITUAÇÃO: PAGO ✅")
+    elif dados['Pagamento'] == "METADE":
+        p.setFillColor(colors.orange)
+        p.drawString(30, y+25, "SITUAÇÃO: PARCIAL (50%) ⚠️")
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica", 10)
+        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
     else:
         p.setFillColor(colors.red)
-        p.drawString(30, 520, f"STATUS: {dados['Pagamento']}")
+        p.drawString(30, y+25, "SITUAÇÃO: NÃO PAGO ❌")
         p.setFillColor(colors.black)
-        p.drawString(30, 490, f"Chave PIX: {CHAVE_PIX}")
+        p.setFont("Helvetica", 10)
+        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
     
+    # Observações
     p.setFillColor(colors.black)
-    p.setFont("Helvetica-Oblique", 10)
-    p.drawString(30, 450, f"Observações: {dados['Observacoes']}")
+    if dados['Observacoes'] and dados['Observacoes'] != "nan":
+        y -= 30
+        p.setFont("Helvetica-Oblique", 10)
+        p.drawString(30, y, f"Obs: {dados['Observacoes']}")
+    
+    # --- ÁREA DE ASSINATURA (NOVA) ---
+    y_ass = 150 # Posição fixa no fim da página
+    p.setLineWidth(1)
+    p.line(150, y_ass, 450, y_ass) # Linha da assinatura
     
     p.setFont("Helvetica", 10)
-    p.drawString(200, 100, "Obrigado pela preferência!")
+    p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
+    
+    # Data de Emissão (Data de Hoje)
+    data_hoje = datetime.now().strftime('%d/%m/%Y')
+    p.setFont("Helvetica-Oblique", 8)
+    p.drawCentredString(300, y_ass - 30, f"Recibo emitido em: {data_hoje}")
+    
     p.showPage()
     p.save()
     buffer.seek(0)
@@ -95,7 +158,6 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
     desenhar_cabecalho(p, titulo_relatorio)
     
     p.setFont("Helvetica-Bold", 10)
-    # Cabeçalhos da Tabela
     p.drawString(30, y, "Data")
     p.drawString(90, y, "Cliente")
     p.drawString(230, y, "Caruru")
@@ -111,7 +173,7 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
     total_caruru = 0
     
     for index, row in df_filtrado.iterrows():
-        if y < 50: # Nova página se acabar espaço
+        if y < 50:
             p.showPage()
             desenhar_cabecalho(p, titulo_relatorio)
             y = 700
@@ -119,12 +181,11 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         data_str = row['Data'].strftime('%d/%m') if hasattr(row['Data'], 'strftime') else str(row['Data'])
         
         p.drawString(30, y, data_str)
-        p.drawString(90, y, str(row['Cliente'])[:20]) # Corta nome longo
+        p.drawString(90, y, str(row['Cliente'])[:20])
         p.drawString(230, y, str(int(row['Caruru'])))
         p.drawString(280, y, str(int(row['Bobo'])))
         p.drawString(330, y, f"R$ {row['Valor']:.2f}")
         
-        # Limpa emoji do status para o PDF não quebrar (PDF simples não aceita emoji fácil)
         status_clean = row['Status'].replace("✅ ", "").replace("🔴 ", "").replace("🟡 ", "").replace("🚫 ", "")
         p.drawString(400, y, status_clean[:12])
         p.drawString(480, y, row['Pagamento'])
@@ -133,19 +194,17 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         total_caruru += row['Caruru']
         y -= 15
         
-    # Totais Finais
     p.line(30, y, 565, y)
     y -= 20
     p.setFont("Helvetica-Bold", 11)
     p.drawString(30, y, f"TOTAL GERAL: R$ {total_valor:,.2f}")
-    p.drawString(230, y, f"Total Caruru: {int(total_caruru)}")
     
     p.showPage()
     p.save()
     buffer.seek(0)
     return buffer
 
-# --- FUNÇÕES DE DADOS ---
+# --- CARREGAMENTO E DADOS ---
 def carregar_clientes():
     colunas = ["Nome", "Contato", "Observacoes"]
     if os.path.exists(ARQUIVO_CLIENTES):
@@ -250,13 +309,12 @@ with st.sidebar:
         st.title("🦐 Cantinho do Caruru")
         
     st.divider()
-    # NOVA OPÇÃO NO MENU: RELATÓRIOS
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes"])
     st.divider()
-    st.caption("Sistema Online v5.0 (PDFs)")
+    st.caption("Sistema Online v5.1")
 
 # =================================================================================
-# PÁGINA: DASHBOARD
+# DASHBOARD
 # =================================================================================
 if menu == "Dashboard do Dia":
     st.title("🚚 Expedição do Dia")
@@ -310,7 +368,7 @@ if menu == "Dashboard do Dia":
                 st.rerun()
 
 # =================================================================================
-# PÁGINA: NOVO PEDIDO
+# NOVO PEDIDO
 # =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
@@ -373,7 +431,6 @@ elif menu == "Novo Pedido":
                     "Desconto": desconto, "Observacoes": obs
                 }
                 novo_df = pd.DataFrame([novo])
-                # Correção de Data
                 novo_df['Data'] = pd.to_datetime(novo_df['Data']).dt.date
                 
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
@@ -384,7 +441,7 @@ elif menu == "Novo Pedido":
                 st.rerun()
 
 # =================================================================================
-# PÁGINA: GERENCIAR TUDO
+# GERENCIAR TUDO
 # =================================================================================
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
@@ -455,7 +512,6 @@ elif menu == "Gerenciar Tudo":
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             zip_file.writestr("pedidos.csv", df.to_csv(index=False))
             zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
-        
         st.download_button("📥 Baixar Backup Geral (.zip)", data=zip_buffer.getvalue(), file_name=f"backup_caruru_geral_{date.today()}.zip", mime="application/zip")
         
         st.write("### 2. Restaurar Pedidos")
@@ -472,7 +528,7 @@ elif menu == "Gerenciar Tudo":
                     st.error(f"Erro: {e}")
 
 # =================================================================================
-# PÁGINA: RELATÓRIOS E RECIBOS (NOVA!)
+# RELATÓRIOS E RECIBOS
 # =================================================================================
 elif menu == "🖨️ Relatórios & Recibos":
     st.title("🖨️ Central de Impressão")
@@ -486,21 +542,18 @@ elif menu == "🖨️ Relatórios & Recibos":
         if df.empty:
             st.warning("Sem pedidos.")
         else:
-            # Seleção de cliente e data para achar o pedido
             clientes_disp = sorted(df['Cliente'].unique())
-            cli_recibo = st.selectbox("Selecione o Cliente para o Recibo:", clientes_disp)
+            cli_recibo = st.selectbox("Selecione o Cliente:", clientes_disp)
             
-            # Filtra pedidos desse cliente
             pedidos_cli = df[df['Cliente'] == cli_recibo].sort_values(by="Data", ascending=False)
             
             if not pedidos_cli.empty:
-                # Cria lista de opções legíveis: "Data - Valor"
                 opcoes_pedidos = {
                     i: f"{p['Data'].strftime('%d/%m/%Y')} - R$ {p['Valor']:.2f} ({p['Status']})" 
                     for i, p in pedidos_cli.iterrows()
                 }
                 
-                id_pedido = st.selectbox("Selecione o Pedido:", options=opcoes_pedidos.keys(), format_func=lambda x: opcoes_pedidos[x])
+                id_pedido = st.selectbox("Pedido:", options=opcoes_pedidos.keys(), format_func=lambda x: opcoes_pedidos[x])
                 
                 if st.button("📄 Gerar PDF do Recibo"):
                     dados_pedido = pedidos_cli.loc[id_pedido]
@@ -516,8 +569,7 @@ elif menu == "🖨️ Relatórios & Recibos":
 
     with tab_relatorio:
         st.subheader("Relatórios Gerenciais")
-        
-        tipo_relatorio = st.radio("Tipo de Relatório:", ["Entregas do Dia", "Todos os Pedidos"])
+        tipo_relatorio = st.radio("Tipo:", ["Entregas do Dia", "Todos os Pedidos"])
         
         if tipo_relatorio == "Entregas do Dia":
             data_rel = st.date_input("Selecione o dia:", date.today(), format="DD/MM/YYYY")
@@ -527,7 +579,7 @@ elif menu == "🖨️ Relatórios & Recibos":
             df_rel = df
             titulo = "Relatório Geral de Vendas"
             
-        st.write(f"Total de registros encontrados: {len(df_rel)}")
+        st.write(f"Total: {len(df_rel)} registros")
         
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório PDF"):
@@ -540,7 +592,7 @@ elif menu == "🖨️ Relatórios & Recibos":
                 )
 
 # =================================================================================
-# PÁGINA: CADASTRAR CLIENTES
+# CLIENTES
 # =================================================================================
 elif menu == "👥 Cadastrar Clientes":
     st.title("👥 Base de Clientes")
