@@ -88,6 +88,24 @@ def calcular_total(caruru, bobo, desconto):
         total = total * (1 - (desconto/100))
     return total
 
+# --- LÓGICA DE ATUALIZAÇÃO AUTOMÁTICA DO CONTATO ---
+def atualizar_contato_novo_pedido():
+    # Pega o cliente selecionado no session_state
+    cliente_atual = st.session_state.get('chave_cliente_selecionado')
+    
+    if cliente_atual:
+        # Busca na tabela de clientes
+        df_cli = st.session_state.clientes
+        busca = df_cli[df_cli['Nome'] == cliente_atual]
+        
+        if not busca.empty:
+            # Atualiza o campo de contato automaticamente
+            st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
+        else:
+            st.session_state['chave_contato_automatico'] = ""
+    else:
+        st.session_state['chave_contato_automatico'] = ""
+
 # Inicializa Sessão
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_pedidos()
@@ -107,53 +125,69 @@ with st.sidebar:
     st.title("🦐 Menu")
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "👥 Cadastrar Clientes", "Gerenciar Tudo"])
     st.divider()
-    st.caption("Sistema Online v4.0 (Clientes)")
+    st.caption("Sistema Online v4.1")
 
 # =================================================================================
-# PÁGINA: CADASTRAR CLIENTES (NOVA)
+# PÁGINA: CADASTRAR CLIENTES
 # =================================================================================
 if menu == "👥 Cadastrar Clientes":
     st.title("👥 Base de Clientes")
     
-    with st.expander("➕ Adicionar Novo Cliente", expanded=True):
-        with st.form("form_cliente", clear_on_submit=True):
-            c_nome = st.text_input("Nome Completo")
-            c_zap = st.text_input("WhatsApp (DDD+Número)")
-            c_obs = st.text_area("Obs. Fixa (Ex: Não gosta de coentro)")
-            
-            sub_cli = st.form_submit_button("CADASTRAR CLIENTE")
-            
-            if sub_cli and c_nome:
-                # Verifica se já existe
-                if c_nome in st.session_state.clientes['Nome'].values:
-                    st.warning("Este nome já existe no cadastro!")
-                else:
-                    novo_cli = {"Nome": c_nome, "Contato": c_zap, "Observacoes": c_obs}
-                    st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame([novo_cli])], ignore_index=True)
-                    salvar_clientes(st.session_state.clientes)
-                    st.success(f"Cliente {c_nome} cadastrado!")
-                    st.rerun()
-
-    st.divider()
-    st.subheader("Lista de Clientes")
+    tab1, tab2 = st.tabs(["➕ Novo / Editar", "🗑️ Excluir"])
     
-    if not st.session_state.clientes.empty:
-        # Tabela editável de clientes
-        cli_editado = st.data_editor(
-            st.session_state.clientes,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Nome": st.column_config.TextColumn("Nome", disabled=False),
-                "Contato": st.column_config.TextColumn("WhatsApp"),
-            },
-            hide_index=True
-        )
+    with tab1:
+        with st.expander("➕ Adicionar Novo Cliente", expanded=True):
+            with st.form("form_cliente", clear_on_submit=True):
+                c_nome = st.text_input("Nome Completo")
+                c_zap = st.text_input("WhatsApp (DDD+Número)")
+                c_obs = st.text_area("Obs. Fixa (Ex: Não gosta de coentro)")
+                
+                sub_cli = st.form_submit_button("CADASTRAR CLIENTE")
+                
+                if sub_cli and c_nome:
+                    if c_nome in st.session_state.clientes['Nome'].values:
+                        st.warning("Este nome já existe no cadastro!")
+                    else:
+                        novo_cli = {"Nome": c_nome, "Contato": c_zap, "Observacoes": c_obs}
+                        st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame([novo_cli])], ignore_index=True)
+                        salvar_clientes(st.session_state.clientes)
+                        st.success(f"Cliente {c_nome} cadastrado!")
+                        st.rerun()
+
+        st.divider()
+        st.subheader("📝 Editar Lista de Clientes")
+        st.caption("Edite os dados diretamente na tabela abaixo. As alterações são salvas automaticamente.")
         
-        if not cli_editado.equals(st.session_state.clientes):
-            st.session_state.clientes = cli_editado
-            salvar_clientes(cli_editado)
-            st.toast("Lista de clientes atualizada!", icon="💾")
+        if not st.session_state.clientes.empty:
+            cli_editado = st.data_editor(
+                st.session_state.clientes,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Nome": st.column_config.TextColumn("Nome", disabled=False),
+                    "Contato": st.column_config.TextColumn("WhatsApp"),
+                    "Observacoes": st.column_config.TextColumn("Obs"),
+                },
+                hide_index=True
+            )
+            
+            if not cli_editado.equals(st.session_state.clientes):
+                st.session_state.clientes = cli_editado
+                salvar_clientes(cli_editado)
+                st.toast("Lista de clientes atualizada!", icon="💾")
+    
+    with tab2:
+        st.subheader("🗑️ Excluir Clientes")
+        st.warning("Cuidado: A exclusão é permanente.")
+        
+        clientes_para_excluir = st.selectbox("Selecione o cliente para excluir:", st.session_state.clientes['Nome'].unique())
+        
+        if st.button("CONFIRMAR EXCLUSÃO"):
+            if clientes_para_excluir:
+                st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != clientes_para_excluir]
+                salvar_clientes(st.session_state.clientes)
+                st.success(f"Cliente {clientes_para_excluir} removido com sucesso!")
+                st.rerun()
 
 # =================================================================================
 # PÁGINA: DASHBOARD
@@ -209,12 +243,9 @@ elif menu == "Dashboard do Dia":
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
                 
-    # --- ÁREA DE SEGURANÇA (ZIP) ---
     st.divider()
     with st.expander("💾 Área de Segurança (Backup Completo)"):
         st.write("Baixe todos os dados (Pedidos + Clientes).")
-        
-        # Cria ZIP na memória
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             zip_file.writestr("pedidos.csv", df.to_csv(index=False))
@@ -228,38 +259,34 @@ elif menu == "Dashboard do Dia":
         )
 
 # =================================================================================
-# PÁGINA: NOVO PEDIDO (INTEGRADO COM CLIENTES)
+# PÁGINA: NOVO PEDIDO (CORRIGIDO)
 # =================================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    # Lista de clientes cadastrados
     lista_clientes = st.session_state.clientes['Nome'].tolist()
     lista_clientes.sort()
-    # Adiciona opção vazia no início
-    lista_clientes.insert(0, "")
     
-    with st.form("form_pedido", clear_on_submit=False): # False para manter o contato preenchido visualmente
+    # Formulário sem clear_on_submit para não limpar o contato antes de salvar
+    with st.form("form_pedido", clear_on_submit=True): 
         col_nome, col_hora = st.columns([3, 1])
         
         with col_nome:
-            # SELECTBOX DE CLIENTES
-            nome_selecionado = st.selectbox("Selecione o Cliente", lista_clientes)
+            # O Segredo: on_change chama a função que atualiza o contato
+            nome_selecionado = st.selectbox(
+                "Selecione o Cliente", 
+                options=[""] + lista_clientes,
+                key="chave_cliente_selecionado",
+                on_change=atualizar_contato_novo_pedido
+            )
         
         with col_hora:
             hora_entrega = st.time_input("Hora Retirada", value=time(12, 0))
         
-        # Busca o contato automático se tiver cliente selecionado
-        contato_auto = ""
-        if nome_selecionado:
-            filtro = st.session_state.clientes[st.session_state.clientes['Nome'] == nome_selecionado]
-            if not filtro.empty:
-                contato_auto = filtro.iloc[0]['Contato']
-        
         col_contato, col_data = st.columns(2)
         with col_contato:
-            # Preenche automático, mas permite editar
-            contato = st.text_input("WhatsApp", value=contato_auto)
+            # O valor vem do session_state atualizado pela função
+            contato = st.text_input("WhatsApp", key="chave_contato_automatico")
         with col_data:
             data_entrega = st.date_input("Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
             
@@ -283,7 +310,7 @@ elif menu == "Novo Pedido":
         
         if submitted:
             if not nome_selecionado:
-                st.error("Por favor, selecione um cliente (ou cadastre um novo na aba Clientes).")
+                st.error("Por favor, selecione um cliente.")
             else:
                 valor = calcular_total(qtd_caruru, qtd_bobo, desconto)
                 hora_str = hora_entrega.strftime("%H:%M")
@@ -298,9 +325,10 @@ elif menu == "Novo Pedido":
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, novo_df], ignore_index=True)
                 salvar_pedidos(st.session_state.pedidos)
                 
-                # Recarrega para limpar
                 st.success(f"Pedido de {nome_selecionado} Salvo!")
-                # Reset manual visual (opcional) ou apenas avisar
+                # Atualiza para limpar campos
+                st.session_state.pop('chave_contato_automatico', None)
+                st.rerun()
 
 # =================================================================================
 # PÁGINA: GERENCIAR TUDO
@@ -351,7 +379,6 @@ elif menu == "Gerenciar Tudo":
         if sel_cli:
             dados = df[df['Cliente'] == sel_cli].iloc[-1]
             tel = str(dados['Contato']).replace(".0", "").replace(" ", "").replace("-", "")
-            
             data_str = dados['Data'].strftime('%d/%m/%Y') if hasattr(dados['Data'], 'strftime') else str(dados['Data'])
             try:
                 hora_str = dados['Hora'].strftime('%H:%M')
