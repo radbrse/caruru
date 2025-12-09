@@ -49,7 +49,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "17.0"
+VERSAO = "17.1" # Versão atualizada
 
 logging.basicConfig(filename=ARQUIVO_LOG, level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(message)s', force=True)
 logger = logging.getLogger("cantinho")
@@ -64,23 +64,16 @@ def limpar_telefone(telefone):
     return re.sub(r'\D', '', str(telefone))
 
 def validar_telefone(telefone):
-    """
-    Valida e formata telefone brasileiro.
-    Retorna: (telefone_limpo, mensagem_erro)
-    """
+    """Valida e formata telefone brasileiro."""
     limpo = limpar_telefone(telefone)
     
     if not limpo:
-        return "", None  # Telefone opcional
+        return "", None
     
-    # Remove 55 inicial se presente
     if limpo.startswith("55") and len(limpo) > 11:
         limpo = limpo[2:]
     
-    # Verifica comprimento (10 ou 11 dígitos)
-    if len(limpo) == 10:  # Fixo ou celular antigo
-        return limpo, None
-    elif len(limpo) == 11:  # Celular com 9
+    if len(limpo) == 10 or len(limpo) == 11:
         return limpo, None
     elif len(limpo) == 8 or len(limpo) == 9:
         return limpo, "⚠️ Falta o DDD no telefone"
@@ -90,14 +83,14 @@ def validar_telefone(telefone):
     return "", None
 
 def validar_quantidade(valor, nome_campo):
-    """Valida quantidades com tratamento de erros completo."""
+    """Valida quantidades."""
     try:
         if valor is None or valor == "":
             return 0.0, None
         v = float(str(valor).replace(",", "."))
         if v < 0:
             return 0.0, f"⚠️ {nome_campo} não pode ser negativo. Ajustado para 0."
-        if v > 999:  # Limite razoável
+        if v > 999:
             return 999.0, f"⚠️ {nome_campo} muito alto. Limitado a 999."
         return round(v, 1), None
     except:
@@ -133,7 +126,6 @@ def validar_data_pedido(data, permitir_passado=False):
         if not permitir_passado and data < hoje:
             return data, "⚠️ Data no passado (permitido para edição)."
         
-        # Limite de 1 ano no futuro
         limite = hoje.replace(year=hoje.year + 1)
         if data > limite:
             return limite, "⚠️ Data muito distante. Ajustada para 1 ano."
@@ -151,16 +143,13 @@ def validar_hora(hora):
         if isinstance(hora, time):
             return hora, None
         
-        # Tenta diversos formatos
         hora_str = str(hora).strip()
-        
         for fmt in ["%H:%M", "%H:%M:%S", "%I:%M %p"]:
             try:
                 return datetime.strptime(hora_str, fmt).time(), None
             except:
                 continue
         
-        # Última tentativa com pandas
         parsed = pd.to_datetime(hora_str, errors='coerce')
         if not pd.isna(parsed):
             return parsed.time(), None
@@ -168,11 +157,6 @@ def validar_hora(hora):
         return time(12, 0), f"⚠️ Hora '{hora}' inválida. Usando 12:00."
     except Exception as e:
         return time(12, 0), f"⚠️ Erro na hora: usando 12:00."
-
-def limpar_hora_rigoroso(h):
-    """Limpa hora de forma rigorosa (compatibilidade)."""
-    hora, _ = validar_hora(h)
-    return hora
 
 # ==============================================================================
 # FUNÇÕES DE CÁLCULO
@@ -202,11 +186,10 @@ def calcular_total(caruru, bobo, desconto):
         return 0.0
 
 def gerar_link_whatsapp(telefone, mensagem):
-    """Gera link do WhatsApp com validação."""
+    """Gera link do WhatsApp."""
     tel_limpo = limpar_telefone(telefone)
     if len(tel_limpo) < 10:
         return None
-    
     msg_encoded = urllib.parse.quote(mensagem)
     return f"https://wa.me/55{tel_limpo}?text={msg_encoded}"
 
@@ -239,7 +222,6 @@ def carregar_pedidos():
             if c not in df.columns:
                 df[c] = None
         
-        # Conversões seguras
         df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
         df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
         
@@ -250,17 +232,13 @@ def carregar_pedidos():
         if df['ID_Pedido'].duplicated().any() or (not df.empty and df['ID_Pedido'].max() == 0):
             df['ID_Pedido'] = range(1, len(df) + 1)
         
-        # Normaliza status
         mapa = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
         df['Status'] = df['Status'].replace(mapa)
-        
-        # Garante status válido
         df.loc[~df['Status'].isin(OPCOES_STATUS), 'Status'] = "🔴 Pendente"
         
         for c in ["Cliente", "Status", "Pagamento", "Contato", "Observacoes"]:
             df[c] = df[c].fillna("").astype(str)
         
-        # Garante pagamento válido
         df.loc[~df['Pagamento'].isin(OPCOES_PAGAMENTO), 'Pagamento'] = "NÃO PAGO"
             
         return df[colunas_padrao]
@@ -271,7 +249,6 @@ def carregar_pedidos():
 def salvar_pedidos(df):
     """Salva pedidos com backup automático."""
     try:
-        # Backup antes de salvar
         if os.path.exists(ARQUIVO_PEDIDOS):
             backup = ARQUIVO_PEDIDOS + ".bak"
             import shutil
@@ -320,11 +297,8 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
             df = pd.DataFrame()
         
         df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
-        
-        # Mantém apenas últimos 1000 registros
         if len(df) > 1000:
             df = df.tail(1000)
-        
         df.to_csv(ARQUIVO_HISTORICO, index=False)
     except Exception as e:
         logger.error(f"Erro registrar alteração: {e}")
@@ -333,11 +307,10 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
 # FUNÇÕES DE PEDIDO (CRUD)
 # ==============================================================================
 def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes):
-    """Cria novo pedido com validação completa."""
+    """Cria novo pedido."""
     erros = []
     avisos = []
     
-    # Validações
     if not cliente or not cliente.strip():
         erros.append("❌ Cliente é obrigatório.")
     
@@ -365,7 +338,6 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     if erros:
         return None, erros, avisos
     
-    # Cria pedido
     df_p = st.session_state.pedidos
     nid = gerar_id_sequencial(df_p)
     val = calcular_total(qc, qb, dc)
@@ -406,36 +378,22 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         for campo, valor in campos_atualizar.items():
             valor_antigo = df.at[idx, campo]
             
-            # Validações específicas por campo
-            if campo == "Caruru":
-                valor, _ = validar_quantidade(valor, "Caruru")
-            elif campo == "Bobo":
-                valor, _ = validar_quantidade(valor, "Bobó")
-            elif campo == "Desconto":
-                valor, _ = validar_desconto(valor)
-            elif campo == "Data":
-                valor, _ = validar_data_pedido(valor, permitir_passado=True)
-            elif campo == "Hora":
-                valor, _ = validar_hora(valor)
-            elif campo == "Contato":
-                valor, _ = validar_telefone(valor)
-            elif campo == "Status":
-                if valor not in OPCOES_STATUS:
-                    valor = "🔴 Pendente"
+            if campo == "Caruru": valor, _ = validar_quantidade(valor, "Caruru")
+            elif campo == "Bobo": valor, _ = validar_quantidade(valor, "Bobó")
+            elif campo == "Desconto": valor, _ = validar_desconto(valor)
+            elif campo == "Data": valor, _ = validar_data_pedido(valor, permitir_passado=True)
+            elif campo == "Hora": valor, _ = validar_hora(valor)
+            elif campo == "Contato": valor, _ = validar_telefone(valor)
+            elif campo == "Status": 
+                if valor not in OPCOES_STATUS: valor = "🔴 Pendente"
             elif campo == "Pagamento":
-                if valor not in OPCOES_PAGAMENTO:
-                    valor = "NÃO PAGO"
+                if valor not in OPCOES_PAGAMENTO: valor = "NÃO PAGO"
             
             df.at[idx, campo] = valor
             registrar_alteracao("EDITAR", id_pedido, campo, valor_antigo, valor)
         
-        # Recalcula valor se necessário
         if any(c in campos_atualizar for c in ["Caruru", "Bobo", "Desconto"]):
-            df.at[idx, 'Valor'] = calcular_total(
-                df.at[idx, 'Caruru'],
-                df.at[idx, 'Bobo'],
-                df.at[idx, 'Desconto']
-            )
+            df.at[idx, 'Valor'] = calcular_total(df.at[idx, 'Caruru'], df.at[idx, 'Bobo'], df.at[idx, 'Desconto'])
         
         st.session_state.pedidos = df
         salvar_pedidos(df)
@@ -457,12 +415,10 @@ def excluir_pedido(id_pedido, motivo=""):
         pedido = df[mask].iloc[0]
         cliente = pedido.get('Cliente', 'Desconhecido')
         
-        # Remove do DataFrame
         st.session_state.pedidos = df[~mask].reset_index(drop=True)
         salvar_pedidos(st.session_state.pedidos)
         
         registrar_alteracao("EXCLUIR", id_pedido, "pedido_completo", f"{cliente}", motivo or "Sem motivo")
-        
         return True, f"✅ Pedido #{id_pedido} ({cliente}) excluído."
     
     except Exception as e:
@@ -481,7 +437,6 @@ def buscar_pedido(id_pedido):
 # PDF GENERATOR
 # ==============================================================================
 def desenhar_cabecalho(p, titulo):
-    """Desenha cabeçalho padrão no PDF."""
     if os.path.exists("logo.png"):
         try:
             p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
@@ -497,7 +452,6 @@ def desenhar_cabecalho(p, titulo):
     p.line(30, 740, 565, 740)
 
 def gerar_recibo_pdf(dados):
-    """Gera recibo individual em PDF."""
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
@@ -597,7 +551,6 @@ def gerar_recibo_pdf(dados):
         return None
 
 def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
-    """Gera relatório geral em PDF."""
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
@@ -655,11 +608,10 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         buffer.seek(0)
         return buffer
     except Exception as e:
-        logger.error(f"Erro gerar relatório PDF: {e}")
+        logger.error(f"Erro gerar relatorio PDF: {e}")
         return None
 
 def gerar_lista_clientes_pdf(df_clientes):
-    """Gera PDF com lista de clientes."""
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
@@ -741,7 +693,6 @@ with st.sidebar:
     )
     st.divider()
     
-    # Mini resumo
     df_hoje = st.session_state.pedidos[st.session_state.pedidos['Data'] == date.today()]
     if not df_hoje.empty:
         pend = df_hoje[~df_hoje['Status'].str.contains("Entregue|Cancelado", na=False)]
@@ -766,14 +717,12 @@ if menu == "Dashboard do Dia":
         dt_filter = st.date_input("📅 Data:", date.today(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == dt_filter].copy()
         
-        # Ordenar por hora
         try:
             df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(23, 59))
             df_dia = df_dia.sort_values('h_sort').drop(columns=['h_sort'])
         except:
             pass
         
-        # Métricas
         c1, c2, c3, c4 = st.columns(4)
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) & 
@@ -789,7 +738,6 @@ if menu == "Dashboard do Dia":
         st.subheader("📋 Entregas do Dia")
         
         if not df_dia.empty:
-            # Editor de dados
             edited = st.data_editor(
                 df_dia,
                 column_order=["ID_Pedido", "Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
@@ -806,7 +754,6 @@ if menu == "Dashboard do Dia":
                 }
             )
             
-            # Detecta mudanças
             if not edited.equals(df_dia):
                 df_glob = st.session_state.pedidos.copy()
                 for i in edited.index:
@@ -828,16 +775,30 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    # Verifica se deve resetar o cliente (após salvar pedido)
+    # ----------------------------------------------------
+    # LÓGICA DE RESET
+    # ----------------------------------------------------
+    # Se o flag de reset estiver ativo (após salvar), reseta o índice
     if st.session_state.get('resetar_cliente_novo', False):
         st.session_state.cliente_novo_index = 0
         st.session_state.resetar_cliente_novo = False
-    
-    # Inicializa índice do cliente
+        # Limpa também a chave do input de contato se existir
+        if 'novo_contato_input' in st.session_state:
+             del st.session_state['novo_contato_input']
+
     if 'cliente_novo_index' not in st.session_state:
         st.session_state.cliente_novo_index = 0
-    
-    # Carrega lista de clientes
+
+    # Botão manual para limpar/resetar se o usuário errar
+    if st.button("🔄 Limpar / Novo Pedido", help="Clique aqui para zerar os campos e começar de novo"):
+        st.session_state.cliente_novo_index = 0
+        if 'novo_contato_input' in st.session_state:
+             del st.session_state['novo_contato_input']
+        st.rerun()
+
+    # ----------------------------------------------------
+    # CARREGAR CLIENTES
+    # ----------------------------------------------------
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except:
@@ -847,7 +808,7 @@ elif menu == "Novo Pedido":
 
     st.markdown("### 1️⃣ Cliente")
     
-    # Selectbox do cliente FORA do form para poder buscar o contato
+    # Selectbox do cliente
     c_sel = st.selectbox(
         "👤 Nome do Cliente", 
         lista_clientes,
@@ -855,34 +816,38 @@ elif menu == "Novo Pedido":
         key="sel_cliente_novo"
     )
     
-    # Atualiza o índice no session_state
+    # Atualiza o índice no session_state para manter sincronia
     if c_sel in lista_clientes:
         st.session_state.cliente_novo_index = lista_clientes.index(c_sel)
     
-    # Busca o contato do cliente selecionado
+    # Busca o contato do cliente selecionado e FORÇA atualização do input
     contato_cliente = ""
     if c_sel and c_sel != "-- Selecione --":
         try:
             res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
             if not res.empty:
                 contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
+                
+                # Força a atualização da chave do widget de contato
+                st.session_state['novo_contato_input'] = contato_cliente
         except:
             contato_cliente = ""
     else:
-        c_sel = ""  # Reseta para vazio se for "-- Selecione --"
-    
-    if not c_sel:
+        # Se desselecionou, limpa
+        if 'novo_contato_input' in st.session_state:
+            st.session_state['novo_contato_input'] = ""
+
+    if not c_sel or c_sel == "-- Selecione --":
         st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
-    else:
-        st.success(f"📱 Contato encontrado: **{contato_cliente}**" if contato_cliente else "⚠️ Cliente sem telefone cadastrado")
     
     st.markdown("### 2️⃣ Dados do Pedido")
     
-    # Usar form com clear_on_submit para limpar automaticamente
+    # Formulário
     with st.form("form_novo_pedido", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         with c1:
-            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
+            # A chave 'key' conecta este input ao session_state atualizado acima
+            cont = st.text_input("📱 WhatsApp", key="novo_contato_input", placeholder="79999999999")
         with c2:
             dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
         with c3:
@@ -897,7 +862,6 @@ elif menu == "Novo Pedido":
         with c5:
             dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
         
-        # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
         st.caption(f"💵 Preço unitário: R$ {PRECO_BASE:.2f} | Cálculo: (Caruru + Bobó) × R$ {PRECO_BASE:.2f} - Desconto%")
         
         obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
@@ -908,11 +872,9 @@ elif menu == "Novo Pedido":
         with c7:
             stt = st.selectbox("📊 Status", OPCOES_STATUS)
         
-        # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
         
         if submitted:
-            # Usa o cliente selecionado FORA do form
             cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
             
             id_criado, erros, avisos = criar_pedido(
@@ -937,11 +899,10 @@ elif menu == "Novo Pedido":
             else:
                 st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
                 st.balloons()
-                # Seta flag para resetar o cliente na próxima execução
+                # Ativa o reset para a próxima atualização da página
                 st.session_state.resetar_cliente_novo = True
                 st.rerun()
     
-    # Mostrar valor estimado fora do form (para referência)
     st.divider()
     st.markdown("### 💰 Calculadora de Valor")
     calc_c1, calc_c2, calc_c3, calc_c4 = st.columns(4)
@@ -964,7 +925,6 @@ elif menu == "✏️ Editar Pedido":
     if df.empty:
         st.warning("Nenhum pedido cadastrado.")
     else:
-        # Filtros de busca
         st.markdown("### 🔍 Localizar Pedido")
         c1, c2, c3 = st.columns([1, 2, 2])
         
@@ -976,7 +936,6 @@ elif menu == "✏️ Editar Pedido":
         with c3:
             filtro_data = st.date_input("Filtrar por Data", value=None, format="DD/MM/YYYY")
         
-        # Aplica filtros
         df_filtrado = df.copy()
         if busca_id > 0:
             df_filtrado = df_filtrado[df_filtrado['ID_Pedido'] == busca_id]
@@ -988,7 +947,6 @@ elif menu == "✏️ Editar Pedido":
         if df_filtrado.empty:
             st.info("Nenhum pedido encontrado com os filtros aplicados.")
         else:
-            # Lista de pedidos para selecionar
             df_filtrado = df_filtrado.sort_values(['Data', 'ID_Pedido'], ascending=[False, False])
             
             opcoes_pedido = {
@@ -1013,7 +971,6 @@ elif menu == "✏️ Editar Pedido":
                         c1, c2 = st.columns(2)
                         
                         with c1:
-                            # Lista de clientes para seleção
                             try:
                                 clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
                             except:
@@ -1074,7 +1031,6 @@ elif menu == "✏️ Editar Pedido":
                                 value=int(pedido.get('Desconto', 0))
                             )
                         
-                        # Preview do novo valor
                         novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
                         valor_anterior = pedido.get('Valor', 0)
                         
@@ -1092,7 +1048,6 @@ elif menu == "✏️ Editar Pedido":
                             btn_cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
                         
                         if btn_salvar:
-                            # Validação básica
                             if novo_caruru == 0 and novo_bobo == 0:
                                 st.error("❌ Pedido deve ter pelo menos 1 item.")
                             else:
@@ -1140,7 +1095,6 @@ elif menu == "🗑️ Excluir Pedido":
             clientes_del = ["Todos"] + sorted(df['Cliente'].unique().tolist())
             filtro_cliente_del = st.selectbox("Filtrar por Cliente", clientes_del, key="del_cli")
         
-        # Aplica filtros
         df_del = df.copy()
         if busca_id_del > 0:
             df_del = df_del[df_del['ID_Pedido'] == busca_id_del]
@@ -1169,8 +1123,6 @@ elif menu == "🗑️ Excluir Pedido":
                 
                 if pedido_info:
                     st.divider()
-                    
-                    # Mostra detalhes do pedido
                     st.markdown(f"### 📋 Detalhes do Pedido #{pedido_excluir}")
                     
                     c1, c2, c3 = st.columns(3)
@@ -1185,17 +1137,12 @@ elif menu == "🗑️ Excluir Pedido":
                     
                     st.divider()
                     
-                    # Confirmação de exclusão
                     motivo = st.text_input("📝 Motivo da exclusão (opcional):", placeholder="Ex: Pedido duplicado, cliente cancelou...")
-                    
                     st.markdown("---")
-                    
-                    # Checkbox de confirmação
                     confirma = st.checkbox(f"✅ Confirmo que desejo excluir o pedido #{pedido_excluir} permanentemente")
                     
                     if st.button("🗑️ EXCLUIR PEDIDO", type="primary", disabled=not confirma, use_container_width=True):
                         sucesso, msg = excluir_pedido(pedido_excluir, motivo)
-                        
                         if sucesso:
                             st.success(msg)
                             st.rerun()
@@ -1209,14 +1156,12 @@ elif menu == "Gerenciar Tudo":
     df = st.session_state.pedidos
     
     if not df.empty:
-        # Ordenação
         try:
             df['sort_hora'] = df['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
             df = df.sort_values(['Data', 'sort_hora'], ascending=[False, True]).drop(columns=['sort_hora'])
         except:
             pass
         
-        # Filtros
         with st.expander("🔍 Filtros", expanded=False):
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -1239,10 +1184,8 @@ elif menu == "Gerenciar Tudo":
             inicio_mes = date.today().replace(day=1)
             df_view = df_view[df_view['Data'] >= inicio_mes]
         
-        # Métricas
         st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** R$ {df_view['Valor'].sum():,.2f}")
         
-        # Editor
         edited = st.data_editor(
             df_view,
             num_rows="fixed",
@@ -1261,16 +1204,13 @@ elif menu == "Gerenciar Tudo":
             }
         )
         
-        # Salva alterações
         if not edited.equals(df_view):
             try:
-                # Recalcula valores
                 edited['Valor'] = edited.apply(
                     lambda row: calcular_total(row['Caruru'], row['Bobo'], row['Desconto']),
                     axis=1
                 )
                 
-                # Atualiza no DataFrame principal
                 df_master = st.session_state.pedidos.copy()
                 for idx in edited.index:
                     id_ped = edited.at[idx, 'ID_Pedido']
@@ -1289,7 +1229,6 @@ elif menu == "Gerenciar Tudo":
         
         st.divider()
         
-        # WhatsApp rápido
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("💬 WhatsApp Rápido")
@@ -1316,7 +1255,6 @@ elif menu == "Gerenciar Tudo":
     
     st.divider()
     
-    # Backup
     with st.expander("💾 Backup & Restauração"):
         st.write("### 📥 Fazer Backup")
         try:
@@ -1486,7 +1424,6 @@ elif menu == "👥 Cadastrar Clientes":
                 if not n.strip():
                     st.error("❌ Nome é obrigatório!")
                 else:
-                    # Verifica duplicado
                     nomes = st.session_state.clientes['Nome'].str.lower().str.strip().tolist()
                     if n.lower().strip() in nomes:
                         st.warning(f"⚠️ Cliente '{n}' já cadastrado!")
@@ -1550,7 +1487,6 @@ elif menu == "👥 Cadastrar Clientes":
             lista_cli = st.session_state.clientes['Nome'].unique().tolist()
             d = st.selectbox("👤 Selecione o cliente:", lista_cli)
             
-            # Verifica se tem pedidos
             pedidos_cliente = st.session_state.pedidos[st.session_state.pedidos['Cliente'] == d]
             if not pedidos_cliente.empty:
                 st.warning(f"⚠️ Este cliente tem {len(pedidos_cliente)} pedido(s) registrado(s).")
