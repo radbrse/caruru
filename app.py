@@ -49,7 +49,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "17.1" # Versão atualizada
+VERSAO = "17.2" # Versão com correção do reset de cliente
 
 logging.basicConfig(filename=ARQUIVO_LOG, level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(message)s', force=True)
 logger = logging.getLogger("cantinho")
@@ -776,28 +776,7 @@ elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
     # ----------------------------------------------------
-    # LÓGICA DE RESET
-    # ----------------------------------------------------
-    # Se o flag de reset estiver ativo (após salvar), reseta o índice
-    if st.session_state.get('resetar_cliente_novo', False):
-        st.session_state.cliente_novo_index = 0
-        st.session_state.resetar_cliente_novo = False
-        # Limpa também a chave do input de contato se existir
-        if 'novo_contato_input' in st.session_state:
-             del st.session_state['novo_contato_input']
-
-    if 'cliente_novo_index' not in st.session_state:
-        st.session_state.cliente_novo_index = 0
-
-    # Botão manual para limpar/resetar se o usuário errar
-    if st.button("🔄 Limpar / Novo Pedido", help="Clique aqui para zerar os campos e começar de novo"):
-        st.session_state.cliente_novo_index = 0
-        if 'novo_contato_input' in st.session_state:
-             del st.session_state['novo_contato_input']
-        st.rerun()
-
-    # ----------------------------------------------------
-    # CARREGAR CLIENTES
+    # CARREGAR CLIENTES (MOVIDO PARA O TOPO)
     # ----------------------------------------------------
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
@@ -805,6 +784,28 @@ elif menu == "Novo Pedido":
         clis = []
     
     lista_clientes = ["-- Selecione --"] + clis
+
+    # ----------------------------------------------------
+    # LÓGICA DE RESET
+    # ----------------------------------------------------
+    # Lógica para limpar tudo se solicitado
+    if st.session_state.get('resetar_cliente_novo', False):
+        st.session_state.cliente_novo_index = 0
+        st.session_state["sel_cliente_novo"] = lista_clientes[0] # FORÇA RESET VISUAL
+        if 'novo_contato_input' in st.session_state:
+             del st.session_state['novo_contato_input']
+        st.session_state.resetar_cliente_novo = False
+
+    if 'cliente_novo_index' not in st.session_state:
+        st.session_state.cliente_novo_index = 0
+
+    # Botão manual para limpar/resetar
+    if st.button("🔄 Limpar / Novo Pedido", help="Clique aqui para zerar os campos e começar de novo"):
+        st.session_state.cliente_novo_index = 0
+        st.session_state["sel_cliente_novo"] = lista_clientes[0] # FORÇA RESET VISUAL
+        if 'novo_contato_input' in st.session_state:
+             del st.session_state['novo_contato_input']
+        st.rerun()
 
     st.markdown("### 1️⃣ Cliente")
     
@@ -827,14 +828,13 @@ elif menu == "Novo Pedido":
             res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
             if not res.empty:
                 contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
-                
                 # Força a atualização da chave do widget de contato
                 st.session_state['novo_contato_input'] = contato_cliente
         except:
             contato_cliente = ""
     else:
-        # Se desselecionou, limpa
-        if 'novo_contato_input' in st.session_state:
+        # Se desselecionou, limpa o contato visualmente
+        if 'novo_contato_input' in st.session_state and st.session_state['novo_contato_input'] != "":
             st.session_state['novo_contato_input'] = ""
 
     if not c_sel or c_sel == "-- Selecione --":
@@ -899,8 +899,14 @@ elif menu == "Novo Pedido":
             else:
                 st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
                 st.balloons()
-                # Ativa o reset para a próxima atualização da página
+                
+                # PREPARA O RESET COMPLETO PARA A PRÓXIMA RECARGA
                 st.session_state.resetar_cliente_novo = True
+                st.session_state.cliente_novo_index = 0
+                st.session_state["sel_cliente_novo"] = lista_clientes[0] # Reset forçado
+                if 'novo_contato_input' in st.session_state:
+                     del st.session_state['novo_contato_input']
+                
                 st.rerun()
     
     st.divider()
