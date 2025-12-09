@@ -828,83 +828,121 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
+    # Inicializa session_state para os campos do formulário
+    if 'novo_caruru' not in st.session_state:
+        st.session_state.novo_caruru = 0
+    if 'novo_bobo' not in st.session_state:
+        st.session_state.novo_bobo = 0
+    if 'novo_desconto' not in st.session_state:
+        st.session_state.novo_desconto = 0
+    if 'novo_contato' not in st.session_state:
+        st.session_state.novo_contato = ""
+    if 'novo_obs' not in st.session_state:
+        st.session_state.novo_obs = ""
+    if 'novo_cliente' not in st.session_state:
+        st.session_state.novo_cliente = ""
+    
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except:
         clis = []
     
     def update_cont():
-        sel = st.session_state.get("sel_cli")
+        sel = st.session_state.get("sel_cli_novo")
         if sel:
             res = st.session_state.clientes[st.session_state.clientes['Nome'] == sel]
-            st.session_state["auto_contato"] = res.iloc[0]['Contato'] if not res.empty else ""
+            st.session_state.novo_contato = res.iloc[0]['Contato'] if not res.empty else ""
         else:
-            st.session_state["auto_contato"] = ""
+            st.session_state.novo_contato = ""
+
+    def limpar_formulario():
+        """Limpa todos os campos do formulário"""
+        st.session_state.novo_caruru = 0
+        st.session_state.novo_bobo = 0
+        st.session_state.novo_desconto = 0
+        st.session_state.novo_contato = ""
+        st.session_state.novo_obs = ""
+        st.session_state.novo_cliente = ""
+        if 'sel_cli_novo' in st.session_state:
+            st.session_state.sel_cli_novo = ""
 
     st.markdown("### 1️⃣ Cliente")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        c_sel = st.selectbox("Nome do Cliente", [""] + clis, key="sel_cli", on_change=update_cont)
-    with c2:
-        h_ent = st.time_input("⏰ Hora Entrega", value=time(12, 0))
+    c_sel = st.selectbox("👤 Nome do Cliente", [""] + clis, key="sel_cli_novo", on_change=update_cont)
     
     if not c_sel:
         st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
     
     st.markdown("### 2️⃣ Dados do Pedido")
-    with st.form("form_novo", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            cont = st.text_input("📱 WhatsApp", key="auto_contato", placeholder="79999999999")
-        with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
+    
+    # Campos fora do form para atualização em tempo real
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        cont = st.text_input("📱 WhatsApp", value=st.session_state.novo_contato, placeholder="79999999999", key="input_contato")
+    with c2:
+        dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY", key="input_data")
+    with c3:
+        h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="input_hora")
+    
+    st.markdown("### 3️⃣ Itens do Pedido")
+    c3, c4, c5 = st.columns(3)
+    with c3:
+        qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=st.session_state.novo_caruru, key="input_caruru")
+    with c4:
+        qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=st.session_state.novo_bobo, key="input_bobo")
+    with c5:
+        dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=st.session_state.novo_desconto, key="input_desconto")
+    
+    # Atualiza session_state
+    st.session_state.novo_caruru = qc
+    st.session_state.novo_bobo = qb
+    st.session_state.novo_desconto = dc
+    st.session_state.novo_contato = cont
+    
+    # Preview do valor em tempo real
+    valor_preview = calcular_total(qc, qb, dc)
+    if qc > 0 or qb > 0:
+        st.success(f"💵 **Valor estimado: R$ {valor_preview:.2f}**")
+    else:
+        st.info("💵 **Valor estimado: R$ 0,00** - Adicione itens ao pedido")
+    
+    obs = st.text_area("📝 Observações", value=st.session_state.novo_obs, placeholder="Ex: Sem pimenta, entregar na portaria...", key="input_obs")
+    st.session_state.novo_obs = obs
+    
+    c6, c7 = st.columns(2)
+    with c6:
+        pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, key="input_pagamento")
+    with c7:
+        stt = st.selectbox("📊 Status", OPCOES_STATUS, key="input_status")
+    
+    st.divider()
+    
+    # Botão de salvar
+    if st.button("💾 SALVAR PEDIDO", use_container_width=True, type="primary"):
+        id_criado, erros, avisos = criar_pedido(
+            cliente=c_sel,
+            caruru=qc,
+            bobo=qb,
+            data=dt,
+            hora=h_ent,
+            status=stt,
+            pagamento=pg,
+            contato=cont,
+            desconto=dc,
+            observacoes=obs
+        )
         
-        c3, c4, c5 = st.columns(3)
-        with c3:
-            qc = st.number_input("🥘 Caruru (qtd)", min_value=0.0, max_value=999.0, step=1.0, value=0.0)
-        with c4:
-            qb = st.number_input("🦐 Bobó (qtd)", min_value=0.0, max_value=999.0, step=1.0, value=0.0)
-        with c5:
-            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
+        for aviso in avisos:
+            st.warning(aviso)
         
-        # Preview do valor
-        valor_preview = calcular_total(qc, qb, dc)
-        st.info(f"💵 **Valor estimado: R$ {valor_preview:.2f}**")
-        
-        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
-        
-        c6, c7 = st.columns(2)
-        with c6:
-            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
-        with c7:
-            stt = st.selectbox("📊 Status", OPCOES_STATUS)
-        
-        submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
-        
-        if submitted:
-            id_criado, erros, avisos = criar_pedido(
-                cliente=c_sel,
-                caruru=qc,
-                bobo=qb,
-                data=dt,
-                hora=h_ent,
-                status=stt,
-                pagamento=pg,
-                contato=cont,
-                desconto=dc,
-                observacoes=obs
-            )
-            
-            for aviso in avisos:
-                st.warning(aviso)
-            
-            if erros:
-                for erro in erros:
-                    st.error(erro)
-            else:
-                st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
-                st.balloons()
-                st.rerun()
+        if erros:
+            for erro in erros:
+                st.error(erro)
+        else:
+            st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
+            st.balloons()
+            # Limpa os campos para novo pedido
+            limpar_formulario()
+            st.rerun()
 
 # --- EDITAR PEDIDO ---
 elif menu == "✏️ Editar Pedido":
@@ -1009,14 +1047,14 @@ elif menu == "✏️ Editar Pedido":
                         with c3:
                             novo_caruru = st.number_input(
                                 "🥘 Caruru",
-                                min_value=0.0, max_value=999.0, step=1.0,
-                                value=float(pedido.get('Caruru', 0))
+                                min_value=0, max_value=999, step=1,
+                                value=int(pedido.get('Caruru', 0))
                             )
                         with c4:
                             novo_bobo = st.number_input(
                                 "🦐 Bobó",
-                                min_value=0.0, max_value=999.0, step=1.0,
-                                value=float(pedido.get('Bobo', 0))
+                                min_value=0, max_value=999, step=1,
+                                value=int(pedido.get('Bobo', 0))
                             )
                         with c5:
                             novo_desconto = st.number_input(
@@ -1206,9 +1244,9 @@ elif menu == "Gerenciar Tudo":
                 "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                 "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
                 "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
-                "Caruru": st.column_config.NumberColumn("Caruru", min_value=0, max_value=999),
-                "Bobo": st.column_config.NumberColumn("Bobó", min_value=0, max_value=999),
-                "Desconto": st.column_config.NumberColumn("Desc %", min_value=0, max_value=100),
+                "Caruru": st.column_config.NumberColumn("Caruru", min_value=0, max_value=999, format="%d"),
+                "Bobo": st.column_config.NumberColumn("Bobó", min_value=0, max_value=999, format="%d"),
+                "Desconto": st.column_config.NumberColumn("Desc %", min_value=0, max_value=100, format="%d"),
             }
         )
         
