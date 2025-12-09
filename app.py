@@ -5,7 +5,7 @@ import os
 import io
 import zipfile
 import logging
-import urllib.parse # Necessário para links de WhatsApp
+import urllib.parse
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -33,7 +33,6 @@ def check_password():
         st.error("Senha incorreta.")
     return False
 
-# Para testar sem senha no computador local, comente as duas linhas abaixo
 if not check_password():
     st.stop()
 
@@ -47,13 +46,14 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "14.0"
+VERSAO = "14.1"
 
+# Logging seguro
 logging.basicConfig(filename=ARQUIVO_LOG, level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(message)s', force=True)
 logger = logging.getLogger("cantinho")
 
 # ==============================================================================
-# FUNÇÕES (HELPERS, DB, PDF)
+# FUNÇÕES
 # ==============================================================================
 def limpar_hora_rigoroso(h):
     try:
@@ -157,7 +157,7 @@ def gerar_recibo_pdf(dados):
         p.drawString(30, y, f"Data: {dt_s}"); p.drawString(300, y, f"Hora: {hr_s}")
         y-=40; p.setFillColor(colors.lightgrey); p.rect(30, y-5, 535, 20, fill=1, stroke=0)
         p.setFillColor(colors.black); p.setFont("Helvetica-Bold", 10)
-        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QUANTIDADE"); y-=25
+        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QTD"); y-=25
         p.setFont("Helvetica", 10)
         if float(dados.get('Caruru',0)) > 0:
             p.drawString(40, y, "Caruru Tradicional"); p.drawString(400, y, f"{int(float(dados.get('Caruru')))}"); y-=15
@@ -178,7 +178,7 @@ def gerar_recibo_pdf(dados):
         if dados.get('Observacoes'):
             y-=30; p.setFont("Helvetica-Oblique", 10); p.drawString(30, y, f"Obs: {dados.get('Observacoes')}")
         y_ass = 150; p.setLineWidth(1); p.line(150, y_ass, 450, y_ass)
-        p.setFont("Helvetica", 10); p.drawCentredString(300, y_ass-15, "Cantinho do Caruru")
+        p.setFont("Helvetica", 10); p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
         p.setFont("Helvetica-Oblique", 8); p.drawCentredString(300, y_ass-30, f"Emitido em: {datetime.now().strftime('%d/%m/%Y')}")
         p.showPage(); p.save(); buffer.seek(0)
         return buffer
@@ -230,6 +230,16 @@ def gerar_lista_clientes_pdf(df):
         return buffer
     except: return None
 
+def atualizar_contato_novo_pedido():
+    try:
+        c_at = st.session_state.get('chave_cliente_selecionado')
+        if c_at:
+            busca = st.session_state.clientes[st.session_state.clientes['Nome'] == c_at]
+            if not busca.empty: st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
+            else: st.session_state['chave_contato_automatico'] = ""
+        else: st.session_state['chave_contato_automatico'] = ""
+    except: pass
+
 # ---------------------------- START ----------------------------
 if 'pedidos' not in st.session_state: st.session_state.pedidos = carregar_pedidos()
 if 'clientes' not in st.session_state: st.session_state.clientes = carregar_clientes()
@@ -239,7 +249,6 @@ with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=250)
     else: st.title("🦐 Cantinho do Caruru")
     st.divider()
-    # ADICIONEI "📢 Promoções" NO MENU
     menu = st.radio("Navegação", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "📢 Promoções", "👥 Cadastrar Clientes", "🛠️ Manutenção"])
     st.divider()
     st.caption(f"Versão {VERSAO}")
@@ -260,13 +269,10 @@ if menu == "Dashboard do Dia":
         except: pass
         
         c1, c2, c3, c4 = st.columns(4)
-        
-        # Dashboard ignora "Entregue" e "Cancelado"
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) & 
             (~df_dia['Status'].str.contains("Cancelado", na=False))
         ]
-        
         c1.metric("Caruru (Pend)", int(pend['Caruru'].sum()))
         c2.metric("Bobó (Pend)", int(pend['Bobo'].sum()))
         c3.metric("Faturamento", f"R$ {df_dia['Valor'].sum():,.2f}")
@@ -304,16 +310,9 @@ elif menu == "Novo Pedido":
     try: clis = sorted(st.session_state.clientes['Nome'].unique())
     except: clis = []
     
-    def update_cont():
-        sel = st.session_state.get("sel_cli")
-        if sel:
-            res = st.session_state.clientes[st.session_state.clientes['Nome'] == sel]
-            st.session_state["auto_contato"] = res.iloc[0]['Contato'] if not res.empty else ""
-        else: st.session_state["auto_contato"] = ""
-
     st.markdown("### 1. Cliente")
     c1, c2 = st.columns([3, 1])
-    with c1: c_sel = st.selectbox("Nome", [""]+clis, key="sel_cli", on_change=update_cont)
+    with c1: c_sel = st.selectbox("Nome", [""]+clis, key="sel_cli", on_change=atualizar_contato_novo_pedido)
     with c2: h_ent = st.time_input("Hora", value=time(12,0))
     
     st.markdown("### 2. Dados")
@@ -383,7 +382,7 @@ elif menu == "Gerenciar Tudo":
                 st.toast("Salvo!", icon="💾")
                 st.rerun()
             except: st.error("Erro ao salvar edição.")
-            
+        
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
@@ -398,7 +397,6 @@ elif menu == "Gerenciar Tudo":
                     lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20')}"
                     st.link_button("Enviar Zap", lnk)
             except: pass
-        
         with c2:
              st.subheader("🗑️ Excluir Pedido")
              with st.expander("Abrir Exclusão"):
@@ -425,13 +423,14 @@ elif menu == "Gerenciar Tudo":
             st.download_button("📥 Baixar Tudo (ZIP)", buf.getvalue(), f"backup_{date.today()}.zip", "application/zip")
         except: st.error("Erro backup.")
         st.write("### 2. Restaurar Pedidos")
-        up = st.file_uploader("Arquivo Pedidos (CSV)", type="csv", key="rest_ped_ger_2")
+        up = st.file_uploader("Arquivo Pedidos (CSV)", type="csv")
         if up and st.button("Restaurar Pedidos"):
             try:
                 df_n = pd.read_csv(up)
                 salvar_pedidos(df_n)
                 st.session_state.pedidos = carregar_pedidos()
-                st.success("OK!"); st.rerun()
+                st.success("OK!")
+                st.rerun()
             except: st.error("Erro restauração.")
 
 elif menu == "Relatórios & Recibos":
@@ -449,6 +448,7 @@ elif menu == "Relatórios & Recibos":
                 if st.button("📄 Gerar PDF"):
                     pdf = gerar_recibo_pdf(peds.loc[sid])
                     if pdf: st.download_button("Baixar", pdf, f"Recibo_{cli}.pdf", "application/pdf")
+                    else: st.error("Erro ao gerar PDF.")
     with t2:
         tipo = st.radio("Filtro:", ["Dia Específico", "Tudo"])
         if tipo == "Dia Específico":
@@ -463,79 +463,46 @@ elif menu == "Relatórios & Recibos":
                 pdf = gerar_relatorio_pdf(df_rel, nome.replace(".pdf", ""))
                 if pdf: st.download_button("Baixar PDF", pdf, nome, "application/pdf")
 
-# --- NOVA PÁGINA: PROMOÇÕES (MARKETING) ---
 elif menu == "📢 Promoções":
     st.title("📢 Marketing & Promoções")
-    
-    # 1. Configuração da Mensagem
     st.subheader("1. Configurar Mensagem")
-    col_img, col_txt = st.columns([1, 2])
+    c_img, c_txt = st.columns([1, 2])
+    with c_img:
+        up_img = st.file_uploader("Banner (Visualização)", type=["jpg","png","jpeg"])
+        if up_img: st.image(up_img, caption="Banner", use_column_width=True); st.info("Anexe a imagem manualmente no WhatsApp.")
+    with c_txt:
+        txt_padrao = "Olá! 🦐\n\nHoje tem *Caruru Fresquinho*!\nPeça já o seu. 😋"
+        msg = st.text_area("Texto", value=txt_padrao, height=200)
     
-    with col_img:
-        # Upload de imagem apenas para visualização/lembrete
-        uploaded_img = st.file_uploader("Imagem do Banner (Apenas visualização)", type=["jpg", "png", "jpeg"])
-        if uploaded_img:
-            st.image(uploaded_img, caption="Banner da Promoção", use_column_width=True)
-            st.info("ℹ️ Lembrete: Anexe esta imagem manualmente no WhatsApp ao enviar.")
-            
-    with col_txt:
-        texto_padrao = "Olá! 🦐\n\nHoje tem *Caruru Fresquinho* e *Bobó de Camarão* no capricho!\n\nFaça já sua encomenda para garantir o almoço. 😋\n\n👇 Responda essa mensagem para pedir!"
-        mensagem = st.text_area("Texto da Mensagem", value=texto_padrao, height=200)
-        st.caption("Dica: Use asteriscos *texto* para negrito no WhatsApp.")
-    
-    # 2. Lista de Clientes com Botão de Envio
     st.divider()
-    st.subheader("2. Enviar para Clientes")
-    
-    df_cli = st.session_state.clientes
-    
-    if df_cli.empty:
-        st.warning("Nenhum cliente cadastrado.")
+    st.subheader("2. Enviar")
+    df_c = st.session_state.clientes
+    if df_c.empty: st.warning("Sem clientes.")
     else:
-        # Filtro opcional
-        filtro = st.text_input("🔍 Buscar cliente (opcional):")
-        if filtro:
-            df_cli = df_cli[df_cli['Nome'].str.contains(filtro, case=False) | df_cli['Contato'].str.contains(filtro)]
+        filtro = st.text_input("🔍 Buscar:")
+        if filtro: df_c = df_c[df_c['Nome'].str.contains(filtro, case=False) | df_c['Contato'].str.contains(filtro)]
         
-        # Preparação para a tabela
-        # Adiciona coluna de link calculado
+        msg_enc = urllib.parse.quote(msg)
+        df_show = df_c[['Nome','Contato']].copy()
         
-        # Codifica a mensagem para URL (trata espaços, acentos, quebras de linha)
-        msg_encoded = urllib.parse.quote(mensagem)
-        
-        # Cria a tabela visual com os dados
-        # O Streamlit Data Editor com LinkColumn é a melhor forma de fazer uma lista acionável
-        
-        # Cria um DF temporário para exibição
-        df_display = df_cli[['Nome', 'Contato']].copy()
-        
-        # Gera o link para cada cliente
-        def gerar_link_zap(contato):
-            tel = str(contato).replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".0", "")
-            if len(tel) < 10: return None # Número inválido
-            return f"https://wa.me/55{tel}?text={msg_encoded}"
+        def link_zap(tel):
+            t = str(tel).replace(" ","").replace("-","").replace(".0","")
+            return f"https://wa.me/55{t}?text={msg_enc}" if len(t) >= 10 else None
             
-        df_display['Link'] = df_display['Contato'].apply(gerar_link_zap)
+        df_show['Link'] = df_show['Contato'].apply(link_zap)
         
-        # Exibe a tabela com o botão de link
         st.data_editor(
-            df_display,
+            df_show,
             column_config={
-                "Link": st.column_config.LinkColumn(
-                    "Ação",
-                    help="Clique para abrir o WhatsApp",
-                    validate="^https://wa\.me/.*",
-                    display_text="Enviar 🚀"
-                ),
+                "Link": st.column_config.LinkColumn("Ação", display_text="Enviar 🚀"),
                 "Nome": st.column_config.TextColumn(disabled=True),
                 "Contato": st.column_config.TextColumn(disabled=True)
             },
-            hide_index=True,
-            use_container_width=True
+            hide_index=True
         )
 
 elif menu == "👥 Cadastrar Clientes":
-    st.title("👥 Clientes")
+    st.title("👥 Base de Clientes")
     t1, t2 = st.tabs(["Cadastro", "Excluir"])
     with t1:
         with st.form("cli_form", clear_on_submit=True):
@@ -577,10 +544,31 @@ elif menu == "👥 Cadastrar Clientes":
             salvar_clientes(st.session_state.clientes)
             st.rerun()
 
-elif menu == "Admin":
+elif menu == "🛠️ Manutenção":
     st.title("🛠️ Admin")
+    st.write("Logs de Erro (Últimos 5.000 caracteres):")
     if os.path.exists(ARQUIVO_LOG):
-        with open(ARQUIVO_LOG, "r") as f: log = f.read()
-        with st.expander("Ver Logs"):
-            st.text_area("", log)
-            if st.button("Limpar"): open(ARQUIVO_LOG, 'w').close(); st.rerun()
+        try:
+            with open(ARQUIVO_LOG, "r") as f:
+                # LÊ APENAS O FINAL DO ARQUIVO PARA NÃO TRAVAR
+                f.seek(0, 2) # Vai pro fim
+                size = f.tell()
+                f.seek(max(size - 5000, 0)) # Volta 5000 chars
+                log = f.read()
+            st.text_area("Log Recente", log, height=300)
+            
+            # Botão para baixar completo (sem ler na tela)
+            with open(ARQUIVO_LOG, "rb") as f:
+                st.download_button("Baixar Log Completo", f, "log.txt")
+                
+            if st.button("🗑️ Limpar Logs"):
+                open(ARQUIVO_LOG, 'w').close()
+                st.success("Limpo!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao ler log: {e}")
+            if st.button("⚠️ Forçar Exclusão de Log Corrompido"):
+                os.remove(ARQUIVO_LOG)
+                st.rerun()
+    else:
+        st.success("Sistema saudável (Sem arquivo de log).")
