@@ -1,6 +1,5 @@
-"""Cantinho do Caruru — Versão 10.1 (Unificado, CSV storage)
-Arquivo completo gerado pelo assistant.
-"""
+# Cantinho do Caruru — Versão 10.1 (Unificado, CSV storage)
+# Arquivo gerado pelo assistant para execução com: streamlit run cantinho_caruru_v10_1.py
 
 import streamlit as st
 import pandas as pd
@@ -591,13 +590,9 @@ elif menu == "Gerenciar Tudo":
                     hr = d['Hora'].strftime('%H:%M') if isinstance(d['Hora'], time) else str(d['Hora'])
                 except Exception:
                     hr = str(d['Hora'])
-                msg = f"Olá {sel}, pedido #{int(d['ID_Pedido'])} confirmado!
-🗓 {dt} às {hr}
-📦 {int(d['Caruru'])} Caruru, {int(d['Bobo'])} Bobó
-💰 R$ {d['Valor']:.2f}"
+                msg = f"Olá {sel}, pedido #{int(d['ID_Pedido'])} confirmado!\n🗓 {dt} às {hr}\n📦 {int(d['Caruru'])} Caruru, {int(d['Bobo'])} Bobó\n💰 R$ {d['Valor']:.2f}"
                 if d['Pagamento'] in ["NÃO PAGO", "METADE"]:
-                    msg += f"
-🔑 Pix: {CHAVE_PIX}"
+                    msg += f"\n🔑 Pix: {CHAVE_PIX}"
                 lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20').replace(chr(10), '%0A')}"
                 st.markdown(f"[Enviar Zap]({lnk})")
         except Exception:
