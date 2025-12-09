@@ -852,6 +852,7 @@ elif menu == "Novo Pedido":
     if 'novo_cliente_idx' not in st.session_state:
         st.session_state.novo_cliente_idx = 0
     
+    # Carrega lista de clientes
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except:
@@ -859,12 +860,23 @@ elif menu == "Novo Pedido":
     
     lista_clientes = [""] + clis
     
+    # Função para atualizar contato quando muda o cliente
     def update_cont():
         idx = st.session_state.get("sel_cli_novo_idx", 0)
-        if idx > 0 and idx < len(lista_clientes):
-            sel = lista_clientes[idx]
-            res = st.session_state.clientes[st.session_state.clientes['Nome'] == sel]
-            st.session_state.novo_contato = res.iloc[0]['Contato'] if not res.empty else ""
+        if idx > 0:
+            # Reconstrói a lista de clientes dentro da função
+            try:
+                clis_local = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
+                lista_local = [""] + clis_local
+                if idx < len(lista_local):
+                    nome_cliente = lista_local[idx]
+                    res = st.session_state.clientes[st.session_state.clientes['Nome'] == nome_cliente]
+                    if not res.empty:
+                        st.session_state.novo_contato = res.iloc[0]['Contato']
+                    else:
+                        st.session_state.novo_contato = ""
+            except:
+                st.session_state.novo_contato = ""
         else:
             st.session_state.novo_contato = ""
 
@@ -879,6 +891,12 @@ elif menu == "Novo Pedido":
     )
     st.session_state.novo_cliente_idx = c_sel_idx
     c_sel = lista_clientes[c_sel_idx] if c_sel_idx > 0 else ""
+    
+    # Atualiza contato na primeira seleção (caso o on_change não tenha disparado)
+    if c_sel and not st.session_state.novo_contato:
+        res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
+        if not res.empty:
+            st.session_state.novo_contato = res.iloc[0]['Contato']
     
     if not c_sel:
         st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
