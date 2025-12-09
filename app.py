@@ -1,7 +1,5 @@
-"""
-Cantinho do Caruru — Versão 10.1 (com Backup na aba 'Gerenciar Tudo' e st.rerun)
-- Refatorado e consolidado
-- Inclui: clientes, pedidos, backups (CSV/ZIP), restauração, PDFs e UI completa Streamlit
+"""Cantinho do Caruru — Versão 10.1 (Unificado, CSV storage)
+Arquivo completo gerado pelo assistant.
 """
 
 import streamlit as st
@@ -35,8 +33,9 @@ logging.basicConfig(
 logger = logging.getLogger("cantinho")
 
 # ---------------------------- HELPERS ----------------------------
-def limpar_hora_rigoroso(h):
-    """Normaliza diversos formatos de hora para datetime.time ou None."""
+from typing import Optional
+
+def limpar_hora_rigoroso(h) -> Optional[time]:
     try:
         if h is None or (isinstance(h, float) and pd.isna(h)):
             return None
@@ -45,20 +44,18 @@ def limpar_hora_rigoroso(h):
         hs = str(h).strip()
         if hs == "" or hs.lower() in {"nan", "nat", "none"}:
             return None
-        # Tenta parses comuns
         for fmt in ("%H:%M", "%H:%M:%S"):
             try:
                 return datetime.strptime(hs, fmt).time()
             except Exception:
                 pass
-        # Tenta pandas (mais tolerante)
         try:
-            t = pd.to_datetime(hs, errors="coerce")
+            t = pd.to_datetime(hs, errors='coerce')
             if pd.isna(t):
                 logger.warning(f"Hora inválida: {h}")
                 return None
             return t.time()
-        except Exception as e:
+        except Exception:
             logger.exception("Erro parse hora com pandas")
             return None
     except Exception as e:
@@ -67,17 +64,16 @@ def limpar_hora_rigoroso(h):
 
 
 def gerar_id_sequencial(df, coluna='ID_Pedido'):
-    """Gera próximo ID com base no DataFrame, evitando duplicatas."""
     try:
         if df is None or df.empty:
             return 1
-        df = df.copy()
-        df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype(int)
-        max_id = int(df[coluna].max())
-        if df[coluna].duplicated().any() or max_id <= 0:
-            df = df.reset_index(drop=True)
-            df[coluna] = range(1, len(df) + 1)
-            return int(df[coluna].max()) + 1
+        df2 = df.copy()
+        df2[coluna] = pd.to_numeric(df2[coluna], errors='coerce').fillna(0).astype(int)
+        max_id = int(df2[coluna].max())
+        if df2[coluna].duplicated().any() or max_id <= 0:
+            df2 = df2.reset_index(drop=True)
+            df2[coluna] = range(1, len(df2) + 1)
+            return int(df2[coluna].max()) + 1
         return max_id + 1
     except Exception as e:
         logger.exception(f"Erro gerar_id_sequencial: {e}")
@@ -98,6 +94,7 @@ def calcular_total(caruru, bobo, desconto, preco_base=PRECO_BASE):
         return 0.0
 
 # ---------------------------- DB UTILS ----------------------------
+
 def carregar_clientes():
     colunas = ["Nome", "Contato", "Observacoes"]
     if not os.path.exists(ARQUIVO_CLIENTES):
@@ -170,6 +167,7 @@ def salvar_clientes(df):
         logger.exception(f"Erro salvar_clientes: {e}")
 
 # ---------------------------- PDF UTILS ----------------------------
+
 def desenhar_cabecalho(p, titulo):
     try:
         if os.path.exists("logo.png"):
@@ -267,7 +265,6 @@ def gerar_recibo_pdf(dados: dict):
             p.setFont("Helvetica-Oblique", 10)
             p.drawString(30, y, f"Obs: {obs}")
 
-        # Assinatura
         y_ass = 150
         p.setLineWidth(1)
         p.line(150, y_ass, 450, y_ass)
@@ -377,7 +374,6 @@ def gerar_lista_clientes_pdf(df_clientes):
 # ---------------------------- APP START ----------------------------
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
 
-# Inicializa sessao (garante chaves antes da criação de widgets)
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_pedidos()
 if 'clientes' not in st.session_state:
@@ -385,7 +381,7 @@ if 'clientes' not in st.session_state:
 if 'chave_contato_automatico' not in st.session_state:
     st.session_state['chave_contato_automatico'] = ""
 
-# CSS simples
+# CSS
 st.markdown("""
 <style>
     .metric-card {background-color: #f9f9f9; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px;}
@@ -529,7 +525,6 @@ elif menu == "Novo Pedido":
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, df_novo], ignore_index=True)
                 salvar_pedidos(st.session_state.pedidos)
                 st.success(f"Pedido #{novo_id} Salvo!")
-                # Reset seguro dentro do callback
                 st.session_state['chave_contato_automatico'] = ""
                 st.session_state['caruru'] = 0.0
                 st.session_state['bobo'] = 0.0
@@ -596,9 +591,13 @@ elif menu == "Gerenciar Tudo":
                     hr = d['Hora'].strftime('%H:%M') if isinstance(d['Hora'], time) else str(d['Hora'])
                 except Exception:
                     hr = str(d['Hora'])
-                msg = f"Olá {sel}, pedido #{int(d['ID_Pedido'])} confirmado!\n🗓 {dt} às {hr}\n📦 {int(d['Caruru'])} Caruru, {int(d['Bobo'])} Bobó\n💰 R$ {d['Valor']:.2f}"
+                msg = f"Olá {sel}, pedido #{int(d['ID_Pedido'])} confirmado!
+🗓 {dt} às {hr}
+📦 {int(d['Caruru'])} Caruru, {int(d['Bobo'])} Bobó
+💰 R$ {d['Valor']:.2f}"
                 if d['Pagamento'] in ["NÃO PAGO", "METADE"]:
-                    msg += f"\n🔑 Pix: {CHAVE_PIX}"
+                    msg += f"
+🔑 Pix: {CHAVE_PIX}"
                 lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20').replace(chr(10), '%0A')}"
                 st.markdown(f"[Enviar Zap]({lnk})")
         except Exception:
@@ -628,7 +627,6 @@ elif menu == "Gerenciar Tudo":
                 up = st.file_uploader("Arquivo Pedidos (CSV ou ZIP):", type=["csv", "zip"], key="res_ped_man")
                 if up:
                     try:
-                        # Se for ZIP, tenta extrair pedidos.csv
                         if (hasattr(up, "type") and up.type == "application/zip") or (hasattr(up, "name") and up.name.lower().endswith(".zip")):
                             zbuf = io.BytesIO(up.read())
                             with zipfile.ZipFile(zbuf, "r") as zf:
@@ -642,7 +640,6 @@ elif menu == "Gerenciar Tudo":
                             df_new = pd.read_csv(up)
 
                         if df_new is not None:
-                            # valida cols mínimas (alerta se faltando)
                             req_cols = {"ID_Pedido","Cliente","Caruru","Bobo","Valor","Data","Hora","Status","Pagamento","Contato","Desconto","Observacoes"}
                             if not req_cols.issubset(set(df_new.columns)):
                                 st.warning("CSV carregado não tem todas as colunas esperadas. A restauração tentará normalizar o mínimo possível.")
@@ -683,7 +680,7 @@ elif menu == "Gerenciar Tudo":
                         st.error("Erro ao restaurar clientes. Veja logs.")
                         logger.exception(f"Erro restaurar clientes: {e}")
 
-# ---------------------------- RECIBOS ----------------------------
+# ---------------------------- RELATÓRIOS ----------------------------
 elif menu == "🖨️ Relatórios & Recibos":
     st.title("🖨️ Impressão")
     t1, t2 = st.tabs(["Recibo", "Relatório"])
