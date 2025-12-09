@@ -26,20 +26,116 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 
-# --- FUNÇÕES DE LIMPEZA ---
-def limpar_hora_rigoroso(h):
-    if pd.isna(h) or str(h).strip() == "" or str(h).lower() == "nan": return None
-    if isinstance(h, time): return h
-    try: return pd.to_datetime(str(h), format='%H:%M').time()
-    except:
-        try: return pd.to_datetime(str(h), format='%H:%M:%S').time()
-        except: return None
+# --- FUNÇÃO DE LIMPEZA DE DADOS (O CORAÇÃO DA CORREÇÃO) ---
+def limpar_dataframe_pedidos(df):
+    """
+    Esta função pega qualquer bagunça no CSV e padroniza para o formato 
+    que o Streamlit exige, evitando o erro de compatibilidade.
+    """
+    colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    
+    # 1. Garante colunas
+    for col in colunas_padrao:
+        if col not in df.columns: df[col] = None
+        
+    # 2. Numéricos (Força zero se der erro)
+    for col in ['Caruru', 'Bobo', 'Desconto', 'Valor']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        
+    # 3. Textos (Força string vazia se for nulo)
+    for col in ['Cliente', 'Status', 'Pagamento', 'Contato', 'Observacoes']:
+        df[col] = df[col].astype(str).replace('nan', '').replace('None', '')
+
+    # 4. Data (Força objeto Date)
+    df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
+    
+    # 5. HORA (CORREÇÃO CRÍTICA)
+    def forcar_relogio(valor):
+        if pd.isna(valor) or str(valor).strip() == "" or str(valor).lower() in ["nan", "none", "nat"]:
+            return None
+        
+        # Se já for relógio, retorna
+        if isinstance(valor, time):
+            return valor
+            
+        # Se for datetime completo, pega só a hora
+        if isinstance(valor, datetime):
+            return valor.time()
+            
+        # Tenta converter texto
+        valor_str = str(valor).strip()
+        try: return datetime.strptime(valor_str, "%H:%M:%S").time()
+        except:
+            try: return datetime.strptime(valor_str, "%H:%M").time()
+            except: return None # Desiste e retorna vazio (não trava)
+
+    df['Hora'] = df['Hora'].apply(forcar_relogio)
+    
+    # 6. Status e Pagamento (Validação)
+    # Se o status não for um dos oficiais, vira Pendente (evita erro de selectbox)
+    df.loc[~df['Status'].isin(OPCOES_STATUS), 'Status'] = "🔴 Pendente"
+    df.loc[~df['Pagamento'].isin(OPCOES_PAGAMENTO), 'Pagamento'] = "NÃO PAGO"
+    
+    return df[colunas_padrao] # Retorna apenas as colunas certas na ordem certa
+
+# --- CARREGAMENTO ---
+def carregar_clientes():
+    colunas = ["Nome", "Contato", "Observacoes"]
+    if os.path.exists(ARQUIVO_CLIENTES):
+        try:
+            df = pd.read_csv(ARQUIVO_CLIENTES)
+            for col in colunas:
+                if col not in df.columns: df[col] = ""
+            df['Nome'] = df['Nome'].astype(str)
+            df['Contato'] = df['Contato'].astype(str).replace('nan', '')
+            df['Observacoes'] = df['Observacoes'].astype(str).replace('nan', '')
+            return df
+        except: return pd.DataFrame(columns=colunas)
+    else: return pd.DataFrame(columns=colunas)
+
+def carregar_pedidos():
+    if os.path.exists(ARQUIVO_PEDIDOS):
+        try:
+            df = pd.read_csv(ARQUIVO_PEDIDOS)
+            # Passa pela limpeza rigorosa antes de devolver
+            return limpar_dataframe_pedidos(df)
+        except Exception as e:
+            logging.error(f"Erro ao ler CSV: {e}")
+            return limpar_dataframe_pedidos(pd.DataFrame())
+    else:
+        return limpar_dataframe_pedidos(pd.DataFrame())
+
+def salvar_pedidos(df):
+    try: df.to_csv(ARQUIVO_PEDIDOS, index=False)
+    except Exception as e: logging.error(f"Erro salvar pedidos: {e}")
+
+def salvar_clientes(df):
+    try: df.to_csv(ARQUIVO_CLIENTES, index=False)
+    except Exception as e: logging.error(f"Erro salvar clientes: {e}")
+
+def calcular_total(caruru, bobo, desconto):
+    try:
+        preco_base = 70.0
+        total = (caruru * preco_base) + (bobo * preco_base)
+        if desconto > 0:
+            total = total * (1 - (desconto/100))
+        return total
+    except: return 0.0
+
+def atualizar_contato_novo_pedido():
+    try:
+        c_at = st.session_state.get('chave_cliente_selecionado')
+        if c_at:
+            busca = st.session_state.clientes[st.session_state.clientes['Nome'] == c_at]
+            if not busca.empty: st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
+            else: st.session_state['chave_contato_automatico'] = ""
+        else: st.session_state['chave_contato_automatico'] = ""
+    except: pass
 
 # --- FUNÇÕES PDF ---
 def desenhar_cabecalho(p, titulo):
     if os.path.exists("logo.png"):
-        try:
-            p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
+        try: p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
         except: pass
     p.setFont("Helvetica-Bold", 16)
     p.drawString(150, 775, "Cantinho do Caruru")
@@ -169,68 +265,7 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         return buffer
     except: return None
 
-# --- CARREGAMENTO ---
-def carregar_clientes():
-    colunas = ["Nome", "Contato", "Observacoes"]
-    if os.path.exists(ARQUIVO_CLIENTES):
-        try:
-            df = pd.read_csv(ARQUIVO_CLIENTES)
-            for col in colunas:
-                if col not in df.columns: df[col] = ""
-            df['Nome'] = df['Nome'].astype(str)
-            df['Contato'] = df['Contato'].astype(str).replace('nan', '')
-            df['Observacoes'] = df['Observacoes'].astype(str).replace('nan', '')
-            return df
-        except: return pd.DataFrame(columns=colunas)
-    else: return pd.DataFrame(columns=colunas)
-
-def carregar_pedidos():
-    colunas_padrao = ["Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
-    if os.path.exists(ARQUIVO_PEDIDOS):
-        try:
-            df = pd.read_csv(ARQUIVO_PEDIDOS)
-            for col in colunas_padrao:
-                if col not in df.columns: df[col] = None
-            cols_num = ['Caruru', 'Bobo', 'Desconto', 'Valor']
-            for col in cols_num:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            cols_txt = ['Cliente', 'Status', 'Pagamento', 'Contato', 'Observacoes']
-            for col in cols_txt:
-                df[col] = df[col].astype(str).replace('nan', '')
-            mapa_status = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
-            df['Status'] = df['Status'].replace(mapa_status)
-            df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
-            df['Data'] = df['Data'].where(pd.notnull(df['Data']), None)
-            df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
-            return df
-        except: return pd.DataFrame(columns=colunas_padrao)
-    else: return pd.DataFrame(columns=colunas_padrao)
-
-def salvar_pedidos(df):
-    df.to_csv(ARQUIVO_PEDIDOS, index=False)
-
-def salvar_clientes(df):
-    df.to_csv(ARQUIVO_CLIENTES, index=False)
-
-def calcular_total(caruru, bobo, desconto):
-    try:
-        preco_base = 70.0
-        total = (caruru * preco_base) + (bobo * preco_base)
-        if desconto > 0:
-            total = total * (1 - (desconto/100))
-        return total
-    except: return 0.0
-
-def atualizar_contato_novo_pedido():
-    try:
-        c_at = st.session_state.get('chave_cliente_selecionado')
-        if c_at:
-            busca = st.session_state.clientes[st.session_state.clientes['Nome'] == c_at]
-            if not busca.empty: st.session_state['chave_contato_automatico'] = busca.iloc[0]['Contato']
-            else: st.session_state['chave_contato_automatico'] = ""
-        else: st.session_state['chave_contato_automatico'] = ""
-    except: pass
-
+# Inicializa Sessão
 if 'pedidos' not in st.session_state:
     st.session_state.pedidos = carregar_pedidos()
 if 'clientes' not in st.session_state:
@@ -244,13 +279,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- MENU ---
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=250)
     else: st.title("🦐 Cantinho do Caruru")
     st.divider()
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes", "🛠️ Manutenção"])
     st.divider()
-    st.caption("Sistema Online v6.5")
+    st.caption("Sistema Online v7.0")
 
 # --- DASHBOARD ---
 if menu == "Dashboard do Dia":
@@ -260,16 +296,19 @@ if menu == "Dashboard do Dia":
     else:
         data_analise = st.date_input("📅 Data:", date.today(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == data_analise].copy()
+        
         try:
             df_dia['Hora_Temp'] = df_dia['Hora'].apply(lambda x: x if x is not None else time(23,59))
             df_dia = df_dia.sort_values(by="Hora_Temp").drop(columns=['Hora_Temp'])
         except: pass
+        
         col1, col2, col3, col4 = st.columns(4)
         pendentes = df_dia[df_dia['Status'] != '✅ Entregue']
         col1.metric("Caruru (Pend)", f"{int(pendentes['Caruru'].sum())}")
         col2.metric("Bobó (Pend)", f"{int(pendentes['Bobo'].sum())}")
         col3.metric("Faturamento", f"R$ {df_dia['Valor'].sum():,.2f}")
         col4.metric("A Receber", f"R$ {df_dia[df_dia['Pagamento'] != 'PAGO']['Valor'].sum():,.2f}", delta_color="inverse")
+        
         st.divider()
         st.subheader(f"📋 Entregas")
         if not df_dia.empty:
@@ -286,13 +325,15 @@ if menu == "Dashboard do Dia":
                     }
                 )
                 if not df_baixa.equals(df_dia):
+                    # Salva
                     df.update(df_baixa)
                     st.session_state.pedidos = df
                     salvar_pedidos(df)
                     st.toast("Atualizado!", icon="✅")
+                    tm.sleep(0.5)
                     st.rerun()
             except Exception as e:
-                st.error("Erro ao exibir tabela. Vá em Manutenção.")
+                st.error("Erro visual. Dados seguros.")
                 logging.error(f"Erro Dash: {e}")
 
 # --- NOVO PEDIDO ---
@@ -300,10 +341,12 @@ elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     try: lista_cli = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except: lista_cli = []
+    
     st.markdown("### 1. Identificação")
     c1, c2 = st.columns([3,1])
     with c1: nome_sel = st.selectbox("Cliente", [""]+lista_cli, key="chave_cliente_selecionado", on_change=atualizar_contato_novo_pedido)
     with c2: hora_ent = st.time_input("Hora", value=time(12, 0))
+    
     st.markdown("### 2. Detalhes")
     with st.form("form_pedido", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -317,17 +360,29 @@ elif menu == "Novo Pedido":
         c6, c7 = st.columns(2)
         with c6: pgto = st.selectbox("Pagto", OPCOES_PAGAMENTO)
         with c7: status = st.selectbox("Status", OPCOES_STATUS)
+        
         if st.form_submit_button("💾 SALVAR"):
             cli_final = st.session_state.chave_cliente_selecionado
             if not cli_final: st.error("Selecione um cliente.")
             else:
                 try:
                     val = calcular_total(caruru, bobo, desc)
-                    novo = {"Cliente": cli_final, "Caruru": caruru, "Bobo": bobo, "Valor": val, "Data": dt_ent, "Hora": hora_ent, "Status": status, "Pagamento": pgto, "Contato": cont, "Desconto": desc, "Observacoes": obs}
+                    # SALVA HORA COMO STRING HH:MM PARA CSV
+                    h_str = hora_ent.strftime("%H:%M")
+                    
+                    novo = {"Cliente": cli_final, "Caruru": caruru, "Bobo": bobo, "Valor": val, "Data": dt_ent, "Hora": h_str, "Status": status, "Pagamento": pgto, "Contato": cont, "Desconto": desc, "Observacoes": obs}
                     df_novo = pd.DataFrame([novo])
                     df_novo['Data'] = pd.to_datetime(df_novo['Data']).dt.date
+                    
+                    # Concatena
                     st.session_state.pedidos = pd.concat([st.session_state.pedidos, df_novo], ignore_index=True)
+                    
+                    # SALVA O CSV BRUTO
                     salvar_pedidos(st.session_state.pedidos)
+                    
+                    # RECARREGA VIA FUNÇÃO DE LIMPEZA PARA GARANTIR TIPOS
+                    st.session_state.pedidos = carregar_pedidos()
+                    
                     st.success("Salvo!")
                     st.session_state['chave_contato_automatico'] = ""
                     tm.sleep(0.5)
@@ -340,19 +395,21 @@ elif menu == "Novo Pedido":
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     df = st.session_state.pedidos
+    
     if not df.empty:
         try:
             df['Hora_Temp'] = df['Hora'].apply(lambda x: x if x is not None else time(0,0))
             df = df.sort_values(by=["Data", "Hora_Temp"], ascending=[True, True]).drop(columns=['Hora_Temp'])
         except: df = df.sort_values(by="Data")
+        
         try:
-            df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
             df_editado = st.data_editor(
                 df,
                 num_rows="dynamic", use_container_width=True, hide_index=True,
                 column_config={
                     "Valor": st.column_config.NumberColumn("Total", format="R$ %.2f", disabled=True),
                     "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                    # COLUNA HORA AGORA É SEGURA
                     "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
                     "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
                     "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
@@ -360,16 +417,19 @@ elif menu == "Gerenciar Tudo":
                     "Bobo": st.column_config.NumberColumn(format="%d"),
                 }
             )
+            
             if not df_editado.equals(df):
                 preco = 70.0
                 df_editado['Valor'] = ((df_editado['Caruru'] * preco) + (df_editado['Bobo'] * preco)) * (1 - (df_editado['Desconto'] / 100))
                 st.session_state.pedidos = df_editado
                 salvar_pedidos(df_editado)
                 st.toast("Salvo!", icon="💾")
+                tm.sleep(0.5)
                 st.rerun()
         except Exception as e:
-            st.error(f"Erro na tabela: {e}")
+            st.error(f"Erro de visualização. O banco de dados foi limpo mas algo persiste.")
             logging.error(f"Erro Table Editor: {e}")
+            
         st.divider()
         try:
             cli_unicos = sorted(df['Cliente'].unique())
@@ -386,7 +446,6 @@ elif menu == "Gerenciar Tudo":
                 st.link_button("Enviar Zap", lnk)
         except: pass
     
-    # --- ÁREA DE SEGURANÇA AGORA TEM RESTAURAR CLIENTES ---
     st.divider()
     with st.expander("💾 Segurança (Backup & Restaurar)"):
         st.write("### 1. Fazer Backup")
@@ -401,20 +460,27 @@ elif menu == "Gerenciar Tudo":
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.write("⚠️ **Restaurar Pedidos**")
-            up = st.file_uploader("Arquivo Pedidos (CSV):", type=["csv"], key="re_ped")
-            if up and st.button("Restaurar Pedidos"):
+            up = st.file_uploader("Arquivo Pedidos (CSV):", type=["csv"], key="res_ped_man")
+            if up and st.button("Restaurar P"):
                 try:
+                    # Lê o CSV bruto
                     df_new = pd.read_csv(up)
-                    salvar_pedidos(df_new)
+                    # Passa pelo LIMPADOR RIGOROSO
+                    df_clean = limpar_dataframe_pedidos(df_new)
+                    # Salva
+                    salvar_pedidos(df_clean)
+                    # Recarrega
                     st.session_state.pedidos = carregar_pedidos()
-                    st.success("OK!")
+                    st.success("OK! Tabela corrigida e restaurada.")
+                    tm.sleep(1)
                     st.rerun()
-                except: st.error("Erro.")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
         
         with col_r2:
             st.write("👥 **Restaurar Clientes**")
-            up_cli = st.file_uploader("Arquivo Clientes (CSV):", type=["csv"], key="re_cli")
-            if up_cli and st.button("Restaurar Clientes"):
+            up_cli = st.file_uploader("Arquivo Clientes (CSV):", type=["csv"], key="res_cli_man")
+            if up_cli and st.button("Restaurar C"):
                 try:
                     df_new = pd.read_csv(up_cli)
                     salvar_clientes(df_new)
@@ -493,39 +559,3 @@ elif menu == "🛠️ Manutenção":
             open(ARQUIVO_LOG, 'w').close()
             st.rerun()
     else: st.success("Sistema saudável.")
-    
-    st.divider()
-    st.subheader("Backup & Restauração")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.write("📦 **Backup Geral**")
-        try:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                zip_file.writestr("pedidos.csv", df.to_csv(index=False))
-                zip_file.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
-            st.download_button("📥 Baixar ZIP", zip_buffer.getvalue(), f"backup_{date.today()}.zip", "application/zip")
-        except: st.error("Erro.")
-        
-    with col2:
-        st.write("⚠️ **Restaurar Pedidos**")
-        up = st.file_uploader("CSV Pedidos", type=["csv"], key="res_ped_man")
-        if up and st.button("Restaurar P"):
-            try:
-                df_new = pd.read_csv(up)
-                salvar_pedidos(df_new)
-                st.session_state.pedidos = carregar_pedidos()
-                st.success("OK!")
-            except: st.error("Erro.")
-            
-    with col3:
-        st.write("👥 **Restaurar Clientes**")
-        upc = st.file_uploader("CSV Clientes", type=["csv"], key="res_cli_man")
-        if upc and st.button("Restaurar C"):
-            try:
-                df_new = pd.read_csv(upc)
-                salvar_clientes(df_new)
-                st.session_state.clientes = carregar_clientes()
-                st.success("OK!")
-            except: st.error("Erro.")
