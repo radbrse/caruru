@@ -717,7 +717,7 @@ elif menu == "👥 Cadastrar Clientes":
                 st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
                 salvar_clientes(st.session_state.clientes)
                 st.success("Ok!")
-                st.experimental_rerun()
+                st.rerun()
         if not st.session_state.clientes.empty:
             df_c = st.data_editor(st.session_state.clientes, num_rows="dynamic", use_container_width=True, hide_index=True)
             if not df_c.equals(st.session_state.clientes):
@@ -766,3 +766,4 @@ elif menu == "🛠️ Manutenção":
         st.success("Sistema saudável.")
 
 # ---------------------------- FIM ----------------------------
+
