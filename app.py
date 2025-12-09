@@ -49,7 +49,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "17.2 (Sem Calc)"
+VERSAO = "17.0"
 
 logging.basicConfig(filename=ARQUIVO_LOG, level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(message)s', force=True)
 logger = logging.getLogger("cantinho")
@@ -563,7 +563,7 @@ def gerar_recibo_pdf(dados):
             p.drawString(30, y + 25, "SITUAÇÃO: PAGO ✅")
         elif sit == "METADE":
             p.setFillColor(colors.orange)
-            p.drawString(30, y + 25, "SITUAÇÃO: PARCIAL (50%) ⚠️")
+            p.drawString(30, y + 25, "SITUAÇÃO: METADE PAGO ⚠️")
             p.setFillColor(colors.black)
             p.setFont("Helvetica", 10)
             p.drawString(30, y, f"Pix para pagamento restante: {CHAVE_PIX}")
@@ -585,9 +585,8 @@ def gerar_recibo_pdf(dados):
         p.line(150, y_ass, 450, y_ass)
         p.setFont("Helvetica", 10)
         p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
-        data_hoje = datetime.now().strftime('%d/%m/%Y')
         p.setFont("Helvetica-Oblique", 8)
-        p.drawCentredString(300, y_ass - 30, f"Emitido em: {data_hoje}")
+        p.drawCentredString(300, y_ass - 30, f"Emitido em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
         
         p.showPage()
         p.save()
@@ -606,21 +605,21 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         desenhar_cabecalho(p, titulo_relatorio)
         
         p.setFont("Helvetica-Bold", 9)
-        header_x = [30, 60, 110, 230, 280, 330, 400, 480]
-        headers = ["ID", "Data", "Cliente", "Car", "Bob", "Valor", "Status", "Pagto", "Hora"]
-        for x, h in zip(header_x, headers):
+        cols = [30, 55, 100, 200, 240, 280, 330, 400, 480]
+        hdrs = ["ID", "Data", "Cliente", "Car", "Bob", "Valor", "Status", "Pagto", "Hora"]
+        for x, h in zip(cols, hdrs):
             p.drawString(x, y, h)
         y -= 20
-        p.setFont("Helvetica", 9)
-        total_valor = 0
+        p.setFont("Helvetica", 8)
+        total = 0
         
-        for index, row in df_filtrado.iterrows():
+        for _, row in df_filtrado.iterrows():
             if y < 60:
                 p.showPage()
                 desenhar_cabecalho(p, titulo_relatorio)
                 y = 700
                 p.setFont("Helvetica-Bold", 9)
-                for x, h in zip(header_x, headers):
+                for x, h in zip(cols, hdrs):
                     p.drawString(x, y, h)
                 y -= 20
                 p.setFont("Helvetica", 8)
@@ -630,21 +629,21 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
             st_cl = str(row['Status']).replace("🔴", "").replace("✅", "").replace("🟡", "").replace("🚫", "").strip()[:12]
             
             p.drawString(30, y, str(row.get('ID_Pedido', '')))
-            p.drawString(60, y, d_s)
-            p.drawString(110, y, str(row.get('Cliente', ''))[:15])
-            p.drawString(230, y, str(int(row.get('Caruru', 0))))
-            p.drawString(280, y, str(int(row.get('Bobo', 0))))
-            p.drawString(330, y, f"R$ {row.get('Valor', 0):.2f}")
-            p.drawString(400, y, str(st_cl)[:12])
-            p.drawString(480, y, str(row.get('Pagamento', ''))[:10])
-            p.drawString(550, y, h_s) # Ajustado x para hora
+            p.drawString(55, y, d_s)
+            p.drawString(100, y, str(row.get('Cliente', ''))[:15])
+            p.drawString(200, y, str(int(row.get('Caruru', 0))))
+            p.drawString(240, y, str(int(row.get('Bobo', 0))))
+            p.drawString(280, y, f"{row.get('Valor', 0):.2f}")
+            p.drawString(330, y, st_cl)
+            p.drawString(400, y, str(row.get('Pagamento', ''))[:10])
+            p.drawString(480, y, h_s)
             
-            total_valor += row.get('Valor', 0)
+            total += row.get('Valor', 0)
             y -= 12
         
         p.line(30, y, 565, y)
         p.setFont("Helvetica-Bold", 11)
-        p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total_valor:,.2f}")
+        p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total:,.2f}")
         p.setFont("Helvetica", 9)
         p.drawString(30, y - 20, f"Total de pedidos: {len(df_filtrado)}")
         
@@ -664,9 +663,9 @@ def gerar_lista_clientes_pdf(df_clientes):
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
-        y = 700
         desenhar_cabecalho(p, "Lista de Clientes")
         
+        y = 700
         p.setFont("Helvetica-Bold", 10)
         p.drawString(30, y, "NOME")
         p.drawString(220, y, "CONTATO")
@@ -676,10 +675,7 @@ def gerar_lista_clientes_pdf(df_clientes):
         y -= 15
         
         p.setFont("Helvetica", 9)
-        
-        df_clientes = df_clientes.sort_values(by="Nome") if not df_clientes.empty else df_clientes
-        
-        for index, row in df_clientes.iterrows():
+        for _, row in df_clientes.iterrows():
             if y < 50:
                 p.showPage()
                 desenhar_cabecalho(p, "Lista de Clientes")
@@ -832,11 +828,10 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    # ------------------ LOGICA DE RESET (NOVO) ------------------
+    # Verifica se deve resetar o cliente (após salvar pedido)
     if st.session_state.get('resetar_cliente_novo', False):
         st.session_state.cliente_novo_index = 0
         st.session_state.resetar_cliente_novo = False
-    # ------------------------------------------------------------
     
     # Inicializa índice do cliente
     if 'cliente_novo_index' not in st.session_state:
@@ -887,28 +882,31 @@ elif menu == "Novo Pedido":
     with st.form("form_novo_pedido", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         with c1:
-            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
+            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999", key="novo_contato")
         with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
+            dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY", key="novo_data")
         with c3:
-            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido")
+            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="novo_hora")
         
         st.markdown("### 3️⃣ Itens do Pedido")
         c3, c4, c5 = st.columns(3)
         with c3:
-            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0)
+            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0, key="novo_caruru")
         with c4:
-            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0)
+            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0, key="novo_bobo")
         with c5:
-            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
+            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0, key="novo_desconto")
         
-        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
+        # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
+        st.caption(f"💵 Preço unitário: R$ {PRECO_BASE:.2f} | Cálculo: (Caruru + Bobó) × R$ {PRECO_BASE:.2f} - Desconto%")
+        
+        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...", key="novo_obs")
         
         c6, c7 = st.columns(2)
         with c6:
-            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
+            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, key="novo_pagamento")
         with c7:
-            stt = st.selectbox("📊 Status", OPCOES_STATUS)
+            stt = st.selectbox("📊 Status", OPCOES_STATUS, key="novo_status")
         
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
@@ -939,15 +937,9 @@ elif menu == "Novo Pedido":
             else:
                 st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
                 st.balloons()
-                
-                # --- GATILHO DE RESET (NOVO) ---
+                # Seta flag para resetar o cliente na próxima execução
                 st.session_state.resetar_cliente_novo = True
-                
-                # Reseta calculadora se existir
-                if 'calc_car' in st.session_state: st.session_state['calc_car'] = 0
-                if 'calc_bob' in st.session_state: st.session_state['calc_bob'] = 0
-                if 'calc_desc' in st.session_state: st.session_state['calc_desc'] = 0
-                
+                # Força limpeza de todos os campos usando chaves únicas e rerun
                 st.rerun()
 
 # --- EDITAR PEDIDO ---
@@ -1345,7 +1337,7 @@ elif menu == "Gerenciar Tudo":
 
 # --- RELATÓRIOS ---
 elif menu == "🖨️ Relatórios & Recibos":
-    st.title("🖨️ Impressão")
+    st.title("🖨️ Impressão de Documentos")
     
     t1, t2 = st.tabs(["📄 Recibo Individual", "📊 Relatório Geral"])
     df = st.session_state.pedidos
