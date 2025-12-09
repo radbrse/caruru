@@ -828,6 +828,16 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
+    # Verifica se precisa limpar o formulário (flag setada após salvar)
+    if st.session_state.get('limpar_form_novo', False):
+        st.session_state.novo_caruru = 0
+        st.session_state.novo_bobo = 0
+        st.session_state.novo_desconto = 0
+        st.session_state.novo_contato = ""
+        st.session_state.novo_obs = ""
+        st.session_state.novo_cliente_idx = 0  # Índice do selectbox (0 = vazio)
+        st.session_state.limpar_form_novo = False
+    
     # Inicializa session_state para os campos do formulário
     if 'novo_caruru' not in st.session_state:
         st.session_state.novo_caruru = 0
@@ -839,35 +849,36 @@ elif menu == "Novo Pedido":
         st.session_state.novo_contato = ""
     if 'novo_obs' not in st.session_state:
         st.session_state.novo_obs = ""
-    if 'novo_cliente' not in st.session_state:
-        st.session_state.novo_cliente = ""
+    if 'novo_cliente_idx' not in st.session_state:
+        st.session_state.novo_cliente_idx = 0
     
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except:
         clis = []
     
+    lista_clientes = [""] + clis
+    
     def update_cont():
-        sel = st.session_state.get("sel_cli_novo")
-        if sel:
+        idx = st.session_state.get("sel_cli_novo_idx", 0)
+        if idx > 0 and idx < len(lista_clientes):
+            sel = lista_clientes[idx]
             res = st.session_state.clientes[st.session_state.clientes['Nome'] == sel]
             st.session_state.novo_contato = res.iloc[0]['Contato'] if not res.empty else ""
         else:
             st.session_state.novo_contato = ""
 
-    def limpar_formulario():
-        """Limpa todos os campos do formulário"""
-        st.session_state.novo_caruru = 0
-        st.session_state.novo_bobo = 0
-        st.session_state.novo_desconto = 0
-        st.session_state.novo_contato = ""
-        st.session_state.novo_obs = ""
-        st.session_state.novo_cliente = ""
-        if 'sel_cli_novo' in st.session_state:
-            st.session_state.sel_cli_novo = ""
-
     st.markdown("### 1️⃣ Cliente")
-    c_sel = st.selectbox("👤 Nome do Cliente", [""] + clis, key="sel_cli_novo", on_change=update_cont)
+    c_sel_idx = st.selectbox(
+        "👤 Nome do Cliente", 
+        range(len(lista_clientes)), 
+        format_func=lambda x: lista_clientes[x] if lista_clientes[x] else "-- Selecione --",
+        index=st.session_state.novo_cliente_idx,
+        key="sel_cli_novo_idx", 
+        on_change=update_cont
+    )
+    st.session_state.novo_cliente_idx = c_sel_idx
+    c_sel = lista_clientes[c_sel_idx] if c_sel_idx > 0 else ""
     
     if not c_sel:
         st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
@@ -940,8 +951,8 @@ elif menu == "Novo Pedido":
         else:
             st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
             st.balloons()
-            # Limpa os campos para novo pedido
-            limpar_formulario()
+            # Seta flag para limpar os campos na próxima execução
+            st.session_state.limpar_form_novo = True
             st.rerun()
 
 # --- EDITAR PEDIDO ---
