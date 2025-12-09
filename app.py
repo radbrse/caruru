@@ -619,22 +619,73 @@ elif menu == "Gerenciar Tudo":
                 st.error("Erro ao preparar backup")
                 logger.exception("Erro backup")
 
+            st.write("### 2. Restaurar")
+            st.markdown("**Aceita:** CSV de `pedidos` (colunas padrão), CSV de `clientes`, ou ZIP com `pedidos.csv` e/ou `clientes.csv`.")
+
             col_r1, col_r2 = st.columns(2)
+
             with col_r1:
-                st.write("⚠️ **Restaurar Pedidos**")
-                up = st.file_uploader("Arquivo Pedidos (CSV):", type=["csv"], key="res_ped_man")
-                if up and st.button("Restaurar P"):
+                st.write("⚠️ **Restaurar Pedidos (CSV / ZIP)**")
+                up = st.file_uploader("Arquivo Pedidos (CSV ou ZIP):", type=["csv", "zip"], key="res_ped_man")
+                if up:
                     try:
-                        df_new = pd.read_csv(up)
-                        salvar_pedidos(df_new)
-                        st.session_state.pedidos = carregar_pedidos()
-                        st.success("OK!")
-                        st.rerun()
-                    except Exception:
-                        st.error("Erro ao restaurar pedidos")
-                        logger.exception("Erro restaurar pedidos")
+                        # Se for ZIP, tenta extrair pedidos.csv
+                        if up.type == "application/zip" or (hasattr(up, "name") and up.name.lower().endswith(".zip")):
+                            zbuf = io.BytesIO(up.read())
+                            with zipfile.ZipFile(zbuf, "r") as zf:
+                                if "pedidos.csv" in zf.namelist():
+                                    df_new = pd.read_csv(io.BytesIO(zf.read("pedidos.csv")))
+                                else:
+                                    st.error("ZIP não contém 'pedidos.csv'.")
+                                    df_new = None
+                        else:
+                            up.seek(0)
+                            df_new = pd.read_csv(up)
+
+                        if df_new is not None:
+                            # valida cols mínimas
+                            req_cols = {"ID_Pedido","Cliente","Caruru","Bobo","Valor","Data","Hora","Status","Pagamento","Contato","Desconto","Observacoes"}
+                            if not req_cols.issubset(set(df_new.columns)):
+                                # tenta mapear colunas se possível ou rejeita
+                                st.warning("CSV carregado não tem todas as colunas esperadas. Tentando normalizar...")
+                            # salva e recarrega
+                            salvar_pedidos(df_new)
+                            st.session_state.pedidos = carregar_pedidos()
+                            st.success("Pedidos restaurados com sucesso!")
+                            st.experimental_rerun()
+                    except Exception as e:
+                        st.error("Erro ao restaurar pedidos. Veja logs.")
+                        logger.exception(f"Erro restaurar pedidos: {e}")
+
             with col_r2:
-                st.write("👥 **Restaurar Clientes**")
+                st.write("👥 **Restaurar Clientes (CSV / ZIP)**")
+                upc = st.file_uploader("Arquivo Clientes (CSV ou ZIP):", type=["csv", "zip"], key="res_cli_man")
+                if upc:
+                    try:
+                        if upc.type == "application/zip" or (hasattr(upc, "name") and upc.name.lower().endswith(".zip")):
+                            zbuf = io.BytesIO(upc.read())
+                            with zipfile.ZipFile(zbuf, "r") as zf:
+                                if "clientes.csv" in zf.namelist():
+                                    df_new = pd.read_csv(io.BytesIO(zf.read("clientes.csv")))
+                                else:
+                                    st.error("ZIP não contém 'clientes.csv'.")
+                                    df_new = None
+                        else:
+                            upc.seek(0)
+                            df_new = pd.read_csv(upc)
+
+                        if df_new is not None:
+                            # validação mínima
+                            req_cols = {"Nome","Contato","Observacoes"}
+                            if not req_cols.issubset(set(df_new.columns)):
+                                st.warning("CSV de clientes não tem todas as colunas esperadas. Tentando normalizar...")
+                            salvar_clientes(df_new)
+                            st.session_state.clientes = carregar_clientes()
+                            st.success("Clientes restaurados com sucesso!")
+                            st.experimental_rerun()
+                    except Exception as e:
+                        st.error("Erro ao restaurar clientes. Veja logs.")
+                        logger.exception(f"Erro restaurar clientes: {e}")
                 upc = st.file_uploader("Arquivo Clientes (CSV):", type=["csv"], key="res_cli_man")
                 if upc and st.button("Restaurar C"):
                     try:
@@ -746,3 +797,4 @@ elif menu == "🛠️ Manutenção":
             st.rerun()
     else:
         st.success("Sistema saudável.")
+
