@@ -9,8 +9,45 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
-# ---------------------------- CONFIG ----------------------------
+# --- CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira linha do Streamlit) ---
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
+
+# ==============================================================================
+# 🔒 SISTEMA DE LOGIN (NOVO)
+# ==============================================================================
+def check_password():
+    """Retorna True se o usuário tiver a senha correta."""
+
+    def password_entered():
+        """Checa se a senha digitada bate com a senha secreta."""
+        if st.session_state["password"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Não armazena a senha
+        else:
+            st.session_state["password_correct"] = False
+
+    # Se já validou, retorna True
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Mostra a tela de login
+    st.title("🔒 Acesso Restrito")
+    st.text_input(
+        "Digite a senha de acesso:", type="password", key="password", on_change=password_entered
+    )
+    
+    if "password_correct" in st.session_state:
+        st.error("Senha incorreta! Tente novamente.")
+
+    return False
+
+# >>> TRAVA O SISTEMA AQUI SE NÃO TIVER LOGADO <<<
+if not check_password():
+    st.stop()  # Para a execução do código aqui
+
+# ==============================================================================
+# FIM DO BLOQUEIO - O SISTEMA COMEÇA AQUI
+# ==============================================================================
 
 ARQUIVO_LOG = "system_errors.log"
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
@@ -19,9 +56,9 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "11.1"
+VERSAO = "12.0"
 
-# ---------------------------- LOGGING ----------------------------
+# --- LOGGING ---
 logging.basicConfig(
     filename=ARQUIVO_LOG,
     level=logging.ERROR,
@@ -30,7 +67,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cantinho")
 
-# ---------------------------- HELPERS ----------------------------
+# --- HELPERS ---
 def limpar_hora_rigoroso(h):
     try:
         if h in [None, "", "nan", "NaT"] or pd.isna(h): return None
@@ -47,8 +84,10 @@ def limpar_hora_rigoroso(h):
 def gerar_id_sequencial(df):
     try:
         if df.empty: return 1
-        col_id = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
-        return int(col_id.max()) + 1
+        df = df.copy()
+        df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
+        max_id = df['ID_Pedido'].max()
+        return int(max_id) + 1
     except: return 1
 
 def calcular_total(caruru, bobo, desconto):
@@ -59,7 +98,7 @@ def calcular_total(caruru, bobo, desconto):
         return round(total, 2)
     except: return 0.0
 
-# ---------------------------- DB UTILS ----------------------------
+# --- DB UTILS ---
 def carregar_clientes():
     colunas = ["Nome", "Contato", "Observacoes"]
     if not os.path.exists(ARQUIVO_CLIENTES): return pd.DataFrame(columns=colunas)
@@ -79,24 +118,17 @@ def carregar_pedidos():
         df = pd.read_csv(ARQUIVO_PEDIDOS)
         for c in colunas:
             if c not in df.columns: df[c] = None
-        
-        df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.date
-        df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
-        
-        for col in ['Caruru', 'Bobo', 'Valor', 'Desconto']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
+        df["Hora"] = df["Hora"].apply(limpar_hora_rigoroso)
+        for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
-        
-        for c in ['Cliente', 'Status', 'Pagamento', 'Contato', 'Observacoes']:
-            df[c] = df[c].fillna("").astype(str)
-            
-        mapa = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
-        df['Status'] = df['Status'].replace(mapa)
-        
         if df['ID_Pedido'].duplicated().any() or (not df.empty and df['ID_Pedido'].max() == 0):
              df['ID_Pedido'] = range(1, len(df) + 1)
-
+        mapa = {"Pendente": "🔴 Pendente", "Em Produção": "🟡 Em Produção", "Entregue": "✅ Entregue", "Cancelado": "🚫 Cancelado"}
+        df['Status'] = df['Status'].replace(mapa)
+        for c in ["Cliente", "Status", "Pagamento", "Contato", "Observacoes"]:
+            df[c] = df[c].fillna("").astype(str)
         return df[colunas]
     except Exception as e:
         logger.error(f"Erro carregar pedidos: {e}")
@@ -114,7 +146,7 @@ def salvar_clientes(df):
     try: df.to_csv(ARQUIVO_CLIENTES, index=False)
     except Exception as e: logger.error(f"Erro salvar clientes: {e}")
 
-# ---------------------------- PDF UTILS ----------------------------
+# --- PDF UTILS ---
 def desenhar_cabecalho(p, titulo):
     if os.path.exists("logo.png"):
         try: p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
@@ -130,33 +162,27 @@ def gerar_recibo_pdf(dados):
         p = canvas.Canvas(buffer, pagesize=A4)
         id_p = dados.get('ID_Pedido', 'NOVO')
         desenhar_cabecalho(p, f"Pedido #{id_p}")
-
         y = 700
         p.setFont("Helvetica-Bold", 12); p.drawString(30, y, "DADOS DO CLIENTE"); y-=20
         p.setFont("Helvetica", 12)
         p.drawString(30, y, f"Nome: {dados.get('Cliente','')}")
         p.drawString(300, y, f"WhatsApp: {dados.get('Contato','')}")
         y-=20
-        
         dt = dados.get('Data'); dt_s = dt.strftime('%d/%m/%Y') if hasattr(dt, 'strftime') else str(dt)
         hr = dados.get('Hora'); hr_s = hr.strftime('%H:%M') if isinstance(hr, time) else str(hr)[:5]
         p.drawString(30, y, f"Data: {dt_s}"); p.drawString(300, y, f"Hora: {hr_s}")
-        
         y-=40; p.setFillColor(colors.lightgrey); p.rect(30, y-5, 535, 20, fill=1, stroke=0)
         p.setFillColor(colors.black); p.setFont("Helvetica-Bold", 10)
-        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QUANTIDADE"); y-=25
+        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QTD"); y-=25
         p.setFont("Helvetica", 10)
-        
         if float(dados.get('Caruru',0)) > 0:
             p.drawString(40, y, "Caruru Tradicional"); p.drawString(400, y, f"{int(float(dados.get('Caruru')))}"); y-=15
         if float(dados.get('Bobo',0)) > 0:
             p.drawString(40, y, "Bobó de Camarão"); p.drawString(400, y, f"{int(float(dados.get('Bobo')))}"); y-=15
         p.line(30, y-5, 565, y-5)
-        
         y-=40; p.setFont("Helvetica-Bold", 14)
         lbl = "TOTAL PAGO" if dados.get('Pagamento') == "PAGO" else "VALOR A PAGAR"
         p.drawString(350, y, f"{lbl}: R$ {float(dados.get('Valor',0)):.2f}")
-        
         y-=25; p.setFont("Helvetica-Bold", 12)
         sit = dados.get('Pagamento')
         if sit == "PAGO":
@@ -164,15 +190,12 @@ def gerar_recibo_pdf(dados):
         else:
             p.setFillColor(colors.red); p.drawString(30, y+25, "SITUAÇÃO: PENDENTE ❌")
             p.setFillColor(colors.black); p.setFont("Helvetica", 10); p.drawString(30, y, f"Pix: {CHAVE_PIX}")
-        
         p.setFillColor(colors.black)
         if dados.get('Observacoes'):
             y-=30; p.setFont("Helvetica-Oblique", 10); p.drawString(30, y, f"Obs: {dados.get('Observacoes')}")
-            
         y_ass = 150; p.setLineWidth(1); p.line(150, y_ass, 450, y_ass)
         p.setFont("Helvetica", 10); p.drawCentredString(300, y_ass-15, "Cantinho do Caruru")
         p.setFont("Helvetica-Oblique", 8); p.drawCentredString(300, y_ass-30, f"Emitido em: {datetime.now().strftime('%d/%m/%Y')}")
-        
         p.showPage(); p.save(); buffer.seek(0)
         return buffer
     except: return None
@@ -187,12 +210,10 @@ def gerar_relatorio_pdf(df, titulo):
         hdrs = ["ID", "Data", "Cliente", "Caruru", "Bobó", "Valor", "Status", "Pagto"]
         for x, h in zip(cols, hdrs): p.drawString(x, y, h)
         y-=20; p.setFont("Helvetica", 9); total=0
-        
         for _, row in df.iterrows():
             if y < 60: p.showPage(); desenhar_cabecalho(p, titulo); y=700
             d_s = row['Data'].strftime('%d/%m') if hasattr(row['Data'], 'strftime') else ""
             st_cl = str(row['Status']).replace("🔴","").replace("✅","").replace("🟡","").strip()[:10]
-            
             p.drawString(30, y, str(row.get('ID_Pedido','')))
             p.drawString(60, y, d_s)
             p.drawString(110, y, str(row.get('Cliente',''))[:18])
@@ -202,7 +223,6 @@ def gerar_relatorio_pdf(df, titulo):
             p.drawString(380, y, st_cl)
             p.drawString(470, y, str(row.get('Pagamento','')))
             total += row.get('Valor', 0); y-=15
-            
         p.line(30, y, 565, y); p.setFont("Helvetica-Bold", 11); p.drawString(320, y-20, f"TOTAL: R$ {total:,.2f}")
         p.showPage(); p.save(); buffer.seek(0)
         return buffer
@@ -216,20 +236,17 @@ def gerar_lista_clientes_pdf(df):
         p.setFont("Helvetica-Bold", 10)
         p.drawString(30, y, "Nome"); p.drawString(250, y, "WhatsApp"); p.drawString(380, y, "Obs")
         y-=20; p.setFont("Helvetica", 10)
-        
         for _, row in df.sort_values('Nome').iterrows():
             if y < 60: p.showPage(); desenhar_cabecalho(p, "Lista de Clientes"); y=700
             p.drawString(30, y, str(row['Nome'])[:35])
             p.drawString(250, y, str(row['Contato']))
             p.drawString(380, y, str(row['Observacoes'])[:30])
             y-=20; p.setLineWidth(0.5); p.setStrokeColor(colors.lightgrey); p.line(30, y+15, 565, y+15)
-            
         p.showPage(); p.save(); buffer.seek(0)
         return buffer
     except: return None
 
 # ---------------------------- START ----------------------------
-
 if 'pedidos' not in st.session_state: st.session_state.pedidos = carregar_pedidos()
 if 'clientes' not in st.session_state: st.session_state.clientes = carregar_clientes()
 if 'chave_contato_automatico' not in st.session_state: st.session_state['chave_contato_automatico'] = ""
@@ -242,8 +259,6 @@ with st.sidebar:
     st.divider()
     st.caption(f"Versão {VERSAO}")
 
-# ---------------------------- PÁGINAS ----------------------------
-
 if menu == "Dashboard":
     st.title("🦐🏍️ Expedição do Dia")
     df = st.session_state.pedidos
@@ -251,12 +266,10 @@ if menu == "Dashboard":
     else:
         dt_filter = st.date_input("Data:", date.today(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == dt_filter].copy()
-        
         try:
-            df_dia['h'] = df_dia['Hora'].apply(lambda x: x if x else time(23,59))
-            df_dia = df_dia.sort_values('h')
+            df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if x else time(23,59))
+            df_dia = df_dia.sort_values('h_sort')
         except: pass
-        
         c1, c2, c3, c4 = st.columns(4)
         pend = df_dia[~df_dia['Status'].str.contains("Entregue", na=False)]
         c1.metric("Caruru (Pend)", int(pend['Caruru'].sum()))
@@ -264,7 +277,6 @@ if menu == "Dashboard":
         c3.metric("Faturamento", f"R$ {df_dia['Valor'].sum():,.2f}")
         rec = df_dia[df_dia['Pagamento'] != 'PAGO']['Valor'].sum()
         c4.metric("A Receber", f"R$ {rec:,.2f}", delta_color="inverse")
-        
         st.divider(); st.subheader("📋 Entregas")
         if not df_dia.empty:
             df_dia['Hora'] = df_dia['Hora'].apply(limpar_hora_rigoroso)
@@ -295,55 +307,46 @@ elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     try: clis = sorted(st.session_state.clientes['Nome'].unique())
     except: clis = []
-    
     def update_cont():
         sel = st.session_state.get("sel_cli")
         if sel:
             res = st.session_state.clientes[st.session_state.clientes['Nome'] == sel]
             st.session_state["auto_contato"] = res.iloc[0]['Contato'] if not res.empty else ""
         else: st.session_state["auto_contato"] = ""
-
     st.markdown("### 1. Cliente")
     c1, c2 = st.columns([3, 1])
-    with c1: cli_sel = st.selectbox("Nome", [""] + clis, key="sel_cli", on_change=update_cont)
-    with c2: hr_ent = st.time_input("Hora", value=time(12,0))
-    
+    with c1: c_sel = st.selectbox("Nome", [""]+clis, key="sel_cli", on_change=update_cont)
+    with c2: h_ent = st.time_input("Hora", value=time(12,0))
     st.markdown("### 2. Dados")
     with st.form("form_novo", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1: cont = st.text_input("WhatsApp", key="auto_contato")
         with c2: dt = st.date_input("Data", min_value=date.today(), format="DD/MM/YYYY")
-        
         c3, c4, c5 = st.columns(3)
         with c3: qc = st.number_input("Caruru", 0.0, step=1.0)
         with c4: qb = st.number_input("Bobó", 0.0, step=1.0)
         with c5: dc = st.number_input("Desc %", 0, 100)
-        
         obs = st.text_area("Obs")
         c6, c7 = st.columns(2)
         with c6: pg = st.selectbox("Pagto", OPCOES_PAGAMENTO)
         with c7: stt = st.selectbox("Status", OPCOES_STATUS)
-        
         if st.form_submit_button("💾 SALVAR"):
-            if not cli_sel: st.error("Selecione um cliente.")
+            if not c_sel: st.error("Selecione um cliente.")
             else:
                 try:
                     df_p = st.session_state.pedidos
                     nid = gerar_id_sequencial(df_p)
                     val = calcular_total(qc, qb, dc)
-                    
                     novo = {
-                        "ID_Pedido": nid, "Cliente": cli_sel, "Caruru": qc, "Bobo": qb, "Valor": val,
-                        "Data": dt, "Hora": hr_ent.strftime("%H:%M"), "Status": stt, "Pagamento": pg,
+                        "ID_Pedido": nid, "Cliente": c_sel, "Caruru": qc, "Bobo": qb, "Valor": val,
+                        "Data": dt, "Hora": h_ent.strftime("%H:%M"), "Status": stt, "Pagamento": pg,
                         "Contato": cont, "Desconto": dc, "Observacoes": obs
                     }
                     df_novo = pd.DataFrame([novo])
                     df_novo['Data'] = pd.to_datetime(df_novo['Data']).dt.date
-                    
                     st.session_state.pedidos = pd.concat([df_p, df_novo], ignore_index=True)
                     salvar_pedidos(st.session_state.pedidos)
                     st.session_state.pedidos = carregar_pedidos()
-                    
                     st.success(f"Pedido #{nid} criado!")
                     st.rerun()
                 except Exception as e:
@@ -358,9 +361,7 @@ elif menu == "Gerenciar Tudo":
             df['sort'] = df['Hora'].apply(lambda x: x if x else time(0,0))
             df = df.sort_values(['Data', 'sort']).drop(columns=['sort'])
         except: pass
-        
         df['Hora'] = df['Hora'].apply(limpar_hora_rigoroso)
-
         edited = st.data_editor(
             df,
             num_rows="dynamic", use_container_width=True, hide_index=True,
@@ -380,8 +381,7 @@ elif menu == "Gerenciar Tudo":
                 salvar_pedidos(edited)
                 st.toast("Salvo!", icon="💾")
                 st.rerun()
-            except: st.error("Erro ao salvar.")
-            
+            except: st.error("Erro ao salvar edição.")
         st.divider()
         try:
             sel = st.selectbox("Cliente:", sorted(df['Cliente'].unique()))
@@ -393,7 +393,6 @@ elif menu == "Gerenciar Tudo":
                 lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20')}"
                 st.link_button("Enviar Zap", lnk)
         except: pass
-    
     st.divider()
     with st.expander("💾 Backup & Restauração (Pedidos)"):
         st.write("### 1. Fazer Backup")
@@ -404,7 +403,6 @@ elif menu == "Gerenciar Tudo":
                 z.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
             st.download_button("📥 Baixar Tudo (ZIP)", buf.getvalue(), f"backup_{date.today()}.zip", "application/zip")
         except: st.error("Erro backup.")
-        
         st.write("### 2. Restaurar Pedidos")
         up = st.file_uploader("Arquivo Pedidos (CSV)", type="csv", key="rest_ped")
         if up and st.button("Restaurar Pedidos"):
@@ -440,7 +438,6 @@ elif menu == "Relatórios & Recibos":
             nome = f"Relatorio_{dt}.pdf"
         else:
             df_rel = df; nome = "Relatorio_Geral.pdf"
-        
         st.write(f"Linhas: {len(df_rel)}")
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório"):
@@ -453,26 +450,22 @@ elif menu == "Clientes":
     with t1:
         with st.form("cli_form", clear_on_submit=True):
             n = st.text_input("Nome"); z = st.text_input("Zap"); o = st.text_area("Obs")
-            # CORREÇÃO AQUI: USAR SALVAR_CLIENTES E NÃO SALVAR_DADOS (que era genérico antigo)
             if st.form_submit_button("Salvar") and n:
                 novo = pd.DataFrame([{"Nome": n, "Contato": z, "Observacoes": o}])
                 st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
-                salvar_clientes(st.session_state.clientes) 
+                salvar_clientes(st.session_state.clientes)
                 st.success("Cadastrado!")
                 st.rerun()
-        
         if not st.session_state.clientes.empty:
             edited = st.data_editor(st.session_state.clientes, num_rows="dynamic", use_container_width=True, hide_index=True)
             if not edited.equals(st.session_state.clientes):
                 st.session_state.clientes = edited
                 salvar_clientes(edited)
                 st.toast("Salvo!")
-        
         st.divider()
         if st.button("📄 Exportar Lista PDF"):
             pdf = gerar_lista_clientes_pdf(st.session_state.clientes)
             if pdf: st.download_button("Baixar Lista PDF", pdf, "Clientes.pdf", "application/pdf")
-        
         with st.expander("💾 Backup Clientes"):
             try:
                 csv = st.session_state.clientes.to_csv(index=False).encode('utf-8')
@@ -489,7 +482,6 @@ elif menu == "Clientes":
     with t2:
         l = st.session_state.clientes['Nome'].unique()
         d = st.selectbox("Excluir quem?", l)
-        # CORREÇÃO AQUI TAMBÉM
         if st.button("Confirmar"):
             st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
             salvar_clientes(st.session_state.clientes)
