@@ -1,16 +1,3 @@
-Com certeza\! Vamos implementar essas três melhorias agora mesmo.
-
-Aqui está o plano da **Versão 8.0**:
-
-1.  **🍤🏍️ O Moto-Camarão:** Alterei o título do Dashboard para usar uma combinação de emojis (Camarão + Moto) para simular o "Camarão Motoboy".
-2.  **🆔 Número do Pedido (ID):** O sistema agora gera automaticamente um número sequencial (1, 2, 3...) para cada novo pedido. Se o banco de dados for novo, começa do 1. Se já tiverem pedidos, ele pega o último e soma +1. Esse número aparecerá nas tabelas e no Recibo.
-3.  **📄 PDF de Clientes:** Criei um novo botão na aba de Clientes que gera um relatório formatado com todos os contatos cadastrados.
-
------
-
-### CÓDIGO FINAL V8.0 (Copie e substitua no `app.py`)
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime, time
@@ -610,4 +597,3 @@ elif menu == "🛠️ Manutenção":
             open(ARQUIVO_LOG, 'w').close()
             st.rerun()
     else: st.success("Sistema saudável.")
-```
