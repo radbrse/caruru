@@ -5,11 +5,12 @@ import os
 import io
 import zipfile
 import logging
+import urllib.parse # Necessário para links de WhatsApp
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
-# --- CONFIGURAÇÃO DA PÁGINA (PRIMEIRA LINHA OBRIGATÓRIA) ---
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
 
 # ==============================================================================
@@ -32,11 +33,12 @@ def check_password():
         st.error("Senha incorreta.")
     return False
 
+# Para testar sem senha no computador local, comente as duas linhas abaixo
 if not check_password():
     st.stop()
 
 # ==============================================================================
-# CONFIGURAÇÕES E VARIÁVEIS
+# CONFIGURAÇÕES
 # ==============================================================================
 ARQUIVO_LOG = "system_errors.log"
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
@@ -45,7 +47,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "13.0"
+VERSAO = "14.0"
 
 logging.basicConfig(filename=ARQUIVO_LOG, level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(message)s', force=True)
 logger = logging.getLogger("cantinho")
@@ -53,7 +55,6 @@ logger = logging.getLogger("cantinho")
 # ==============================================================================
 # FUNÇÕES (HELPERS, DB, PDF)
 # ==============================================================================
-
 def limpar_hora_rigoroso(h):
     try:
         if h in [None, "", "nan", "NaT"] or pd.isna(h): return None
@@ -156,7 +157,7 @@ def gerar_recibo_pdf(dados):
         p.drawString(30, y, f"Data: {dt_s}"); p.drawString(300, y, f"Hora: {hr_s}")
         y-=40; p.setFillColor(colors.lightgrey); p.rect(30, y-5, 535, 20, fill=1, stroke=0)
         p.setFillColor(colors.black); p.setFont("Helvetica-Bold", 10)
-        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QTD"); y-=25
+        p.drawString(40, y, "ITEM"); p.drawString(400, y, "QUANTIDADE"); y-=25
         p.setFont("Helvetica", 10)
         if float(dados.get('Caruru',0)) > 0:
             p.drawString(40, y, "Caruru Tradicional"); p.drawString(400, y, f"{int(float(dados.get('Caruru')))}"); y-=15
@@ -229,9 +230,7 @@ def gerar_lista_clientes_pdf(df):
         return buffer
     except: return None
 
-# ==============================================================================
-# INICIALIZAÇÃO
-# ==============================================================================
+# ---------------------------- START ----------------------------
 if 'pedidos' not in st.session_state: st.session_state.pedidos = carregar_pedidos()
 if 'clientes' not in st.session_state: st.session_state.clientes = carregar_clientes()
 if 'chave_contato_automatico' not in st.session_state: st.session_state['chave_contato_automatico'] = ""
@@ -240,13 +239,13 @@ with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=250)
     else: st.title("🦐 Cantinho do Caruru")
     st.divider()
-    menu = st.radio("Navegação", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "Relatórios & Recibos", "Clientes", "Admin"])
+    # ADICIONEI "📢 Promoções" NO MENU
+    menu = st.radio("Navegação", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "📢 Promoções", "👥 Cadastrar Clientes", "🛠️ Manutenção"])
     st.divider()
     st.caption(f"Versão {VERSAO}")
 
-# ==============================================================================
-# PÁGINA 1: DASHBOARD
-# ==============================================================================
+# ---------------------------- PÁGINAS ----------------------------
+
 if menu == "Dashboard do Dia":
     st.title("🦐🏍️ Expedição do Dia")
     df = st.session_state.pedidos
@@ -262,7 +261,7 @@ if menu == "Dashboard do Dia":
         
         c1, c2, c3, c4 = st.columns(4)
         
-        # --- ALTERAÇÃO AQUI: IGNORA 'CANCELADO' NOS CÁLCULOS DO DASHBOARD ---
+        # Dashboard ignora "Entregue" e "Cancelado"
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) & 
             (~df_dia['Status'].str.contains("Cancelado", na=False))
@@ -300,9 +299,6 @@ if menu == "Dashboard do Dia":
                 st.toast("Atualizado!", icon="✅")
                 st.rerun()
 
-# ==============================================================================
-# PÁGINA 2: NOVO PEDIDO
-# ==============================================================================
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     try: clis = sorted(st.session_state.clientes['Nome'].unique())
@@ -357,9 +353,6 @@ elif menu == "Novo Pedido":
                     logger.error(f"Erro novo pedido: {e}")
                     st.error("Erro ao salvar.")
 
-# ==============================================================================
-# PÁGINA 3: GERENCIAR TUDO (COM EXCLUSÃO E BACKUP)
-# ==============================================================================
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     df = st.session_state.pedidos
@@ -394,7 +387,6 @@ elif menu == "Gerenciar Tudo":
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            # --- ÁREA DE WHATSAPP ---
             st.subheader("💬 Zap")
             try:
                 sel = st.selectbox("Cliente:", sorted(df['Cliente'].unique()))
@@ -408,28 +400,20 @@ elif menu == "Gerenciar Tudo":
             except: pass
         
         with c2:
-             # --- ÁREA DE EXCLUSÃO (NOVA) ---
              st.subheader("🗑️ Excluir Pedido")
-             with st.expander("Clique para abrir a exclusão"):
+             with st.expander("Abrir Exclusão"):
                  st.warning("Cuidado: Ação permanente.")
-                 # Cria lista legível: "#ID - Cliente"
                  df['Display_Del'] = df.apply(lambda x: f"#{int(x['ID_Pedido'])} - {x['Cliente']} ({x['Data']})", axis=1)
                  lista_del = df['Display_Del'].tolist()
-                 
-                 ped_del = st.selectbox("Escolha o pedido para apagar:", options=lista_del)
-                 
-                 if st.button("CONFIRMAR EXCLUSÃO DO PEDIDO"):
+                 ped_del = st.selectbox("Escolha:", options=lista_del)
+                 if st.button("CONFIRMAR EXCLUSÃO"):
                      if ped_del:
-                         # Extrai o ID da string "#123 - Cliente"
                          id_apagar = int(ped_del.split(' - ')[0].replace('#', ''))
-                         
-                         # Filtra mantendo apenas os que NÃO são o ID escolhido
                          st.session_state.pedidos = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_apagar]
                          salvar_pedidos(st.session_state.pedidos)
-                         st.success(f"Pedido #{id_apagar} excluído!")
+                         st.success(f"Excluído!")
                          st.rerun()
 
-    # --- ÁREA DE BACKUP E RESTAURAÇÃO (VOLTOU PARA CÁ) ---
     st.divider()
     with st.expander("💾 Backup & Restauração (Pedidos)"):
         st.write("### 1. Fazer Backup")
@@ -440,7 +424,6 @@ elif menu == "Gerenciar Tudo":
                 z.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
             st.download_button("📥 Baixar Tudo (ZIP)", buf.getvalue(), f"backup_{date.today()}.zip", "application/zip")
         except: st.error("Erro backup.")
-        
         st.write("### 2. Restaurar Pedidos")
         up = st.file_uploader("Arquivo Pedidos (CSV)", type="csv", key="rest_ped_ger_2")
         if up and st.button("Restaurar Pedidos"):
@@ -448,11 +431,9 @@ elif menu == "Gerenciar Tudo":
                 df_n = pd.read_csv(up)
                 salvar_pedidos(df_n)
                 st.session_state.pedidos = carregar_pedidos()
-                st.success("OK!")
-                st.rerun()
+                st.success("OK!"); st.rerun()
             except: st.error("Erro restauração.")
 
-# ---------------------------- PÁGINA 4: RELATÓRIOS ----------------------------
 elif menu == "Relatórios & Recibos":
     st.title("🖨️ Impressão")
     t1, t2 = st.tabs(["Recibo Individual", "Relatório Geral"])
@@ -468,7 +449,6 @@ elif menu == "Relatórios & Recibos":
                 if st.button("📄 Gerar PDF"):
                     pdf = gerar_recibo_pdf(peds.loc[sid])
                     if pdf: st.download_button("Baixar", pdf, f"Recibo_{cli}.pdf", "application/pdf")
-                    else: st.error("Erro ao gerar PDF.")
     with t2:
         tipo = st.radio("Filtro:", ["Dia Específico", "Tudo"])
         if tipo == "Dia Específico":
@@ -483,9 +463,79 @@ elif menu == "Relatórios & Recibos":
                 pdf = gerar_relatorio_pdf(df_rel, nome.replace(".pdf", ""))
                 if pdf: st.download_button("Baixar PDF", pdf, nome, "application/pdf")
 
-# ---------------------------- PÁGINA 5: CLIENTES ----------------------------
-elif menu == "Clientes":
-    st.title("👥 Base de Clientes")
+# --- NOVA PÁGINA: PROMOÇÕES (MARKETING) ---
+elif menu == "📢 Promoções":
+    st.title("📢 Marketing & Promoções")
+    
+    # 1. Configuração da Mensagem
+    st.subheader("1. Configurar Mensagem")
+    col_img, col_txt = st.columns([1, 2])
+    
+    with col_img:
+        # Upload de imagem apenas para visualização/lembrete
+        uploaded_img = st.file_uploader("Imagem do Banner (Apenas visualização)", type=["jpg", "png", "jpeg"])
+        if uploaded_img:
+            st.image(uploaded_img, caption="Banner da Promoção", use_column_width=True)
+            st.info("ℹ️ Lembrete: Anexe esta imagem manualmente no WhatsApp ao enviar.")
+            
+    with col_txt:
+        texto_padrao = "Olá! 🦐\n\nHoje tem *Caruru Fresquinho* e *Bobó de Camarão* no capricho!\n\nFaça já sua encomenda para garantir o almoço. 😋\n\n👇 Responda essa mensagem para pedir!"
+        mensagem = st.text_area("Texto da Mensagem", value=texto_padrao, height=200)
+        st.caption("Dica: Use asteriscos *texto* para negrito no WhatsApp.")
+    
+    # 2. Lista de Clientes com Botão de Envio
+    st.divider()
+    st.subheader("2. Enviar para Clientes")
+    
+    df_cli = st.session_state.clientes
+    
+    if df_cli.empty:
+        st.warning("Nenhum cliente cadastrado.")
+    else:
+        # Filtro opcional
+        filtro = st.text_input("🔍 Buscar cliente (opcional):")
+        if filtro:
+            df_cli = df_cli[df_cli['Nome'].str.contains(filtro, case=False) | df_cli['Contato'].str.contains(filtro)]
+        
+        # Preparação para a tabela
+        # Adiciona coluna de link calculado
+        
+        # Codifica a mensagem para URL (trata espaços, acentos, quebras de linha)
+        msg_encoded = urllib.parse.quote(mensagem)
+        
+        # Cria a tabela visual com os dados
+        # O Streamlit Data Editor com LinkColumn é a melhor forma de fazer uma lista acionável
+        
+        # Cria um DF temporário para exibição
+        df_display = df_cli[['Nome', 'Contato']].copy()
+        
+        # Gera o link para cada cliente
+        def gerar_link_zap(contato):
+            tel = str(contato).replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".0", "")
+            if len(tel) < 10: return None # Número inválido
+            return f"https://wa.me/55{tel}?text={msg_encoded}"
+            
+        df_display['Link'] = df_display['Contato'].apply(gerar_link_zap)
+        
+        # Exibe a tabela com o botão de link
+        st.data_editor(
+            df_display,
+            column_config={
+                "Link": st.column_config.LinkColumn(
+                    "Ação",
+                    help="Clique para abrir o WhatsApp",
+                    validate="^https://wa\.me/.*",
+                    display_text="Enviar 🚀"
+                ),
+                "Nome": st.column_config.TextColumn(disabled=True),
+                "Contato": st.column_config.TextColumn(disabled=True)
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+
+elif menu == "👥 Cadastrar Clientes":
+    st.title("👥 Clientes")
     t1, t2 = st.tabs(["Cadastro", "Excluir"])
     with t1:
         with st.form("cli_form", clear_on_submit=True):
@@ -527,7 +577,6 @@ elif menu == "Clientes":
             salvar_clientes(st.session_state.clientes)
             st.rerun()
 
-# ---------------------------- PÁGINA 6: ADMIN ----------------------------
 elif menu == "Admin":
     st.title("🛠️ Admin")
     if os.path.exists(ARQUIVO_LOG):
