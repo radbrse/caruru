@@ -828,6 +828,15 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
+    # Verifica se deve resetar o cliente (após salvar pedido)
+    if st.session_state.get('resetar_cliente_novo', False):
+        st.session_state.cliente_novo_index = 0
+        st.session_state.resetar_cliente_novo = False
+    
+    # Inicializa índice do cliente
+    if 'cliente_novo_index' not in st.session_state:
+        st.session_state.cliente_novo_index = 0
+    
     # Carrega lista de clientes
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
@@ -842,9 +851,13 @@ elif menu == "Novo Pedido":
     c_sel = st.selectbox(
         "👤 Nome do Cliente", 
         lista_clientes,
-        index=0,
+        index=st.session_state.cliente_novo_index,
         key="sel_cliente_novo"
     )
+    
+    # Atualiza o índice no session_state
+    if c_sel in lista_clientes:
+        st.session_state.cliente_novo_index = lista_clientes.index(c_sel)
     
     # Busca o contato do cliente selecionado
     contato_cliente = ""
@@ -924,9 +937,8 @@ elif menu == "Novo Pedido":
             else:
                 st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
                 st.balloons()
-                # Limpa a seleção do cliente
-                if 'sel_cliente_novo' in st.session_state:
-                    del st.session_state['sel_cliente_novo']
+                # Seta flag para resetar o cliente na próxima execução
+                st.session_state.resetar_cliente_novo = True
                 st.rerun()
     
     # Mostrar valor estimado fora do form (para referência)
