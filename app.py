@@ -830,27 +830,11 @@ elif menu == "Novo Pedido":
     
     # Verifica se precisa limpar o formulário (flag setada após salvar)
     if st.session_state.get('limpar_form_novo', False):
-        st.session_state.novo_caruru = 0
-        st.session_state.novo_bobo = 0
-        st.session_state.novo_desconto = 0
-        st.session_state.novo_contato = ""
-        st.session_state.novo_obs = ""
-        st.session_state.novo_cliente_idx = 0  # Índice do selectbox (0 = vazio)
+        # Limpa TODOS os campos
+        for key in ['novo_caruru', 'novo_bobo', 'novo_desconto', 'novo_obs', 'novo_cliente_idx']:
+            if key in st.session_state:
+                del st.session_state[key]
         st.session_state.limpar_form_novo = False
-    
-    # Inicializa session_state para os campos do formulário
-    if 'novo_caruru' not in st.session_state:
-        st.session_state.novo_caruru = 0
-    if 'novo_bobo' not in st.session_state:
-        st.session_state.novo_bobo = 0
-    if 'novo_desconto' not in st.session_state:
-        st.session_state.novo_desconto = 0
-    if 'novo_contato' not in st.session_state:
-        st.session_state.novo_contato = ""
-    if 'novo_obs' not in st.session_state:
-        st.session_state.novo_obs = ""
-    if 'novo_cliente_idx' not in st.session_state:
-        st.session_state.novo_cliente_idx = 0
     
     # Carrega lista de clientes
     try:
@@ -858,74 +842,63 @@ elif menu == "Novo Pedido":
     except:
         clis = []
     
-    lista_clientes = [""] + clis
-    
-    # Função para atualizar contato quando muda o cliente
-    def update_cont():
-        idx = st.session_state.get("sel_cli_novo_idx", 0)
-        if idx > 0:
-            # Reconstrói a lista de clientes dentro da função
-            try:
-                clis_local = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
-                lista_local = [""] + clis_local
-                if idx < len(lista_local):
-                    nome_cliente = lista_local[idx]
-                    res = st.session_state.clientes[st.session_state.clientes['Nome'] == nome_cliente]
-                    if not res.empty:
-                        st.session_state.novo_contato = res.iloc[0]['Contato']
-                    else:
-                        st.session_state.novo_contato = ""
-            except:
-                st.session_state.novo_contato = ""
-        else:
-            st.session_state.novo_contato = ""
+    lista_clientes = ["-- Selecione --"] + clis
 
     st.markdown("### 1️⃣ Cliente")
     c_sel_idx = st.selectbox(
         "👤 Nome do Cliente", 
         range(len(lista_clientes)), 
-        format_func=lambda x: lista_clientes[x] if lista_clientes[x] else "-- Selecione --",
-        index=st.session_state.novo_cliente_idx,
-        key="sel_cli_novo_idx", 
-        on_change=update_cont
+        format_func=lambda x: lista_clientes[x],
+        index=st.session_state.get('novo_cliente_idx', 0),
+        key="sel_cli_novo_idx"
     )
+    
+    # Guarda o índice selecionado
     st.session_state.novo_cliente_idx = c_sel_idx
+    
+    # Obtém o nome do cliente selecionado
     c_sel = lista_clientes[c_sel_idx] if c_sel_idx > 0 else ""
     
-    # Atualiza contato na primeira seleção (caso o on_change não tenha disparado)
-    if c_sel and not st.session_state.novo_contato:
-        res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
-        if not res.empty:
-            st.session_state.novo_contato = res.iloc[0]['Contato']
+    # Busca o contato do cliente selecionado DIRETAMENTE do banco
+    contato_cliente = ""
+    if c_sel:
+        try:
+            res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
+            if not res.empty:
+                contato_cliente = str(res.iloc[0]['Contato']) if res.iloc[0]['Contato'] else ""
+        except:
+            contato_cliente = ""
     
     if not c_sel:
         st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
     
     st.markdown("### 2️⃣ Dados do Pedido")
     
-    # Campos fora do form para atualização em tempo real
     c1, c2, c3 = st.columns(3)
     with c1:
-        cont = st.text_input("📱 WhatsApp", value=st.session_state.novo_contato, placeholder="79999999999", key="input_contato")
+        # O contato vem DIRETO do cliente selecionado, sem usar session_state
+        cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999", key="input_contato_novo")
     with c2:
-        dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY", key="input_data")
+        dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY", key="input_data_novo")
     with c3:
-        h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="input_hora")
+        h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="input_hora_novo")
     
     st.markdown("### 3️⃣ Itens do Pedido")
     c3, c4, c5 = st.columns(3)
     with c3:
-        qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=st.session_state.novo_caruru, key="input_caruru")
+        qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, 
+                             value=st.session_state.get('novo_caruru', 0), key="input_caruru_novo")
     with c4:
-        qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=st.session_state.novo_bobo, key="input_bobo")
+        qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, 
+                             value=st.session_state.get('novo_bobo', 0), key="input_bobo_novo")
     with c5:
-        dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=st.session_state.novo_desconto, key="input_desconto")
+        dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, 
+                             value=st.session_state.get('novo_desconto', 0), key="input_desconto_novo")
     
-    # Atualiza session_state
+    # Atualiza session_state para manter valores entre reruns
     st.session_state.novo_caruru = qc
     st.session_state.novo_bobo = qb
     st.session_state.novo_desconto = dc
-    st.session_state.novo_contato = cont
     
     # Preview do valor em tempo real
     valor_preview = calcular_total(qc, qb, dc)
@@ -934,14 +907,15 @@ elif menu == "Novo Pedido":
     else:
         st.info("💵 **Valor estimado: R$ 0,00** - Adicione itens ao pedido")
     
-    obs = st.text_area("📝 Observações", value=st.session_state.novo_obs, placeholder="Ex: Sem pimenta, entregar na portaria...", key="input_obs")
+    obs = st.text_area("📝 Observações", value=st.session_state.get('novo_obs', ''), 
+                       placeholder="Ex: Sem pimenta, entregar na portaria...", key="input_obs_novo")
     st.session_state.novo_obs = obs
     
     c6, c7 = st.columns(2)
     with c6:
-        pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, key="input_pagamento")
+        pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, key="input_pagamento_novo")
     with c7:
-        stt = st.selectbox("📊 Status", OPCOES_STATUS, key="input_status")
+        stt = st.selectbox("📊 Status", OPCOES_STATUS, key="input_status_novo")
     
     st.divider()
     
