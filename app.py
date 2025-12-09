@@ -1,6 +1,12 @@
 """
-Refatoração do sistema "Cantinho do Caruru" para Streamlit.
-Melhorias: correções de st.rerun e reset seguro de session_state via callback.
+Cantinho do Caruru — Versão consolidada e completa
+Inclui:
+- UI Streamlit (Dashboard, Novo Pedido, Gerenciar, Recibos, Clientes, Manutenção)
+- Carregamento/Gravação CSV
+- Sessão segura (reset do campo contato após salvar)
+- Backup / Restauração (CSV + ZIP)
+- PDFs (recibo, relatório, lista de clientes) via reportlab
+- Logging em arquivo system_errors.log
 """
 
 import streamlit as st
@@ -185,7 +191,191 @@ def desenhar_cabecalho(p, titulo):
     except Exception as e:
         logger.exception(f"Erro desenhar_cabecalho: {e}")
 
-# ... (os helpers de PDF seguem idênticos aos seus; omiti aqui para brevidade — mantenha as funções gerar_recibo_pdf, gerar_relatorio_pdf, gerar_lista_clientes_pdf conforme antes) ...
+
+def gerar_recibo_pdf(dados: dict):
+    try:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+
+        id_pedido = dados.get('ID_Pedido', 'NOVO')
+        desenhar_cabecalho(p, f"Pedido #{id_pedido}")
+
+        y = 700
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(30, y, "DADOS DO CLIENTE")
+        y -= 20
+        p.setFont("Helvetica", 12)
+        p.drawString(30, y, f"Nome: {dados.get('Cliente', '')}")
+        p.drawString(300, y, f"WhatsApp: {dados.get('Contato', '')}")
+        y -= 20
+
+        data_val = dados.get('Data')
+        data_str = data_val.strftime('%d/%m/%Y') if hasattr(data_val, 'strftime') else str(data_val or "")
+        hora_val = dados.get('Hora')
+        hora_str = hora_val.strftime('%H:%M') if isinstance(hora_val, time) else (str(hora_val)[:5] if hora_val else "--:--")
+        p.drawString(30, y, f"Data de Entrega: {data_str}")
+        p.drawString(300, y, f"Horário: {hora_str}")
+
+        y -= 40
+        p.setFillColor(colors.lightgrey)
+        p.rect(30, y - 5, 535, 20, fill=1, stroke=0)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(40, y, "ITEM")
+        p.drawString(400, y, "QUANTIDADE")
+        y -= 25
+        p.setFont("Helvetica", 10)
+
+        caruru = float(dados.get('Caruru') or 0)
+        bobo = float(dados.get('Bobo') or 0)
+        if caruru > 0:
+            p.drawString(40, y, "Caruru Tradicional (Kg/Unid)")
+            p.drawString(400, y, f"{int(caruru)}")
+            y -= 15
+        if bobo > 0:
+            p.drawString(40, y, "Bobó de Camarão (Kg/Unid)")
+            p.drawString(400, y, f"{int(bobo)}")
+            y -= 15
+
+        p.line(30, y - 5, 565, y - 5)
+
+        y -= 40
+        p.setFont("Helvetica-Bold", 14)
+        rotulo = "TOTAL PAGO" if dados.get('Pagamento') == "PAGO" else "VALOR A PAGAR"
+        p.drawString(350, y, f"{rotulo}: R$ {float(dados.get('Valor') or 0):.2f}")
+
+        y -= 25
+        p.setFont("Helvetica-Bold", 12)
+        sit = dados.get('Pagamento')
+        if sit == "PAGO":
+            p.setFillColor(colors.green)
+            p.drawString(30, y + 25, "SITUAÇÃO: PAGO ✅")
+        elif sit == "METADE":
+            p.setFillColor(colors.orange)
+            p.drawString(30, y + 25, "SITUAÇÃO: PARCIAL (50%) ⚠️")
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 10)
+            p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
+        else:
+            p.setFillColor(colors.red)
+            p.drawString(30, y + 25, "SITUAÇÃO: NÃO PAGO ❌")
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 10)
+            p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
+
+        p.setFillColor(colors.black)
+        obs = dados.get('Observacoes')
+        if obs and str(obs).strip().lower() not in {"", "nan"}:
+            y -= 30
+            p.setFont("Helvetica-Oblique", 10)
+            p.drawString(30, y, f"Obs: {obs}")
+
+        # Assinatura
+        y_ass = 150
+        p.setLineWidth(1)
+        p.line(150, y_ass, 450, y_ass)
+        p.setFont("Helvetica", 10)
+        p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
+        data_hoje = datetime.now().strftime('%d/%m/%Y')
+        p.setFont("Helvetica-Oblique", 8)
+        p.drawCentredString(300, y_ass - 30, f"Emitido em: {data_hoje}")
+
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logger.exception(f"Erro gerar_recibo_pdf: {e}")
+        return None
+
+
+def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
+    try:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        y = 700
+        desenhar_cabecalho(p, titulo_relatorio)
+        p.setFont("Helvetica-Bold", 9)
+        header_x = [30, 60, 110, 230, 280, 330, 400, 480]
+        headers = ["ID", "Data", "Cliente", "Caruru", "Bobó", "Valor", "Status", "Pagto"]
+        for x, h in zip(header_x, headers):
+            p.drawString(x, y, h)
+        y -= 20
+        p.setFont("Helvetica", 9)
+        total_valor = 0
+        for index, row in df_filtrado.iterrows():
+            if y < 60:
+                p.showPage()
+                desenhar_cabecalho(p, titulo_relatorio)
+                y = 700
+            id_ped = str(int(row.get('ID_Pedido') or 0))
+            data_str = row.get('Data').strftime('%d/%m') if hasattr(row.get('Data'), 'strftime') else str(row.get('Data') or "")
+            cliente = str(row.get('Cliente') or "")[:18]
+            caruru = int(row.get('Caruru') or 0)
+            bobo = int(row.get('Bobo') or 0)
+            valor = float(row.get('Valor') or 0)
+            status_clean = (row.get('Status') or "")
+            if isinstance(status_clean, str):
+                for prefix in ["✅ ", "🔴 ", "🟡 ", "🚫 "]:
+                    status_clean = status_clean.replace(prefix, "")
+            p.drawString(30, y, id_ped)
+            p.drawString(60, y, data_str)
+            p.drawString(110, y, cliente)
+            p.drawString(230, y, str(caruru))
+            p.drawString(280, y, str(bobo))
+            p.drawString(330, y, f"R$ {valor:.2f}")
+            p.drawString(400, y, str(status_clean)[:12])
+            p.drawString(480, y, str(row.get('Pagamento') or ""))
+            total_valor += valor
+            y -= 15
+        p.line(30, y, 565, y)
+        y -= 20
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(30, y, f"TOTAL GERAL: R$ {total_valor:,.2f}")
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logger.exception(f"Erro gerar_relatorio_pdf: {e}")
+        return None
+
+
+def gerar_lista_clientes_pdf(df_clientes):
+    try:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        y = 700
+        desenhar_cabecalho(p, "Lista de Clientes Cadastrados")
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(30, y, "Nome do Cliente")
+        p.drawString(250, y, "WhatsApp")
+        p.drawString(380, y, "Observações Fixas")
+        y -= 20
+        p.setFont("Helvetica", 10)
+
+        df_clientes = df_clientes.sort_values(by="Nome") if not df_clientes.empty else df_clientes
+
+        for index, row in df_clientes.iterrows():
+            if y < 60:
+                p.showPage()
+                desenhar_cabecalho(p, "Lista de Clientes Cadastrados")
+                y = 700
+            p.drawString(30, y, str(row.get('Nome') or "")[:35])
+            p.drawString(250, y, str(row.get('Contato') or ""))
+            p.drawString(380, y, str(row.get('Observacoes') or "")[:30])
+            y -= 20
+            p.setLineWidth(0.5)
+            p.setStrokeColor(colors.lightgrey)
+            p.line(30, y + 15, 565, y + 15)
+
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logger.exception(f"Erro gerar_lista_clientes_pdf: {e}")
+        return None
 
 # ---------------------------- APP START ----------------------------
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
@@ -214,7 +404,7 @@ with st.sidebar:
     st.divider()
     menu = st.radio("Ir para:", ["Dashboard do Dia", "Novo Pedido", "Gerenciar Tudo", "🖨️ Relatórios & Recibos", "👥 Cadastrar Clientes", "🛠️ Manutenção"])
     st.divider()
-    st.caption("Sistema Online (refactor)")
+    st.caption("Sistema Online (final)")
 
 # ---------------------------- DASHBOARD ----------------------------
 if menu == "Dashboard do Dia":
@@ -263,7 +453,7 @@ if menu == "Dashboard do Dia":
                             df_global.loc[mask, df_baixa.columns] = df_baixa.loc[idx, :].values
                     st.session_state.pedidos = df_global
                     salvar_pedidos(df_global)
-                    st.toast("Atualizado!", icon="✅")
+                    st.success("Atualizado!")
                     st.rerun()
             except Exception as e:
                 st.error("Erro visual. Dados seguros.")
@@ -280,13 +470,11 @@ elif menu == "Novo Pedido":
     st.markdown("### 1. Identificação")
     c1, c2 = st.columns([3, 1])
     with c1:
-        # chave do selectbox definida para ser lida pelo callback
         nome_sel = st.selectbox("Cliente", [""] + lista_cli, key="chave_cliente_selecionado")
     with c2:
         hora_ent = st.time_input("Hora", value=time(12, 0), key="hora_ent")
 
     st.markdown("### 2. Detalhes")
-    # Observação: definimos KEYS em todos os widgets do form para o callback acessar via st.session_state
     with st.form("form_pedido", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
@@ -307,14 +495,12 @@ elif menu == "Novo Pedido":
         with c7:
             status = st.selectbox("Status", OPCOES_STATUS, key="status")
 
-        # Callback seguro — executa dentro do contexto on_click (permitido alterar session_state)
         def salvar_pedido_callback():
             try:
                 cli_final = st.session_state.get('chave_cliente_selecionado', "")
                 if not cli_final:
                     st.warning("Selecione um cliente.")
                     return
-                # lê valores do session_state (todos os widgets do form têm key definidos)
                 car = st.session_state.get("caruru", 0)
                 bob = st.session_state.get("bobo", 0)
                 des = st.session_state.get("desc", 0)
@@ -346,21 +532,17 @@ elif menu == "Novo Pedido":
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, df_novo], ignore_index=True)
                 salvar_pedidos(st.session_state.pedidos)
                 st.success(f"Pedido #{novo_id} Salvo!")
-                # RESET SEGURO (aqui estamos dentro do callback)
                 st.session_state['chave_contato_automatico'] = ""
-                # opcional: limpar campos do form (redefine valores em session_state)
                 st.session_state['caruru'] = 0.0
                 st.session_state['bobo'] = 0.0
                 st.session_state['desc'] = 0
                 st.session_state['obs'] = ""
                 st.session_state['chave_cliente_selecionado'] = ""
-                # rerun com a API atual
                 st.rerun()
             except Exception as e:
                 logger.exception(f"Erro Novo Pedido (callback): {e}")
                 st.error("Erro ao salvar. Veja logs.")
 
-        # Usamos on_click no botão do form, que chama o callback seguro
         st.form_submit_button("💾 SALVAR", on_click=salvar_pedido_callback)
 
 # ---------------------------- GERENCIAR TUDO ----------------------------
@@ -398,7 +580,7 @@ elif menu == "Gerenciar Tudo":
                 df_editado['Valor'] = ((df_editado['Caruru'] * PRECO_BASE) + (df_editado['Bobo'] * PRECO_BASE)) * (1 - (df_editado['Desconto'] / 100))
                 st.session_state.pedidos = df_editado
                 salvar_pedidos(df_editado)
-                st.toast("Salvo!", icon="💾")
+                st.success("Salvo!")
                 st.rerun()
         except Exception as e:
             st.error(f"Erro na tabela. Veja logs.")
@@ -420,7 +602,7 @@ elif menu == "Gerenciar Tudo":
                 if d['Pagamento'] in ["NÃO PAGO", "METADE"]:
                     msg += f"\n🔑 Pix: {CHAVE_PIX}"
                 lnk = f"https://wa.me/55{t}?text={msg.replace(' ', '%20').replace(chr(10), '%0A')}"
-                st.link_button("Enviar Zap", lnk)
+                st.markdown(f"[Enviar Zap]({lnk})")
         except Exception:
             logger.exception("Erro gerando link zap")
 
