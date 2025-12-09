@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 import os
 import io
 import zipfile
@@ -10,6 +11,17 @@ import re
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+
+# --- CONFIGURAÇÃO DE FUSO HORÁRIO (BRASIL) ---
+FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+def agora_brasil():
+    """Retorna datetime atual no fuso horário de Brasília."""
+    return datetime.now(FUSO_BRASIL)
+
+def hoje_brasil():
+    """Retorna a data de hoje no fuso horário de Brasília."""
+    return datetime.now(FUSO_BRASIL).date()
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Cantinho do Caruru", page_icon="🦐", layout="wide")
@@ -121,14 +133,14 @@ def validar_data_pedido(data, permitir_passado=False):
     """Valida data do pedido."""
     try:
         if data is None:
-            return date.today(), "⚠️ Data não informada. Usando hoje."
+            return hoje_brasil(), "⚠️ Data não informada. Usando hoje."
         
         if isinstance(data, str):
             data = pd.to_datetime(data).date()
         elif isinstance(data, datetime):
             data = data.date()
         
-        hoje = date.today()
+        hoje = hoje_brasil()
         
         if not permitir_passado and data < hoje:
             return data, "⚠️ Data no passado (permitido para edição)."
@@ -140,7 +152,7 @@ def validar_data_pedido(data, permitir_passado=False):
         
         return data, None
     except:
-        return date.today(), "❌ Data inválida. Usando hoje."
+        return hoje_brasil(), "❌ Data inválida. Usando hoje."
 
 def validar_hora(hora):
     """Valida e normaliza hora."""
@@ -306,7 +318,7 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
     """Registra alterações para auditoria."""
     try:
         registro = {
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Timestamp": agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
             "Tipo": tipo,
             "ID_Pedido": id_pedido,
             "Campo": campo,
@@ -586,7 +598,7 @@ def gerar_recibo_pdf(dados):
         p.setFont("Helvetica", 10)
         p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
         p.setFont("Helvetica-Oblique", 8)
-        p.drawCentredString(300, y_ass - 30, f"Emitido em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        p.drawCentredString(300, y_ass - 30, f"Emitido em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
         
         p.showPage()
         p.save()
@@ -648,7 +660,7 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         p.drawString(30, y - 20, f"Total de pedidos: {len(df_filtrado)}")
         
         p.setFont("Helvetica-Oblique", 8)
-        p.drawString(30, 30, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        p.drawString(30, 30, f"Gerado em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
         
         p.showPage()
         p.save()
@@ -696,7 +708,7 @@ def gerar_lista_clientes_pdf(df_clientes):
         
         p.line(30, y, 565, y)
         p.setFont("Helvetica-Oblique", 8)
-        p.drawString(30, 30, f"Total: {len(df_clientes)} clientes | Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        p.drawString(30, 30, f"Total: {len(df_clientes)} clientes | Gerado em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
         
         p.showPage()
         p.save()
@@ -742,7 +754,7 @@ with st.sidebar:
     st.divider()
     
     # Mini resumo
-    df_hoje = st.session_state.pedidos[st.session_state.pedidos['Data'] == date.today()]
+    df_hoje = st.session_state.pedidos[st.session_state.pedidos['Data'] == hoje_brasil()]
     if not df_hoje.empty:
         pend = df_hoje[~df_hoje['Status'].str.contains("Entregue|Cancelado", na=False)]
         st.caption(f"📅 Hoje: {len(df_hoje)} pedidos")
@@ -763,7 +775,7 @@ if menu == "Dashboard do Dia":
     if df.empty:
         st.info("Sem dados cadastrados.")
     else:
-        dt_filter = st.date_input("📅 Data:", date.today(), format="DD/MM/YYYY")
+        dt_filter = st.date_input("📅 Data:", hoje_brasil(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == dt_filter].copy()
         
         # Ordenar por hora
@@ -907,7 +919,7 @@ elif menu == "Novo Pedido":
         with c1:
             cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
         with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=date.today(), format="DD/MM/YYYY")
+            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY")
         with c3:
             h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido")
         
@@ -1051,7 +1063,7 @@ elif menu == "✏️ Editar Pedido":
                             
                             nova_data = st.date_input(
                                 "📅 Data",
-                                value=pedido.get('Data') or date.today(),
+                                value=pedido.get('Data') or hoje_brasil(),
                                 format="DD/MM/YYYY"
                             )
                             
@@ -1254,12 +1266,12 @@ elif menu == "Gerenciar Tudo":
         df_view = df_view[df_view['Pagamento'].isin(f_pagto)]
         
         if f_periodo == "Hoje":
-            df_view = df_view[df_view['Data'] == date.today()]
+            df_view = df_view[df_view['Data'] == hoje_brasil()]
         elif f_periodo == "Esta Semana":
-            inicio_semana = date.today() - timedelta(days=date.today().weekday())
+            inicio_semana = hoje_brasil() - timedelta(days=hoje_brasil().weekday())
             df_view = df_view[df_view['Data'] >= inicio_semana]
         elif f_periodo == "Este Mês":
-            inicio_mes = date.today().replace(day=1)
+            inicio_mes = hoje_brasil().replace(day=1)
             df_view = df_view[df_view['Data'] >= inicio_mes]
         
         # Métricas
@@ -1353,7 +1365,7 @@ elif menu == "Gerenciar Tudo":
             st.download_button(
                 "📥 Baixar Backup Completo (ZIP)",
                 buf.getvalue(),
-                f"backup_caruru_{date.today()}.zip",
+                f"backup_caruru_{hoje_brasil()}.zip",
                 "application/zip"
             )
         except Exception as e:
@@ -1408,15 +1420,15 @@ elif menu == "🖨️ Relatórios & Recibos":
         tipo = st.radio("📅 Filtro:", ["Dia Específico", "Período", "Tudo"], horizontal=True)
         
         if tipo == "Dia Específico":
-            dt = st.date_input("Data:", date.today(), format="DD/MM/YYYY", key="rel_data")
+            dt = st.date_input("Data:", hoje_brasil(), format="DD/MM/YYYY", key="rel_data")
             df_rel = df[df['Data'] == dt]
             nome = f"Relatorio_{dt.strftime('%d-%m-%Y')}.pdf"
         elif tipo == "Período":
             c1, c2 = st.columns(2)
             with c1:
-                dt_ini = st.date_input("De:", date.today() - timedelta(days=7), format="DD/MM/YYYY")
+                dt_ini = st.date_input("De:", hoje_brasil() - timedelta(days=7), format="DD/MM/YYYY")
             with c2:
-                dt_fim = st.date_input("Até:", date.today(), format="DD/MM/YYYY")
+                dt_fim = st.date_input("Até:", hoje_brasil(), format="DD/MM/YYYY")
             df_rel = df[(df['Data'] >= dt_ini) & (df['Data'] <= dt_fim)]
             nome = f"Relatorio_{dt_ini.strftime('%d-%m')}_{dt_fim.strftime('%d-%m-%Y')}.pdf"
         else:
