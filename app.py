@@ -775,15 +775,30 @@ if menu == "Dashboard do Dia":
         
         # Métricas
         c1, c2, c3, c4 = st.columns(4)
+        
+        # Pedidos pendentes (não entregues e não cancelados)
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) & 
             (~df_dia['Status'].str.contains("Cancelado", na=False))
         ]
+        
+        # Faturamento: soma de todos EXCETO cancelados
+        df_nao_cancelados = df_dia[~df_dia['Status'].str.contains("Cancelado", na=False)]
+        faturamento = df_nao_cancelados['Valor'].sum()
+        
+        # A Receber: 
+        # - NÃO PAGO = 100% do valor
+        # - METADE = 50% do valor (a outra metade já foi paga)
+        # - PAGO = 0
+        # - Cancelados não entram
+        valor_nao_pago = df_nao_cancelados[df_nao_cancelados['Pagamento'] == 'NÃO PAGO']['Valor'].sum()
+        valor_metade = df_nao_cancelados[df_nao_cancelados['Pagamento'] == 'METADE']['Valor'].sum() * 0.5
+        a_receber = valor_nao_pago + valor_metade
+        
         c1.metric("🥘 Caruru (Pend)", int(pend['Caruru'].sum()))
         c2.metric("🦐 Bobó (Pend)", int(pend['Bobo'].sum()))
-        c3.metric("💰 Faturamento", f"R$ {df_dia['Valor'].sum():,.2f}")
-        rec = df_dia[df_dia['Pagamento'] != 'PAGO']['Valor'].sum()
-        c4.metric("📥 A Receber", f"R$ {rec:,.2f}", delta_color="inverse")
+        c3.metric("💰 Faturamento", f"R$ {faturamento:,.2f}")
+        c4.metric("📥 A Receber", f"R$ {a_receber:,.2f}", delta_color="inverse")
         
         st.divider()
         st.subheader("📋 Entregas do Dia")
@@ -828,7 +843,15 @@ if menu == "Dashboard do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    # Verifica se deve resetar o cliente (após salvar pedido)
+    # Botão para limpar o formulário
+    col_titulo, col_limpar = st.columns([4, 1])
+    with col_limpar:
+        if st.button("🔄 Limpar", help="Limpar todos os campos do formulário"):
+            st.session_state.cliente_novo_index = 0
+            st.session_state.resetar_cliente_novo = True
+            st.rerun()
+    
+    # Verifica se deve resetar o cliente (após salvar pedido ou clicar em limpar)
     if st.session_state.get('resetar_cliente_novo', False):
         st.session_state.cliente_novo_index = 0
         st.session_state.resetar_cliente_novo = False
