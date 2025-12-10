@@ -188,6 +188,147 @@ def criar_backup_com_timestamp(arquivo):
         return backup
     return None
 
+def listar_backups():
+    """
+    Lista todos os backups disponíveis com informações detalhadas.
+    Retorna DataFrame com: arquivo, data/hora, tamanho, arquivo_origem
+    """
+    try:
+        backups = []
+        pasta = "."
+
+        for arquivo in os.listdir(pasta):
+            if ".bak" in arquivo:
+                caminho = os.path.join(pasta, arquivo)
+                stats = os.stat(caminho)
+
+                # Extrai nome do arquivo original
+                if arquivo.count('.') >= 2:
+                    partes = arquivo.split('.')
+                    origem = '.'.join(partes[:-2])  # Remove timestamp e .bak
+                else:
+                    origem = arquivo.replace('.bak', '')
+
+                backups.append({
+                    'Arquivo': arquivo,
+                    'Origem': origem,
+                    'Data/Hora': datetime.fromtimestamp(stats.st_mtime, FUSO_BRASIL),
+                    'Tamanho_KB': stats.st_size / 1024,
+                    'Caminho': caminho
+                })
+
+        if backups:
+            df = pd.DataFrame(backups)
+            df = df.sort_values('Data/Hora', ascending=False)
+            return df
+        else:
+            return pd.DataFrame(columns=['Arquivo', 'Origem', 'Data/Hora', 'Tamanho_KB', 'Caminho'])
+
+    except Exception as e:
+        logger.error(f"Erro ao listar backups: {e}", exc_info=True)
+        return pd.DataFrame(columns=['Arquivo', 'Origem', 'Data/Hora', 'Tamanho_KB', 'Caminho'])
+
+def restaurar_backup(arquivo_backup, arquivo_destino):
+    """
+    Restaura um backup específico.
+    Cria backup de segurança do arquivo atual antes de restaurar.
+    """
+    try:
+        # Valida se o backup existe
+        if not os.path.exists(arquivo_backup):
+            logger.error(f"Backup não encontrado: {arquivo_backup}")
+            return False, f"❌ Backup não encontrado: {arquivo_backup}"
+
+        # Cria backup de segurança do arquivo atual
+        if os.path.exists(arquivo_destino):
+            backup_seguranca = criar_backup_com_timestamp(arquivo_destino)
+            logger.info(f"Backup de segurança criado: {backup_seguranca}")
+
+        # Restaura o backup
+        with file_lock(arquivo_destino):
+            shutil.copy(arquivo_backup, arquivo_destino)
+            logger.info(f"Backup restaurado: {arquivo_backup} -> {arquivo_destino}")
+
+        return True, f"✅ Backup restaurado com sucesso!"
+
+    except Exception as e:
+        logger.error(f"Erro ao restaurar backup: {e}", exc_info=True)
+        return False, f"❌ Erro ao restaurar backup: {e}"
+
+def limpar_backups_por_data(dias):
+    """
+    Remove backups com mais de X dias.
+    """
+    try:
+        pasta = "."
+        removidos = 0
+        agora = time_module.time()
+        limite_segundos = dias * 24 * 60 * 60
+
+        for arquivo in os.listdir(pasta):
+            if ".bak" in arquivo:
+                caminho = os.path.join(pasta, arquivo)
+                idade = agora - os.path.getmtime(caminho)
+
+                if idade > limite_segundos:
+                    os.remove(caminho)
+                    removidos += 1
+                    logger.info(f"Backup antigo removido: {arquivo}")
+
+        return True, f"✅ {removidos} backup(s) removido(s)"
+
+    except Exception as e:
+        logger.error(f"Erro ao limpar backups por data: {e}", exc_info=True)
+        return False, f"❌ Erro: {e}"
+
+def importar_csv_externo(arquivo_upload, destino):
+    """
+    Importa CSV externo para um dos arquivos do sistema.
+    """
+    try:
+        # Valida destino
+        destinos_validos = {
+            'Pedidos': ARQUIVO_PEDIDOS,
+            'Clientes': ARQUIVO_CLIENTES,
+            'Histórico': ARQUIVO_HISTORICO
+        }
+
+        if destino not in destinos_validos:
+            return False, f"❌ Destino inválido: {destino}", None
+
+        arquivo_destino = destinos_validos[destino]
+
+        # Lê o CSV enviado
+        df_novo = pd.read_csv(arquivo_upload)
+
+        # Cria backup do arquivo atual
+        if os.path.exists(arquivo_destino):
+            backup = criar_backup_com_timestamp(arquivo_destino)
+            logger.info(f"Backup criado antes da importação: {backup}")
+
+        # Salva o novo CSV com file locking
+        with file_lock(arquivo_destino):
+            temp_file = f"{arquivo_destino}.tmp"
+            df_novo.to_csv(temp_file, index=False)
+            shutil.move(temp_file, arquivo_destino)
+
+        logger.info(f"CSV importado: {destino} ({len(df_novo)} registros)")
+
+        # Registra no histórico
+        registrar_alteracao(
+            "IMPORTAR",
+            0,
+            destino,
+            f"Importação externa",
+            f"{len(df_novo)} registros"
+        )
+
+        return True, f"✅ {len(df_novo)} registros importados com sucesso!", df_novo
+
+    except Exception as e:
+        logger.error(f"Erro ao importar CSV: {e}", exc_info=True)
+        return False, f"❌ Erro ao importar: {e}", None
+
 # ==============================================================================
 # FUNÇÕES DE VALIDAÇÃO ROBUSTAS
 # ==============================================================================
@@ -1881,8 +2022,8 @@ elif menu == "👥 Cadastrar Clientes":
 # --- ADMIN ---
 elif menu == "🛠️ Manutenção":
     st.title("🛠️ Manutenção do Sistema")
-    
-    t1, t2, t3 = st.tabs(["📋 Logs", "📜 Histórico", "⚙️ Config"])
+
+    t1, t2, t3, t4 = st.tabs(["📋 Logs", "📜 Histórico", "💾 Backups", "⚙️ Config"])
     
     with t1:
         st.subheader("📋 Logs de Erro")
@@ -1919,8 +2060,225 @@ elif menu == "🛠️ Manutenção":
                 st.info("Histórico vazio ou corrompido.")
         else:
             st.info("Nenhuma alteração registrada ainda.")
-    
+
     with t3:
+        st.subheader("💾 Gerenciamento de Backups")
+
+        # Informações sobre backups
+        st.info("📂 **Localização dos Backups:** Mesma pasta do sistema (arquivos .bak)")
+
+        # Abas internas para organizar funcionalidades
+        tab_lista, tab_restaurar, tab_limpar, tab_importar = st.tabs([
+            "📊 Listar", "🔄 Restaurar", "🧹 Limpar", "📤 Importar CSV"
+        ])
+
+        with tab_lista:
+            st.markdown("### 📊 Backups Disponíveis")
+
+            df_backups = listar_backups()
+
+            if not df_backups.empty:
+                # Formata para exibição
+                df_display = df_backups.copy()
+                df_display['Data/Hora'] = df_display['Data/Hora'].dt.strftime('%d/%m/%Y %H:%M:%S')
+                df_display['Tamanho'] = df_display['Tamanho_KB'].apply(lambda x: f"{x:.1f} KB")
+
+                st.dataframe(
+                    df_display[['Arquivo', 'Origem', 'Data/Hora', 'Tamanho']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.caption(f"**Total:** {len(df_backups)} backup(s) | **Espaço:** {df_backups['Tamanho_KB'].sum():.1f} KB")
+            else:
+                st.info("Nenhum backup encontrado.")
+
+        with tab_restaurar:
+            st.markdown("### 🔄 Restaurar Backup")
+            st.warning("⚠️ **Atenção:** Restaurar um backup substituirá os dados atuais!")
+
+            df_backups = listar_backups()
+
+            if not df_backups.empty:
+                # Agrupa por arquivo de origem
+                origens = df_backups['Origem'].unique().tolist()
+
+                origem_selecionada = st.selectbox(
+                    "1️⃣ Selecione o arquivo a restaurar:",
+                    origens,
+                    key="restaurar_origem"
+                )
+
+                if origem_selecionada:
+                    # Filtra backups da origem selecionada
+                    backups_origem = df_backups[df_backups['Origem'] == origem_selecionada]
+
+                    # Formata opções
+                    opcoes_backup = {}
+                    for _, row in backups_origem.iterrows():
+                        label = f"{row['Data/Hora'].strftime('%d/%m/%Y %H:%M:%S')} ({row['Tamanho_KB']:.1f} KB)"
+                        opcoes_backup[label] = row['Caminho']
+
+                    backup_selecionado_label = st.selectbox(
+                        "2️⃣ Selecione a versão:",
+                        opcoes_backup.keys(),
+                        key="restaurar_versao"
+                    )
+
+                    if backup_selecionado_label:
+                        backup_caminho = opcoes_backup[backup_selecionado_label]
+
+                        st.divider()
+
+                        st.markdown("**Resumo da Restauração:**")
+                        st.write(f"- **Arquivo:** {origem_selecionada}")
+                        st.write(f"- **Versão:** {backup_selecionado_label}")
+                        st.write(f"- **Ação:** Um backup de segurança do arquivo atual será criado antes da restauração")
+
+                        confirmar = st.checkbox(
+                            "✅ Confirmo que desejo restaurar este backup",
+                            key="confirmar_restaurar"
+                        )
+
+                        if st.button(
+                            "🔄 RESTAURAR BACKUP",
+                            type="primary",
+                            disabled=not confirmar,
+                            use_container_width=True
+                        ):
+                            sucesso, msg = restaurar_backup(backup_caminho, origem_selecionada)
+
+                            if sucesso:
+                                st.success(msg)
+                                st.info("💡 Clique em 'Recarregar Dados' na aba Config para aplicar as mudanças")
+
+                                # Botão para recarregar
+                                if st.button("🔄 Recarregar Dados Agora", use_container_width=True):
+                                    st.session_state.pedidos = carregar_pedidos()
+                                    st.session_state.clientes = carregar_clientes()
+                                    st.success("✅ Dados recarregados!")
+                                    st.rerun()
+                            else:
+                                st.error(msg)
+            else:
+                st.info("Nenhum backup disponível para restaurar.")
+
+        with tab_limpar:
+            st.markdown("### 🧹 Limpeza de Backups Antigos")
+
+            df_backups = listar_backups()
+
+            if not df_backups.empty:
+                st.write(f"**Backups atuais:** {len(df_backups)} arquivo(s)")
+
+                dias = st.slider(
+                    "Remover backups com mais de quantos dias?",
+                    min_value=1,
+                    max_value=90,
+                    value=30,
+                    help="Backups mais antigos que este período serão removidos"
+                )
+
+                # Calcula quantos seriam removidos
+                limite = agora_brasil() - timedelta(days=dias)
+                a_remover = df_backups[df_backups['Data/Hora'] < limite]
+
+                st.info(f"📊 Serão removidos **{len(a_remover)}** backup(s) com mais de {dias} dia(s)")
+
+                if len(a_remover) > 0:
+                    st.dataframe(
+                        a_remover[['Arquivo', 'Data/Hora', 'Tamanho_KB']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    confirmar_limpar = st.checkbox(
+                        f"✅ Confirmo a remoção de {len(a_remover)} backup(s)",
+                        key="confirmar_limpar"
+                    )
+
+                    if st.button(
+                        "🧹 LIMPAR BACKUPS ANTIGOS",
+                        type="primary",
+                        disabled=not confirmar_limpar,
+                        use_container_width=True
+                    ):
+                        sucesso, msg = limpar_backups_por_data(dias)
+                        if sucesso:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                else:
+                    st.success("✅ Nenhum backup antigo para remover!")
+            else:
+                st.info("Nenhum backup encontrado.")
+
+        with tab_importar:
+            st.markdown("### 📤 Importar CSV Externo")
+            st.info("💡 Importe arquivos CSV de outras fontes para substituir os dados do sistema")
+
+            destino = st.selectbox(
+                "1️⃣ Selecione qual arquivo deseja substituir:",
+                ["Pedidos", "Clientes", "Histórico"],
+                key="importar_destino"
+            )
+
+            arquivo_upload = st.file_uploader(
+                "2️⃣ Envie o arquivo CSV:",
+                type="csv",
+                key="importar_arquivo"
+            )
+
+            if arquivo_upload:
+                try:
+                    # Lê para preview
+                    df_preview = pd.read_csv(arquivo_upload)
+
+                    st.markdown("**📋 Preview do Arquivo:**")
+                    st.write(f"- **Linhas:** {len(df_preview)}")
+                    st.write(f"- **Colunas:** {', '.join(df_preview.columns.tolist())}")
+
+                    st.dataframe(df_preview.head(10), use_container_width=True)
+
+                    st.divider()
+
+                    st.warning(f"⚠️ **Atenção:** O arquivo **{destino}** será substituído!")
+                    st.info("✅ Um backup do arquivo atual será criado automaticamente")
+
+                    confirmar_import = st.checkbox(
+                        f"✅ Confirmo a importação de {len(df_preview)} registro(s)",
+                        key="confirmar_importar"
+                    )
+
+                    if st.button(
+                        "📤 IMPORTAR CSV",
+                        type="primary",
+                        disabled=not confirmar_import,
+                        use_container_width=True
+                    ):
+                        # Reseta o ponteiro do arquivo
+                        arquivo_upload.seek(0)
+
+                        sucesso, msg, df_importado = importar_csv_externo(arquivo_upload, destino)
+
+                        if sucesso:
+                            st.success(msg)
+                            st.info("💡 Clique em 'Recarregar Dados' para aplicar as mudanças")
+
+                            # Botão para recarregar
+                            if st.button("🔄 Recarregar Dados Agora", use_container_width=True, key="reload_import"):
+                                st.session_state.pedidos = carregar_pedidos()
+                                st.session_state.clientes = carregar_clientes()
+                                st.success("✅ Dados recarregados!")
+                                st.rerun()
+                        else:
+                            st.error(msg)
+
+                except Exception as e:
+                    st.error(f"❌ Erro ao ler arquivo: {e}")
+
+    with t4:
         st.subheader("⚙️ Configurações")
         
         st.write("**Informações do Sistema:**")
