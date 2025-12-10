@@ -1133,40 +1133,44 @@ elif menu == "Novo Pedido":
     col_titulo, col_limpar = st.columns([4, 1])
     with col_limpar:
         if st.button("🔄 Limpar", help="Limpar todos os campos do formulário"):
-            st.session_state.cliente_novo_index = 0
-            st.session_state.resetar_cliente_novo = True
+            # Remove todas as keys relacionadas ao formulário
+            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo']
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
-    
-    # Verifica se deve resetar o cliente (após salvar pedido ou clicar em limpar)
+
+    # Verifica se deve resetar o cliente (após salvar pedido)
     if st.session_state.get('resetar_cliente_novo', False):
-        st.session_state.cliente_novo_index = 0
+        # Deleta as keys do selectbox para forçar reset
+        if 'sel_cliente_novo' in st.session_state:
+            del st.session_state['sel_cliente_novo']
+        if 'cliente_novo_index' in st.session_state:
+            del st.session_state['cliente_novo_index']
         st.session_state.resetar_cliente_novo = False
-    
-    # Inicializa índice do cliente
+        logger.info("Formulário de novo pedido resetado com sucesso")
+
+    # Inicializa índice do cliente (sempre volta para 0 = "-- Selecione --")
     if 'cliente_novo_index' not in st.session_state:
         st.session_state.cliente_novo_index = 0
-    
+
     # Carrega lista de clientes
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
     except:
         clis = []
-    
+
     lista_clientes = ["-- Selecione --"] + clis
 
     st.markdown("### 1️⃣ Cliente")
-    
+
     # Selectbox do cliente FORA do form para poder buscar o contato
     c_sel = st.selectbox(
-        "👤 Nome do Cliente", 
+        "👤 Nome do Cliente",
         lista_clientes,
         index=st.session_state.cliente_novo_index,
         key="sel_cliente_novo"
     )
-    
-    # Atualiza o índice no session_state
-    if c_sel in lista_clientes:
-        st.session_state.cliente_novo_index = lista_clientes.index(c_sel)
     
     # Busca o contato do cliente selecionado
     contato_cliente = ""
