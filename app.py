@@ -1549,20 +1549,17 @@ if menu == "📅 Pedidos do Dia":
         st.subheader("📋 Entregas do Dia")
 
         if not df_dia.empty:
-            # Lista de pedidos com visualização e edição (zebra stripes ultra compacto)
+            # Lista de pedidos compacta com bordas sutis
             linha_num = 0
             for idx, pedido in df_dia.iterrows():
-                # Zebra stripes - alterna cor de fundo a cada linha (cores melhoradas)
-                bg_color = "#f1f5f9" if linha_num % 2 == 0 else "#ffffff"
-
                 with st.container():
                     st.markdown(f"""
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            background-color: {bg_color};
-                            padding: 0px 3px;
+                            padding: 0px 2px;
                             margin: 0px;
-                            border-radius: 0px;
+                            border-bottom: 1px solid #e5e7eb;
+                            line-height: 1.3;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
@@ -1933,21 +1930,17 @@ elif menu == "Gerenciar Tudo":
         if df_view.empty:
             st.info("Nenhum pedido encontrado com os filtros aplicados.")
         else:
-            # Contador para zebra stripes
+            # Lista de pedidos compacta com bordas sutis
             linha_num = 0
             for idx, pedido in df_view.iterrows():
-                # Zebra stripes - alterna cor de fundo a cada linha (cores melhoradas)
-                bg_color = "#f1f5f9" if linha_num % 2 == 0 else "#ffffff"
-
-                # Container com fundo colorido
                 with st.container():
                     st.markdown(f"""
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            background-color: {bg_color};
-                            padding: 0px 3px;
-                            border-radius: 0px;
-                            margin-bottom: 1px;
+                            padding: 0px 2px;
+                            margin: 0px;
+                            border-bottom: 1px solid #e5e7eb;
+                            line-height: 1.3;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
