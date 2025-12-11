@@ -1358,6 +1358,68 @@ def gerar_lista_clientes_pdf(df_clientes):
         return None
 
 # ==============================================================================
+# FUNÇÕES AUXILIARES DE UI
+# ==============================================================================
+
+def get_status_badge(status):
+    """Retorna badge HTML colorido para status"""
+    cores = {
+        "🟢 Entregue": ("#10b981", "#d1fae5"),  # Verde
+        "🔴 Pendente": ("#ef4444", "#fee2e2"),  # Vermelho
+        "🟡 Em Preparo": ("#f59e0b", "#fef3c7"),  # Amarelo
+        "🔵 Confirmado": ("#3b82f6", "#dbeafe"),  # Azul
+        "⚫ Cancelado": ("#6b7280", "#f3f4f6"),  # Cinza
+    }
+
+    cor_texto, cor_fundo = cores.get(status, ("#6b7280", "#f3f4f6"))
+
+    return f"""
+        <span style="
+            background-color: {cor_fundo};
+            color: {cor_texto};
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: inline-block;
+            border: 1px solid {cor_texto}40;
+        ">{status}</span>
+    """
+
+def get_pagamento_badge(pagamento):
+    """Retorna badge HTML colorido para pagamento"""
+    cores = {
+        "PAGO": ("#10b981", "#d1fae5"),  # Verde
+        "NÃO PAGO": ("#ef4444", "#fee2e2"),  # Vermelho
+        "METADE": ("#f59e0b", "#fef3c7"),  # Amarelo
+    }
+
+    cor_texto, cor_fundo = cores.get(pagamento, ("#6b7280", "#f3f4f6"))
+
+    return f"""
+        <span style="
+            background-color: {cor_fundo};
+            color: {cor_texto};
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: inline-block;
+            border: 1px solid {cor_texto}40;
+        ">{pagamento}</span>
+    """
+
+def get_valor_destaque(valor):
+    """Retorna HTML com valor monetário em destaque"""
+    return f"""
+        <span style="
+            color: #059669;
+            font-weight: 700;
+            font-size: 1.05rem;
+        ">R$ {valor:.2f}</span>
+    """
+
+# ==============================================================================
 # INICIALIZAÇÃO
 # ==============================================================================
 if 'pedidos' not in st.session_state:
@@ -1490,8 +1552,8 @@ if menu == "📅 Pedidos do Dia":
             # Lista de pedidos com visualização e edição (zebra stripes ultra compacto)
             linha_num = 0
             for idx, pedido in df_dia.iterrows():
-                # Zebra stripes - alterna cor de fundo a cada linha
-                bg_color = "#e8eaf0" if linha_num % 2 == 0 else "#f8f9fa"
+                # Zebra stripes - alterna cor de fundo a cada linha (cores melhoradas)
+                bg_color = "#f1f5f9" if linha_num % 2 == 0 else "#ffffff"
 
                 with st.container():
                     st.markdown(f"""
@@ -1505,29 +1567,27 @@ if menu == "📅 Pedidos do Dia":
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6 = st.columns([1, 3, 2, 2, 2, 2])
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.5, 2, 0.8, 1, 0.9, 0.4, 0.4])
 
                     with col1:
-                        st.markdown(f"**#{int(pedido['ID_Pedido'])}**")
+                        st.markdown(f"<div style='font-size:1.1rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.text(f"👤 {pedido['Cliente']}")
+                        st.markdown(f"<div style='font-size:0.95rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
-                        st.text(f"⏰ {hora_str}")
+                        st.markdown(f"<div style='font-size:0.9rem; color:#6b7280;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
-                        st.text(f"🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}")
+                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
                     with col5:
-                        st.text(f"💰 R$ {pedido['Valor']:.2f}")
+                        st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col6:
-                        col_vis, col_edit = st.columns(2)
-                        with col_vis:
-                            if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar"):
-                                st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
-                                st.rerun()
-                        with col_edit:
-                            if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar"):
-                                st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
-                                st.rerun()
+                        if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
+                            st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
+                            st.rerun()
+                    with col7:
+                        if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
+                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
+                            st.rerun()
 
                     # Visualização detalhada
                     if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
@@ -1876,8 +1936,8 @@ elif menu == "Gerenciar Tudo":
             # Contador para zebra stripes
             linha_num = 0
             for idx, pedido in df_view.iterrows():
-                # Zebra stripes - alterna cor de fundo a cada linha
-                bg_color = "#f0f2f6" if linha_num % 2 == 0 else "#ffffff"
+                # Zebra stripes - alterna cor de fundo a cada linha (cores melhoradas)
+                bg_color = "#f1f5f9" if linha_num % 2 == 0 else "#ffffff"
 
                 # Container com fundo colorido
                 with st.container():
@@ -1885,33 +1945,33 @@ elif menu == "Gerenciar Tudo":
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
                             background-color: {bg_color};
-                            padding: 2px 5px;
-                            border-radius: 2px;
+                            padding: 0px 3px;
+                            border-radius: 0px;
                             margin-bottom: 1px;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.6, 1.5, 1.2, 0.8, 1, 0.5, 0.5])
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.5, 1.8, 1, 0.8, 1.2, 0.4, 0.4])
 
                     with col1:
-                        st.write(f"**#{int(pedido['ID_Pedido'])}**")
+                        st.markdown(f"<div style='font-size:1.1rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.write(f"👤 {pedido['Cliente']}")
+                        st.markdown(f"<div style='font-size:0.95rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                        st.write(f"📅 {data_str} ⏰ {hora_str}")
+                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
-                        st.write(f"💵 R$ {pedido['Valor']:.2f}")
+                        st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col5:
-                        st.write(f"📊 {pedido['Status']}")
+                        st.markdown(get_status_badge(pedido['Status']), unsafe_allow_html=True)
                     with col6:
-                        if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar detalhes"):
+                        if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                             st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
                     with col7:
-                        if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar pedido"):
+                        if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
                             st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
 
