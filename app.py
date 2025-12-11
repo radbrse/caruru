@@ -1414,12 +1414,46 @@ if menu == "📅 Pedidos do Dia":
     else:
         dt_filter = st.date_input("📅 Data:", hoje_brasil(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == dt_filter].copy()
-        
-        # Ordenar por hora
+
+        # Filtro de Ordenação
+        col_ord1, col_ord2 = st.columns([3, 1])
+        with col_ord2:
+            ordem_dia = st.selectbox("Ordenar por", [
+                "⏰ Hora (crescente)",
+                "⏰ Hora (decrescente)",
+                "💵 Valor (maior)",
+                "💵 Valor (menor)",
+                "👤 Cliente (A-Z)",
+                "👤 Cliente (Z-A)",
+                "📊 Status",
+                "🆔 ID (maior)",
+                "🆔 ID (menor)"
+            ], index=0, key="ordem_pedidos_dia")
+
+        # Aplica ordenação escolhida
         try:
-            df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(23, 59))
-            df_dia = df_dia.sort_values('h_sort').drop(columns=['h_sort'])
-        except:
+            if ordem_dia == "⏰ Hora (crescente)":
+                df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(23, 59))
+                df_dia = df_dia.sort_values('h_sort').drop(columns=['h_sort'])
+            elif ordem_dia == "⏰ Hora (decrescente)":
+                df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
+                df_dia = df_dia.sort_values('h_sort', ascending=False).drop(columns=['h_sort'])
+            elif ordem_dia == "💵 Valor (maior)":
+                df_dia = df_dia.sort_values('Valor', ascending=False)
+            elif ordem_dia == "💵 Valor (menor)":
+                df_dia = df_dia.sort_values('Valor', ascending=True)
+            elif ordem_dia == "👤 Cliente (A-Z)":
+                df_dia = df_dia.sort_values('Cliente', ascending=True)
+            elif ordem_dia == "👤 Cliente (Z-A)":
+                df_dia = df_dia.sort_values('Cliente', ascending=False)
+            elif ordem_dia == "📊 Status":
+                df_dia = df_dia.sort_values('Status', ascending=True)
+            elif ordem_dia == "🆔 ID (maior)":
+                df_dia = df_dia.sort_values('ID_Pedido', ascending=False)
+            elif ordem_dia == "🆔 ID (menor)":
+                df_dia = df_dia.sort_values('ID_Pedido', ascending=True)
+        except Exception as e:
+            logger.warning(f"Erro ao ordenar pedidos do dia: {e}")
             pass
         
         # Métricas
@@ -1453,9 +1487,23 @@ if menu == "📅 Pedidos do Dia":
         st.subheader("📋 Entregas do Dia")
 
         if not df_dia.empty:
-            # Lista de pedidos com visualização e edição
+            # Lista de pedidos com visualização e edição (com zebra stripes)
+            linha_num = 0
             for idx, pedido in df_dia.iterrows():
+                # Zebra stripes - alterna cor de fundo a cada linha
+                bg_color = "#f0f2f6" if linha_num % 2 == 0 else "#ffffff"
+
                 with st.container():
+                    st.markdown(f"""
+                        <style>
+                        div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
+                            background-color: {bg_color};
+                            padding: 10px;
+                            border-radius: 5px;
+                        }}
+                        </style>
+                    """, unsafe_allow_html=True)
+
                     col1, col2, col3, col4, col5, col6 = st.columns([1, 3, 2, 2, 2, 2])
 
                     with col1:
@@ -1578,7 +1626,8 @@ if menu == "📅 Pedidos do Dia":
                                         else:
                                             st.error(msg)
 
-                    st.divider()
+                # Incrementa contador para zebra stripes
+                linha_num += 1
         else:
             st.info(f"Nenhum pedido para {dt_filter.strftime('%d/%m/%Y')}")
 
@@ -1763,7 +1812,7 @@ elif menu == "Gerenciar Tudo":
                     "📊 Status",
                     "🆔 ID (maior)",
                     "🆔 ID (menor)"
-                ], index=0)
+                ], index=1)
 
         # Aplica filtros
         df_view = df.copy()
