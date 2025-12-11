@@ -1732,6 +1732,17 @@ elif menu == "Gerenciar Tudo":
     df = st.session_state.pedidos
 
     if not df.empty:
+        # Busca rápida por cliente
+        st.markdown("### 🔍 Busca Rápida")
+        busca_cliente = st.text_input(
+            "Digite o nome do cliente para filtrar:",
+            placeholder="Ex: João, Maria, etc...",
+            help="A lista será filtrada conforme você digita",
+            key="busca_cliente_todos"
+        )
+
+        st.divider()
+
         # Filtros e Ordenação
         with st.expander("🔍 Filtros e Ordenação", expanded=False):
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
@@ -1758,6 +1769,10 @@ elif menu == "Gerenciar Tudo":
         df_view = df.copy()
         df_view = df_view[df_view['Status'].isin(f_status)]
         df_view = df_view[df_view['Pagamento'].isin(f_pagto)]
+
+        # Filtro de busca por cliente (case insensitive)
+        if busca_cliente:
+            df_view = df_view[df_view['Cliente'].str.contains(busca_cliente, case=False, na=False)]
 
         if f_periodo == "Hoje":
             df_view = df_view[df_view['Data'] == hoje_brasil()]
@@ -1803,29 +1818,46 @@ elif menu == "Gerenciar Tudo":
         if df_view.empty:
             st.info("Nenhum pedido encontrado com os filtros aplicados.")
         else:
+            # Contador para zebra stripes
+            linha_num = 0
             for idx, pedido in df_view.iterrows():
-                col1, col2, col3, col4, col5, col6, col7 = st.columns([0.6, 1.5, 1.2, 0.8, 1, 0.5, 0.5])
+                # Zebra stripes - alterna cor de fundo a cada linha
+                bg_color = "#f0f2f6" if linha_num % 2 == 0 else "#ffffff"
 
-                with col1:
-                    st.write(f"**#{int(pedido['ID_Pedido'])}**")
-                with col2:
-                    st.write(f"👤 {pedido['Cliente']}")
-                with col3:
-                    data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
-                    hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                    st.write(f"📅 {data_str} ⏰ {hora_str}")
-                with col4:
-                    st.write(f"💵 R$ {pedido['Valor']:.2f}")
-                with col5:
-                    st.write(f"📊 {pedido['Status']}")
-                with col6:
-                    if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar detalhes"):
-                        st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
-                        st.rerun()
-                with col7:
-                    if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar pedido"):
-                        st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
-                        st.rerun()
+                # Container com fundo colorido
+                with st.container():
+                    st.markdown(f"""
+                        <style>
+                        div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
+                            background-color: {bg_color};
+                            padding: 10px;
+                            border-radius: 5px;
+                        }}
+                        </style>
+                    """, unsafe_allow_html=True)
+
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.6, 1.5, 1.2, 0.8, 1, 0.5, 0.5])
+
+                    with col1:
+                        st.write(f"**#{int(pedido['ID_Pedido'])}**")
+                    with col2:
+                        st.write(f"👤 {pedido['Cliente']}")
+                    with col3:
+                        data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
+                        hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
+                        st.write(f"📅 {data_str} ⏰ {hora_str}")
+                    with col4:
+                        st.write(f"💵 R$ {pedido['Valor']:.2f}")
+                    with col5:
+                        st.write(f"📊 {pedido['Status']}")
+                    with col6:
+                        if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar detalhes"):
+                            st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
+                            st.rerun()
+                    with col7:
+                        if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar pedido"):
+                            st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
+                            st.rerun()
 
                 # Expander para visualização
                 if st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False):
@@ -1958,7 +1990,8 @@ elif menu == "Gerenciar Tudo":
                                 else:
                                     st.error("❌ Erro ao excluir o pedido.")
 
-                st.divider()
+                # Incrementa contador para zebra stripes
+                linha_num += 1
         
         st.divider()
         
