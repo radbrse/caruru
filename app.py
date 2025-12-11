@@ -1556,32 +1556,35 @@ if menu == "📅 Pedidos do Dia":
                     st.markdown(f"""
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            padding: 0px 2px;
+                            padding: 0px;
                             margin: 0px;
-                            border-bottom: 1px solid #e5e7eb;
-                            line-height: 1.3;
+                            line-height: 1.2;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.5, 2, 0.8, 1, 0.9, 0.4, 0.4])
+                    col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.3, 0.3])
 
                     with col1:
-                        st.markdown(f"<div style='font-size:1.1rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.95rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
-                        st.markdown(f"<div style='font-size:0.9rem; color:#6b7280;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
-                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.8rem; color:#6b7280;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
                     with col5:
                         st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col6:
+                        st.markdown(get_status_badge(pedido['Status']), unsafe_allow_html=True)
+                    with col7:
+                        st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
+                    with col8:
                         if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                             st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
                             st.rerun()
-                    with col7:
+                    with col9:
                         if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
                             st.rerun()
@@ -1937,33 +1940,34 @@ elif menu == "Gerenciar Tudo":
                     st.markdown(f"""
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            padding: 0px 2px;
+                            padding: 0px;
                             margin: 0px;
-                            border-bottom: 1px solid #e5e7eb;
-                            line-height: 1.3;
+                            line-height: 1.2;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.5, 1.8, 1, 0.8, 1.2, 0.4, 0.4])
+                    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.3, 0.3])
 
                     with col1:
-                        st.markdown(f"<div style='font-size:1.1rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.95rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.8rem; color:#6b7280;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
                         st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col5:
                         st.markdown(get_status_badge(pedido['Status']), unsafe_allow_html=True)
                     with col6:
+                        st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
+                    with col7:
                         if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                             st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
-                    with col7:
+                    with col8:
                         if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
                             st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
