@@ -1,6 +1,6 @@
 """
 Sistema de Gestão de Pedidos - Cantinho do Caruru
-Versão 18.0 - Otimizada e Estável
+Versão 19.0 - Com Google Sheets
 
 MELHORIAS IMPLEMENTADAS:
 ========================
@@ -47,6 +47,15 @@ import shutil
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+import json
+
+# Google Sheets
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSPREAD_AVAILABLE = True
+except ImportError:
+    GSPREAD_AVAILABLE = False
 
 # --- CONFIGURAÇÃO DE FUSO HORÁRIO (BRASIL) ---
 FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
@@ -97,7 +106,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "18.0"
+VERSAO = "19.0"
 MAX_BACKUP_FILES = 5  # Número máximo de arquivos .bak a manter
 CACHE_TIMEOUT = 60  # Tempo de cache em segundos
 
@@ -328,6 +337,221 @@ def importar_csv_externo(arquivo_upload, destino):
     except Exception as e:
         logger.error(f"Erro ao importar CSV: {e}", exc_info=True)
         return False, f"❌ Erro ao importar: {e}", None
+
+# ==============================================================================
+# INTEGRAÇÃO GOOGLE SHEETS
+# ==============================================================================
+def conectar_google_sheets():
+    """
+    Conecta ao Google Sheets usando credenciais do Streamlit Secrets.
+    Retorna o cliente gspread conectado ou None se falhar.
+    """
+    if not GSPREAD_AVAILABLE:
+        logger.error("gspread não disponível")
+        return None
+
+    try:
+        # Tenta carregar credenciais do secrets
+        if "gcp_service_account" not in st.secrets:
+            logger.warning("Credenciais Google Sheets não configuradas")
+            return None
+
+        # Prepara credenciais
+        creds_dict = dict(st.secrets["gcp_service_account"])
+
+        # Define escopos necessários
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+
+        # Cria credenciais
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+
+        # Conecta ao gspread
+        client = gspread.authorize(creds)
+
+        logger.info("Conectado ao Google Sheets com sucesso")
+        return client
+
+    except Exception as e:
+        logger.error(f"Erro ao conectar ao Google Sheets: {e}", exc_info=True)
+        return None
+
+def obter_ou_criar_planilha(client, nome_planilha="Cantinho do Caruru - Dados"):
+    """
+    Obtém a planilha ou cria se não existir.
+    Retorna o objeto Spreadsheet.
+    """
+    try:
+        # Tenta abrir a planilha existente
+        try:
+            spreadsheet = client.open(nome_planilha)
+            logger.info(f"Planilha '{nome_planilha}' encontrada")
+            return spreadsheet
+        except gspread.exceptions.SpreadsheetNotFound:
+            # Cria nova planilha
+            spreadsheet = client.create(nome_planilha)
+            logger.info(f"Planilha '{nome_planilha}' criada")
+
+            # Cria abas padrão
+            worksheet_pedidos = spreadsheet.sheet1
+            worksheet_pedidos.update_title("Pedidos")
+
+            spreadsheet.add_worksheet("Clientes", rows=1000, cols=10)
+            spreadsheet.add_worksheet("Histórico", rows=5000, cols=10)
+            spreadsheet.add_worksheet("Backups_Log", rows=1000, cols=10)
+
+            logger.info("Abas padrão criadas na planilha")
+            return spreadsheet
+
+    except Exception as e:
+        logger.error(f"Erro ao obter/criar planilha: {e}", exc_info=True)
+        return None
+
+def salvar_no_sheets(client, nome_aba, df):
+    """
+    Salva DataFrame no Google Sheets.
+    """
+    try:
+        # Obtém a planilha
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return False, "❌ Erro ao acessar planilha"
+
+        # Obtém ou cria a aba
+        try:
+            worksheet = spreadsheet.worksheet(nome_aba)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(nome_aba, rows=len(df)+100, cols=len(df.columns))
+
+        # Limpa conteúdo anterior
+        worksheet.clear()
+
+        # Prepara dados (converte tudo para string para evitar problemas)
+        df_str = df.copy()
+        for col in df_str.columns:
+            df_str[col] = df_str[col].astype(str)
+
+        # Atualiza planilha
+        worksheet.update([df_str.columns.values.tolist()] + df_str.values.tolist())
+
+        logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
+        return True, f"✅ {len(df)} registros salvos no Google Sheets"
+
+    except Exception as e:
+        logger.error(f"Erro ao salvar no Sheets: {e}", exc_info=True)
+        return False, f"❌ Erro ao salvar: {e}"
+
+def carregar_do_sheets(client, nome_aba):
+    """
+    Carrega DataFrame do Google Sheets.
+    """
+    try:
+        # Obtém a planilha
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return None, "❌ Erro ao acessar planilha"
+
+        # Obtém a aba
+        try:
+            worksheet = spreadsheet.worksheet(nome_aba)
+        except gspread.exceptions.WorksheetNotFound:
+            logger.warning(f"Aba '{nome_aba}' não encontrada")
+            return pd.DataFrame(), f"⚠️ Aba '{nome_aba}' não existe (vazia)"
+
+        # Carrega dados
+        dados = worksheet.get_all_values()
+
+        if not dados or len(dados) < 2:  # Apenas cabeçalho ou vazio
+            return pd.DataFrame(), f"⚠️ Aba '{nome_aba}' está vazia"
+
+        # Cria DataFrame
+        df = pd.DataFrame(dados[1:], columns=dados[0])
+
+        logger.info(f"Dados carregados do Sheets: {nome_aba} ({len(df)} linhas)")
+        return df, f"✅ {len(df)} registros carregados"
+
+    except Exception as e:
+        logger.error(f"Erro ao carregar do Sheets: {e}", exc_info=True)
+        return None, f"❌ Erro ao carregar: {e}"
+
+def sincronizar_com_sheets(modo="enviar"):
+    """
+    Sincroniza dados entre CSV local e Google Sheets.
+
+    Modos:
+    - 'enviar': Envia CSV local para Sheets (backup)
+    - 'receber': Baixa do Sheets para CSV local (restauração)
+    - 'ambos': Sincronização bidirecional (usa o mais recente)
+    """
+    try:
+        client = conectar_google_sheets()
+        if not client:
+            return False, "❌ Não foi possível conectar ao Google Sheets"
+
+        resultados = []
+
+        if modo in ["enviar", "ambos"]:
+            # Envia Pedidos
+            df_pedidos = st.session_state.pedidos
+            sucesso, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
+            resultados.append(f"Pedidos: {msg}")
+
+            # Envia Clientes
+            df_clientes = st.session_state.clientes
+            sucesso, msg = salvar_no_sheets(client, "Clientes", df_clientes)
+            resultados.append(f"Clientes: {msg}")
+
+            # Registra no log de backups
+            log_backup = pd.DataFrame([{
+                'Timestamp': agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
+                'Ação': 'Backup Automático',
+                'Pedidos': len(df_pedidos),
+                'Clientes': len(df_clientes)
+            }])
+            salvar_no_sheets(client, "Backups_Log", log_backup)
+
+        if modo in ["receber", "ambos"]:
+            # Recebe Pedidos
+            df_pedidos, msg = carregar_do_sheets(client, "Pedidos")
+            if df_pedidos is not None and not df_pedidos.empty:
+                salvar_pedidos(df_pedidos)
+                st.session_state.pedidos = carregar_pedidos()
+                resultados.append(f"Pedidos: {msg}")
+
+            # Recebe Clientes
+            df_clientes, msg = carregar_do_sheets(client, "Clientes")
+            if df_clientes is not None and not df_clientes.empty:
+                salvar_clientes(df_clientes)
+                st.session_state.clientes = carregar_clientes()
+                resultados.append(f"Clientes: {msg}")
+
+        return True, "\n".join(resultados)
+
+    except Exception as e:
+        logger.error(f"Erro na sincronização: {e}", exc_info=True)
+        return False, f"❌ Erro na sincronização: {e}"
+
+def verificar_status_sheets():
+    """
+    Verifica se Google Sheets está configurado e acessível.
+    """
+    if not GSPREAD_AVAILABLE:
+        return False, "❌ Biblioteca gspread não instalada"
+
+    if "gcp_service_account" not in st.secrets:
+        return False, "⚠️ Credenciais não configuradas em Streamlit Secrets"
+
+    try:
+        client = conectar_google_sheets()
+        if client:
+            spreadsheet = obter_ou_criar_planilha(client)
+            if spreadsheet:
+                return True, f"✅ Conectado: {spreadsheet.title}"
+        return False, "❌ Erro ao conectar"
+    except Exception as e:
+        return False, f"❌ Erro: {str(e)[:100]}"
 
 # ==============================================================================
 # FUNÇÕES DE VALIDAÇÃO ROBUSTAS
@@ -2023,7 +2247,7 @@ elif menu == "👥 Cadastrar Clientes":
 elif menu == "🛠️ Manutenção":
     st.title("🛠️ Manutenção do Sistema")
 
-    t1, t2, t3, t4 = st.tabs(["📋 Logs", "📜 Histórico", "💾 Backups", "⚙️ Config"])
+    t1, t2, t3, t4, t5 = st.tabs(["📋 Logs", "📜 Histórico", "💾 Backups", "☁️ Google Sheets", "⚙️ Config"])
     
     with t1:
         st.subheader("📋 Logs de Erro")
@@ -2279,6 +2503,203 @@ elif menu == "🛠️ Manutenção":
                     st.error(f"❌ Erro ao ler arquivo: {e}")
 
     with t4:
+        st.subheader("☁️ Integração Google Sheets")
+
+        st.info("""
+        💡 **Por que usar Google Sheets?**
+        - ✅ Seus dados ficam seguros na nuvem do Google
+        - ✅ Não perde dados quando o Streamlit reinicia
+        - ✅ Backup automático do Google (30 dias de histórico)
+        - ✅ Acesse e edite dados direto no Google Sheets
+        - ✅ Gratuito e confiável
+        """)
+
+        # Verifica status
+        status_ok, status_msg = verificar_status_sheets()
+
+        if status_ok:
+            st.success(status_msg)
+        else:
+            st.warning(status_msg)
+
+        st.divider()
+
+        # Abas de funcionalidades
+        tab_sync, tab_manual, tab_config = st.tabs(["🔄 Sincronização", "📤 Manual", "⚙️ Configurar"])
+
+        with tab_sync:
+            st.markdown("### 🔄 Sincronização Automática")
+
+            if not status_ok:
+                st.error("❌ Configure as credenciais primeiro na aba '⚙️ Configurar'")
+            else:
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("📤 Enviar para Sheets", use_container_width=True, help="Faz backup dos dados locais no Google Sheets"):
+                        with st.spinner("Enviando dados..."):
+                            sucesso, msg = sincronizar_com_sheets(modo="enviar")
+                            if sucesso:
+                                st.success("✅ Dados enviados com sucesso!")
+                                st.text(msg)
+                            else:
+                                st.error(msg)
+
+                with col2:
+                    if st.button("📥 Baixar do Sheets", use_container_width=True, help="Restaura dados do Google Sheets"):
+                        with st.spinner("Baixando dados..."):
+                            sucesso, msg = sincronizar_com_sheets(modo="receber")
+                            if sucesso:
+                                st.success("✅ Dados restaurados com sucesso!")
+                                st.text(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
+                with col3:
+                    if st.button("🔄 Sincronizar Ambos", use_container_width=True, help="Sincronização bidirecional"):
+                        with st.spinner("Sincronizando..."):
+                            sucesso, msg = sincronizar_com_sheets(modo="ambos")
+                            if sucesso:
+                                st.success("✅ Sincronizado!")
+                                st.text(msg)
+                            else:
+                                st.error(msg)
+
+                st.divider()
+
+                st.markdown("**💡 Quando usar cada opção:**")
+                st.write("- **📤 Enviar:** Após fazer mudanças no sistema (backup)")
+                st.write("- **📥 Baixar:** Para restaurar dados do Sheets")
+                st.write("- **🔄 Ambos:** Sincronização completa (cuidado com sobrescrita)")
+
+        with tab_manual:
+            st.markdown("### 📤 Operações Manuais")
+
+            if not status_ok:
+                st.error("❌ Configure as credenciais primeiro")
+            else:
+                st.markdown("#### Enviar Dados Específicos")
+
+                tipo_envio = st.selectbox(
+                    "Selecione o que deseja enviar:",
+                    ["Pedidos", "Clientes", "Ambos"]
+                )
+
+                if st.button("📤 Enviar Selecionado", use_container_width=True):
+                    try:
+                        client = conectar_google_sheets()
+                        if client:
+                            if tipo_envio in ["Pedidos", "Ambos"]:
+                                sucesso, msg = salvar_no_sheets(client, "Pedidos", st.session_state.pedidos)
+                                st.info(msg)
+
+                            if tipo_envio in ["Clientes", "Ambos"]:
+                                sucesso, msg = salvar_no_sheets(client, "Clientes", st.session_state.clientes)
+                                st.info(msg)
+
+                            st.success("✅ Operação concluída!")
+                        else:
+                            st.error("❌ Erro ao conectar")
+                    except Exception as e:
+                        st.error(f"❌ Erro: {e}")
+
+                st.divider()
+
+                st.markdown("#### Baixar Dados Específicos")
+
+                tipo_download = st.selectbox(
+                    "Selecione o que deseja baixar:",
+                    ["Pedidos", "Clientes"],
+                    key="download_tipo"
+                )
+
+                if st.button("📥 Baixar Selecionado", use_container_width=True):
+                    try:
+                        client = conectar_google_sheets()
+                        if client:
+                            if tipo_download == "Pedidos":
+                                df, msg = carregar_do_sheets(client, "Pedidos")
+                                if df is not None and not df.empty:
+                                    st.dataframe(df.head(10), use_container_width=True)
+                                    st.info(msg)
+
+                                    if st.button("✅ Confirmar e Aplicar"):
+                                        salvar_pedidos(df)
+                                        st.session_state.pedidos = carregar_pedidos()
+                                        st.success("✅ Pedidos restaurados!")
+                                        st.rerun()
+
+                            elif tipo_download == "Clientes":
+                                df, msg = carregar_do_sheets(client, "Clientes")
+                                if df is not None and not df.empty:
+                                    st.dataframe(df.head(10), use_container_width=True)
+                                    st.info(msg)
+
+                                    if st.button("✅ Confirmar e Aplicar", key="aplicar_clientes"):
+                                        salvar_clientes(df)
+                                        st.session_state.clientes = carregar_clientes()
+                                        st.success("✅ Clientes restaurados!")
+                                        st.rerun()
+                        else:
+                            st.error("❌ Erro ao conectar")
+                    except Exception as e:
+                        st.error(f"❌ Erro: {e}")
+
+        with tab_config:
+            st.markdown("### ⚙️ Configuração")
+
+            st.markdown("""
+            **📋 Passo a Passo para Configurar:**
+
+            1. **Criar Projeto no Google Cloud**
+            2. **Ativar APIs necessárias**
+            3. **Criar Service Account**
+            4. **Baixar credenciais JSON**
+            5. **Adicionar credenciais no Streamlit Secrets**
+
+            👉 **Tutorial completo será fornecido após o commit!**
+            """)
+
+            st.divider()
+
+            st.markdown("**🔍 Status Atual:**")
+
+            if GSPREAD_AVAILABLE:
+                st.success("✅ Biblioteca gspread instalada")
+            else:
+                st.error("❌ Biblioteca gspread não instalada")
+                st.code("pip install gspread google-auth")
+
+            if "gcp_service_account" in st.secrets:
+                st.success("✅ Credenciais configuradas")
+
+                # Mostra informações (sem expor dados sensíveis)
+                try:
+                    creds = dict(st.secrets["gcp_service_account"])
+                    st.write(f"- **Project ID:** {creds.get('project_id', 'N/A')}")
+                    st.write(f"- **Client Email:** {creds.get('client_email', 'N/A')}")
+                except:
+                    pass
+            else:
+                st.warning("⚠️ Credenciais não configuradas")
+                st.info("Adicione as credenciais em `.streamlit/secrets.toml`")
+
+            st.divider()
+
+            # Link para a planilha
+            if status_ok:
+                try:
+                    client = conectar_google_sheets()
+                    if client:
+                        spreadsheet = obter_ou_criar_planilha(client)
+                        if spreadsheet:
+                            st.markdown(f"**📊 Sua Planilha:**")
+                            st.markdown(f"[🔗 Abrir no Google Sheets](https://docs.google.com/spreadsheets/d/{spreadsheet.id})")
+                except:
+                    pass
+
+    with t5:
         st.subheader("⚙️ Configurações")
         
         st.write("**Informações do Sistema:**")
