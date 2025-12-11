@@ -1611,7 +1611,7 @@ if menu == "📅 Pedidos do Dia":
                                         }
                                         sucesso, msg = atualizar_pedido(int(pedido['ID_Pedido']), campos)
                                         if sucesso:
-                                            st.success(msg)
+                                            st.toast(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado!", icon="✅")
                                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
                                             st.rerun()
                                         else:
@@ -1626,7 +1626,7 @@ if menu == "📅 Pedidos do Dia":
                                     if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
                                         sucesso, msg = excluir_pedido(int(pedido['ID_Pedido']), "Excluído via interface")
                                         if sucesso:
-                                            st.success(msg)
+                                            st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
                                             st.rerun()
                                         else:
@@ -1760,7 +1760,7 @@ elif menu == "Novo Pedido":
                 for erro in erros:
                     st.error(erro)
             else:
-                st.success(f"✅ Pedido #{id_criado} criado com sucesso!")
+                st.toast(f"✅ Pedido #{id_criado} criado com sucesso!", icon="✅")
                 st.balloons()
                 # Seta flag para resetar o cliente na próxima execução
                 st.session_state.resetar_cliente_novo = True
@@ -2023,7 +2023,7 @@ elif menu == "Gerenciar Tudo":
                                 if salvar_pedidos(df_atualizado):
                                     st.session_state.pedidos = df_atualizado
                                     st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
-                                    st.success(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado com sucesso!")
+                                    st.toast(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado!", icon="✅")
                                     logger.info(f"Pedido {pedido['ID_Pedido']} editado via Gerenciar Tudo")
                                     time_module.sleep(0.5)
                                     st.rerun()
@@ -2039,7 +2039,7 @@ elif menu == "Gerenciar Tudo":
                                 if salvar_pedidos(df_atualizado):
                                     st.session_state.pedidos = df_atualizado
                                     st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
-                                    st.success(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído com sucesso!")
+                                    st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                     logger.info(f"Pedido {pedido['ID_Pedido']} excluído via Gerenciar Tudo")
                                     time_module.sleep(0.5)
                                     st.rerun()
@@ -2105,7 +2105,7 @@ elif menu == "Gerenciar Tudo":
                 df_n = pd.read_csv(up)
                 salvar_pedidos(df_n)
                 st.session_state.pedidos = carregar_pedidos()
-                st.success("✅ Restaurado!")
+                st.toast("Backup restaurado!", icon="✅")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro: {e}")
@@ -2264,7 +2264,7 @@ elif menu == "👥 Cadastrar Clientes":
                         }])
                         st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
                         salvar_clientes(st.session_state.clientes)
-                        st.success(f"✅ Cliente '{n}' cadastrado!")
+                        st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
                         st.rerun()
     
     with t2:
@@ -2301,7 +2301,7 @@ elif menu == "👥 Cadastrar Clientes":
                     df_c = pd.read_csv(up_c)
                     salvar_clientes(df_c)
                     st.session_state.clientes = carregar_clientes()
-                    st.success("✅ Importado!")
+                    st.toast("Clientes importados!", icon="✅")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
@@ -2322,7 +2322,7 @@ elif menu == "👥 Cadastrar Clientes":
             if st.button("🗑️ Excluir Cliente", type="primary", disabled=not confirma, use_container_width=True):
                 st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
                 salvar_clientes(st.session_state.clientes)
-                st.success(f"✅ Cliente '{d}' excluído!")
+                st.toast(f"Cliente '{d}' excluído!", icon="🗑️")
                 st.rerun()
         else:
             st.info("Nenhum cliente cadastrado.")
@@ -2464,7 +2464,7 @@ elif menu == "🛠️ Manutenção":
                                 if st.button("🔄 Recarregar Dados Agora", use_container_width=True):
                                     st.session_state.pedidos = carregar_pedidos()
                                     st.session_state.clientes = carregar_clientes()
-                                    st.success("✅ Dados recarregados!")
+                                    st.toast("Dados recarregados!", icon="✅")
                                     st.rerun()
                             else:
                                 st.error(msg)
@@ -2578,7 +2578,7 @@ elif menu == "🛠️ Manutenção":
                             if st.button("🔄 Recarregar Dados Agora", use_container_width=True, key="reload_import"):
                                 st.session_state.pedidos = carregar_pedidos()
                                 st.session_state.clientes = carregar_clientes()
-                                st.success("✅ Dados recarregados!")
+                                st.toast("Dados recarregados!", icon="✅")
                                 st.rerun()
                         else:
                             st.error(msg)
@@ -2624,7 +2624,7 @@ elif menu == "🛠️ Manutenção":
                         with st.spinner("Enviando dados..."):
                             sucesso, msg = sincronizar_com_sheets(modo="enviar")
                             if sucesso:
-                                st.success("✅ Dados enviados com sucesso!")
+                                st.toast("Dados enviados para Google Sheets!", icon="☁️")
                                 st.text(msg)
                             else:
                                 st.error(msg)
@@ -2634,7 +2634,7 @@ elif menu == "🛠️ Manutenção":
                         with st.spinner("Baixando dados..."):
                             sucesso, msg = sincronizar_com_sheets(modo="receber")
                             if sucesso:
-                                st.success("✅ Dados restaurados com sucesso!")
+                                st.toast("Dados restaurados do Google Sheets!", icon="☁️")
                                 st.text(msg)
                                 st.rerun()
                             else:
@@ -2645,7 +2645,7 @@ elif menu == "🛠️ Manutenção":
                         with st.spinner("Sincronizando..."):
                             sucesso, msg = sincronizar_com_sheets(modo="ambos")
                             if sucesso:
-                                st.success("✅ Sincronizado!")
+                                st.toast("Sincronização completa!", icon="🔄")
                                 st.text(msg)
                             else:
                                 st.error(msg)
