@@ -1730,29 +1730,35 @@ elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
     
     df = st.session_state.pedidos
-    
+
     if not df.empty:
-        # Ordenação
-        try:
-            df['sort_hora'] = df['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
-            df = df.sort_values(['Data', 'sort_hora'], ascending=[False, True]).drop(columns=['sort_hora'])
-        except:
-            pass
-        
-        # Filtros
-        with st.expander("🔍 Filtros", expanded=False):
-            c1, c2, c3 = st.columns(3)
-            with c1:
+        # Filtros e Ordenação
+        with st.expander("🔍 Filtros e Ordenação", expanded=False):
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+            with col_f1:
                 f_status = st.multiselect("Status", OPCOES_STATUS, default=OPCOES_STATUS)
-            with c2:
+            with col_f2:
                 f_pagto = st.multiselect("Pagamento", OPCOES_PAGAMENTO, default=OPCOES_PAGAMENTO)
-            with c3:
+            with col_f3:
                 f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês"])
-        
+            with col_f4:
+                f_ordem = st.selectbox("Ordenar por", [
+                    "📅 Data (mais recente)",
+                    "📅 Data (mais antiga)",
+                    "💵 Valor (maior)",
+                    "💵 Valor (menor)",
+                    "👤 Cliente (A-Z)",
+                    "👤 Cliente (Z-A)",
+                    "📊 Status",
+                    "🆔 ID (maior)",
+                    "🆔 ID (menor)"
+                ], index=0)
+
+        # Aplica filtros
         df_view = df.copy()
         df_view = df_view[df_view['Status'].isin(f_status)]
         df_view = df_view[df_view['Pagamento'].isin(f_pagto)]
-        
+
         if f_periodo == "Hoje":
             df_view = df_view[df_view['Data'] == hoje_brasil()]
         elif f_periodo == "Esta Semana":
@@ -1761,6 +1767,32 @@ elif menu == "Gerenciar Tudo":
         elif f_periodo == "Este Mês":
             inicio_mes = hoje_brasil().replace(day=1)
             df_view = df_view[df_view['Data'] >= inicio_mes]
+
+        # Aplica ordenação escolhida
+        try:
+            if f_ordem == "📅 Data (mais recente)":
+                df_view['sort_hora'] = df_view['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
+                df_view = df_view.sort_values(['Data', 'sort_hora'], ascending=[False, True]).drop(columns=['sort_hora'])
+            elif f_ordem == "📅 Data (mais antiga)":
+                df_view['sort_hora'] = df_view['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
+                df_view = df_view.sort_values(['Data', 'sort_hora'], ascending=[True, True]).drop(columns=['sort_hora'])
+            elif f_ordem == "💵 Valor (maior)":
+                df_view = df_view.sort_values('Valor', ascending=False)
+            elif f_ordem == "💵 Valor (menor)":
+                df_view = df_view.sort_values('Valor', ascending=True)
+            elif f_ordem == "👤 Cliente (A-Z)":
+                df_view = df_view.sort_values('Cliente', ascending=True)
+            elif f_ordem == "👤 Cliente (Z-A)":
+                df_view = df_view.sort_values('Cliente', ascending=False)
+            elif f_ordem == "📊 Status":
+                df_view = df_view.sort_values('Status', ascending=True)
+            elif f_ordem == "🆔 ID (maior)":
+                df_view = df_view.sort_values('ID_Pedido', ascending=False)
+            elif f_ordem == "🆔 ID (menor)":
+                df_view = df_view.sort_values('ID_Pedido', ascending=True)
+        except Exception as e:
+            logger.warning(f"Erro ao ordenar: {e}")
+            pass
         
         # Métricas com totais de caruru e bobó
         total_caruru = df_view['Caruru'].sum()
