@@ -1487,20 +1487,20 @@ if menu == "📅 Pedidos do Dia":
         st.subheader("📋 Entregas do Dia")
 
         if not df_dia.empty:
-            # Lista de pedidos com visualização e edição (com zebra stripes)
+            # Lista de pedidos com visualização e edição (zebra stripes ultra compacto)
             linha_num = 0
             for idx, pedido in df_dia.iterrows():
                 # Zebra stripes - alterna cor de fundo a cada linha
-                bg_color = "#f0f2f6" if linha_num % 2 == 0 else "#ffffff"
+                bg_color = "#e8eaf0" if linha_num % 2 == 0 else "#f8f9fa"
 
                 with st.container():
                     st.markdown(f"""
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
                             background-color: {bg_color};
-                            padding: 2px 5px;
-                            border-radius: 2px;
-                            margin-bottom: 1px;
+                            padding: 0px 3px;
+                            margin: 0px;
+                            border-radius: 0px;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
