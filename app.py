@@ -1498,8 +1498,9 @@ if menu == "📅 Pedidos do Dia":
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
                             background-color: {bg_color};
-                            padding: 10px;
-                            border-radius: 5px;
+                            padding: 2px 5px;
+                            border-radius: 2px;
+                            margin-bottom: 1px;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
@@ -1879,8 +1880,9 @@ elif menu == "Gerenciar Tudo":
                         <style>
                         div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
                             background-color: {bg_color};
-                            padding: 10px;
-                            border-radius: 5px;
+                            padding: 2px 5px;
+                            border-radius: 2px;
+                            margin-bottom: 1px;
                         }}
                         </style>
                     """, unsafe_allow_html=True)
