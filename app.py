@@ -1562,26 +1562,31 @@ if menu == "📅 Pedidos do Dia":
                     if st.session_state.get(f"editando_{pedido['ID_Pedido']}", False):
                         with st.expander("✏️ Editar Pedido", expanded=True):
                             with st.form(f"form_edit_{pedido['ID_Pedido']}"):
-                                edit_col1, edit_col2 = st.columns(2)
-
+                                # Linha 1: Status, Pagamento, Desconto
+                                edit_col1, edit_col2, edit_col3 = st.columns(3)
                                 with edit_col1:
-                                    novo_status = st.selectbox("Status", OPCOES_STATUS,
+                                    novo_status = st.selectbox("📊 Status", OPCOES_STATUS,
                                                               index=OPCOES_STATUS.index(pedido['Status']) if pedido['Status'] in OPCOES_STATUS else 0,
                                                               key=f"status_{pedido['ID_Pedido']}")
-                                    novo_pagamento = st.selectbox("Pagamento", OPCOES_PAGAMENTO,
+                                with edit_col2:
+                                    novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO,
                                                                  index=OPCOES_PAGAMENTO.index(pedido['Pagamento']) if pedido['Pagamento'] in OPCOES_PAGAMENTO else 1,
                                                                  key=f"pag_{pedido['ID_Pedido']}")
+                                with edit_col3:
+                                    novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']),
+                                                                   key=f"desc_{pedido['ID_Pedido']}")
 
-                                with edit_col2:
-                                    novo_caruru = st.number_input("Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']),
+                                # Linha 2: Caruru, Bobó
+                                edit_col4, edit_col5 = st.columns(2)
+                                with edit_col4:
+                                    novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']),
                                                                  key=f"car_{pedido['ID_Pedido']}")
-                                    novo_bobo = st.number_input("Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']),
+                                with edit_col5:
+                                    novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']),
                                                                key=f"bob_{pedido['ID_Pedido']}")
 
-                                novo_desconto = st.number_input("Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']),
-                                                               key=f"desc_{pedido['ID_Pedido']}")
-
-                                novas_obs = st.text_area("Observações", value=pedido['Observacoes'], height=150,
+                                # Linha 3: Observações (largura total)
+                                novas_obs = st.text_area("📝 Observações", value=pedido['Observacoes'], height=150,
                                                         key=f"obs_{pedido['ID_Pedido']}")
 
                                 col_save, col_cancel, col_delete = st.columns([2, 2, 1])
