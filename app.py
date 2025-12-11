@@ -1364,11 +1364,10 @@ def gerar_lista_clientes_pdf(df_clientes):
 def get_status_badge(status):
     """Retorna badge HTML colorido para status"""
     cores = {
-        "🟢 Entregue": ("#10b981", "#d1fae5"),  # Verde
+        "✅ Entregue": ("#10b981", "#d1fae5"),  # Verde
         "🔴 Pendente": ("#ef4444", "#fee2e2"),  # Vermelho
-        "🟡 Em Preparo": ("#f59e0b", "#fef3c7"),  # Amarelo
-        "🔵 Confirmado": ("#3b82f6", "#dbeafe"),  # Azul
-        "⚫ Cancelado": ("#6b7280", "#f3f4f6"),  # Cinza
+        "🟡 Em Produção": ("#f59e0b", "#fef3c7"),  # Amarelo
+        "🚫 Cancelado": ("#6b7280", "#f3f4f6"),  # Cinza
     }
 
     cor_texto, cor_fundo = cores.get(status, ("#6b7280", "#f3f4f6"))
@@ -1478,7 +1477,7 @@ if menu == "📅 Pedidos do Dia":
         dt_filter = st.date_input("📅 Data:", hoje_brasil(), format="DD/MM/YYYY")
         df_dia = df[df['Data'] == dt_filter].copy()
         # Excluir pedidos entregues (aparecem apenas no Histórico)
-        df_dia = df_dia[df_dia['Status'] != "🟢 Entregue"]
+        df_dia = df_dia[df_dia['Status'] != "✅ Entregue"]
 
         # Filtro de Ordenação
         col_ord1, col_ord2 = st.columns([3, 1])
@@ -1886,7 +1885,7 @@ elif menu == "Gerenciar Tudo":
         # Aplica filtros
         df_view = df.copy()
         # Excluir pedidos entregues (aparecem apenas no Histórico)
-        df_view = df_view[df_view['Status'] != "🟢 Entregue"]
+        df_view = df_view[df_view['Status'] != "✅ Entregue"]
         df_view = df_view[df_view['Status'].isin(f_status)]
         df_view = df_view[df_view['Pagamento'].isin(f_pagto)]
 
@@ -2179,7 +2178,7 @@ elif menu == "📜 Histórico":
     df = st.session_state.pedidos
 
     # Filtrar apenas pedidos entregues
-    df_entregues = df[df['Status'] == "🟢 Entregue"].copy()
+    df_entregues = df[df['Status'] == "✅ Entregue"].copy()
 
     if df_entregues.empty:
         st.info("📭 Nenhum pedido entregue ainda.")
