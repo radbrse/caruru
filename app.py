@@ -1379,10 +1379,8 @@ with st.sidebar:
     menu = st.radio(
         "Navegação",
         [
-            "Dashboard do Dia",
+            "📅 Pedidos do Dia",
             "Novo Pedido",
-            "✏️ Editar Pedido",
-            "🗑️ Excluir Pedido",
             "Gerenciar Tudo",
             "🖨️ Relatórios & Recibos",
             "📢 Promoções",
@@ -1406,9 +1404,9 @@ with st.sidebar:
 # PÁGINAS
 # ==============================================================================
 
-# --- DASHBOARD ---
-if menu == "Dashboard do Dia":
-    st.title("🦐🏍️ Expedição do Dia")
+# --- PEDIDOS DO DIA ---
+if menu == "📅 Pedidos do Dia":
+    st.title("📅 Pedidos do Dia")
     df = st.session_state.pedidos
     
     if df.empty:
@@ -1453,40 +1451,134 @@ if menu == "Dashboard do Dia":
         
         st.divider()
         st.subheader("📋 Entregas do Dia")
-        
+
         if not df_dia.empty:
-            # Editor de dados
-            edited = st.data_editor(
-                df_dia,
-                column_order=["ID_Pedido", "Hora", "Status", "Cliente", "Caruru", "Bobo", "Valor", "Pagamento", "Observacoes"],
-                disabled=["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Hora"],
-                hide_index=True,
-                use_container_width=True,
-                key="dash_editor",
-                column_config={
-                    "ID_Pedido": st.column_config.NumberColumn("#", width="small"),
-                    "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
-                    "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
-                    "Hora": st.column_config.TimeColumn(format="HH:mm"),
-                    "Valor": st.column_config.NumberColumn(format="R$ %.2f")
-                }
-            )
-            
-            # Detecta mudanças
-            if not edited.equals(df_dia):
-                df_glob = st.session_state.pedidos.copy()
-                for i in edited.index:
-                    idp = edited.at[i, 'ID_Pedido']
-                    mask = df_glob['ID_Pedido'] == idp
-                    if mask.any():
-                        for col in ['Status', 'Pagamento', 'Observacoes']:
-                            if col in edited.columns:
-                                df_glob.loc[mask, col] = edited.at[i, col]
-                
-                st.session_state.pedidos = df_glob
-                salvar_pedidos(df_glob)
-                st.toast("✅ Atualizado!", icon="✅")
-                st.rerun()
+            # Lista de pedidos com visualização e edição
+            for idx, pedido in df_dia.iterrows():
+                with st.container():
+                    col1, col2, col3, col4, col5, col6 = st.columns([1, 3, 2, 2, 2, 2])
+
+                    with col1:
+                        st.markdown(f"**#{int(pedido['ID_Pedido'])}**")
+                    with col2:
+                        st.text(f"👤 {pedido['Cliente']}")
+                    with col3:
+                        hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
+                        st.text(f"⏰ {hora_str}")
+                    with col4:
+                        st.text(f"🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}")
+                    with col5:
+                        st.text(f"💰 R$ {pedido['Valor']:.2f}")
+                    with col6:
+                        col_vis, col_edit = st.columns(2)
+                        with col_vis:
+                            if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar"):
+                                st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
+                                st.rerun()
+                        with col_edit:
+                            if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar"):
+                                st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
+                                st.rerun()
+
+                    # Visualização detalhada
+                    if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
+                        with st.expander("📋 Detalhes Completos", expanded=True):
+                            col_det1, col_det2 = st.columns(2)
+                            with col_det1:
+                                st.markdown(f"""
+                                **🆔 ID:** {int(pedido['ID_Pedido'])}
+                                **👤 Cliente:** {pedido['Cliente']}
+                                **📱 Contato:** {pedido['Contato']}
+                                **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
+                                **⏰ Hora:** {hora_str}
+                                """)
+                            with col_det2:
+                                st.markdown(f"""
+                                **🥘 Caruru:** {int(pedido['Caruru'])}
+                                **🦐 Bobó:** {int(pedido['Bobo'])}
+                                **💸 Desconto:** {pedido['Desconto']:.0f}%
+                                **💰 Valor Total:** R$ {pedido['Valor']:.2f}
+                                **📊 Status:** {pedido['Status']}
+                                **💳 Pagamento:** {pedido['Pagamento']}
+                                """)
+                            if pedido['Observacoes']:
+                                st.markdown(f"**📝 Observações:**")
+                                st.info(pedido['Observacoes'])
+
+                            if st.button("✖️ Fechar", key=f"fechar_vis_{pedido['ID_Pedido']}", use_container_width=True):
+                                st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = False
+                                st.rerun()
+
+                    # Modo de edição
+                    if st.session_state.get(f"editando_{pedido['ID_Pedido']}", False):
+                        with st.expander("✏️ Editar Pedido", expanded=True):
+                            with st.form(f"form_edit_{pedido['ID_Pedido']}"):
+                                edit_col1, edit_col2 = st.columns(2)
+
+                                with edit_col1:
+                                    novo_status = st.selectbox("Status", OPCOES_STATUS,
+                                                              index=OPCOES_STATUS.index(pedido['Status']) if pedido['Status'] in OPCOES_STATUS else 0,
+                                                              key=f"status_{pedido['ID_Pedido']}")
+                                    novo_pagamento = st.selectbox("Pagamento", OPCOES_PAGAMENTO,
+                                                                 index=OPCOES_PAGAMENTO.index(pedido['Pagamento']) if pedido['Pagamento'] in OPCOES_PAGAMENTO else 1,
+                                                                 key=f"pag_{pedido['ID_Pedido']}")
+
+                                with edit_col2:
+                                    novo_caruru = st.number_input("Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']),
+                                                                 key=f"car_{pedido['ID_Pedido']}")
+                                    novo_bobo = st.number_input("Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']),
+                                                               key=f"bob_{pedido['ID_Pedido']}")
+
+                                novo_desconto = st.number_input("Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']),
+                                                               key=f"desc_{pedido['ID_Pedido']}")
+
+                                novas_obs = st.text_area("Observações", value=pedido['Observacoes'], height=150,
+                                                        key=f"obs_{pedido['ID_Pedido']}")
+
+                                col_save, col_cancel, col_delete = st.columns([2, 2, 1])
+                                with col_save:
+                                    salvar = st.form_submit_button("💾 Salvar", use_container_width=True, type="primary")
+                                with col_cancel:
+                                    cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                                with col_delete:
+                                    excluir = st.form_submit_button("🗑️", use_container_width=True)
+
+                                if salvar:
+                                    if novo_caruru == 0 and novo_bobo == 0:
+                                        st.error("❌ Pedido deve ter pelo menos 1 item")
+                                    else:
+                                        campos = {
+                                            "Status": novo_status,
+                                            "Pagamento": novo_pagamento,
+                                            "Caruru": novo_caruru,
+                                            "Bobo": novo_bobo,
+                                            "Desconto": novo_desconto,
+                                            "Observacoes": novas_obs
+                                        }
+                                        sucesso, msg = atualizar_pedido(int(pedido['ID_Pedido']), campos)
+                                        if sucesso:
+                                            st.success(msg)
+                                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                            st.rerun()
+                                        else:
+                                            st.error(msg)
+
+                                if cancelar:
+                                    st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                    st.rerun()
+
+                                if excluir:
+                                    st.warning("⚠️ Para excluir, confirme abaixo:")
+                                    if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
+                                        sucesso, msg = excluir_pedido(int(pedido['ID_Pedido']), "Excluído via interface")
+                                        if sucesso:
+                                            st.success(msg)
+                                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                            st.rerun()
+                                        else:
+                                            st.error(msg)
+
+                    st.divider()
         else:
             st.info(f"Nenhum pedido para {dt_filter.strftime('%d/%m/%Y')}")
 
@@ -1633,253 +1725,6 @@ elif menu == "Novo Pedido":
         valor_calc = calcular_total(calc_car, calc_bob, calc_desc)
         st.metric("Total", f"R$ {valor_calc:.2f}")
 
-# --- EDITAR PEDIDO ---
-elif menu == "✏️ Editar Pedido":
-    st.title("✏️ Editar Pedido")
-    
-    df = st.session_state.pedidos
-    
-    if df.empty:
-        st.warning("Nenhum pedido cadastrado.")
-    else:
-        # Filtros de busca
-        st.markdown("### 🔍 Localizar Pedido")
-        c1, c2, c3 = st.columns([1, 2, 2])
-        
-        with c1:
-            busca_id = st.number_input("Buscar por ID", min_value=0, value=0, step=1)
-        with c2:
-            clientes_unicos = ["Todos"] + sorted(df['Cliente'].unique().tolist())
-            filtro_cliente = st.selectbox("Filtrar por Cliente", clientes_unicos)
-        with c3:
-            filtro_data = st.date_input("Filtrar por Data", value=None, format="DD/MM/YYYY")
-        
-        # Aplica filtros
-        df_filtrado = df.copy()
-        if busca_id > 0:
-            df_filtrado = df_filtrado[df_filtrado['ID_Pedido'] == busca_id]
-        if filtro_cliente != "Todos":
-            df_filtrado = df_filtrado[df_filtrado['Cliente'] == filtro_cliente]
-        if filtro_data:
-            df_filtrado = df_filtrado[df_filtrado['Data'] == filtro_data]
-        
-        if df_filtrado.empty:
-            st.info("Nenhum pedido encontrado com os filtros aplicados.")
-        else:
-            # Lista de pedidos para selecionar
-            df_filtrado = df_filtrado.sort_values(['Data', 'ID_Pedido'], ascending=[False, False])
-            
-            opcoes_pedido = {
-                row['ID_Pedido']: f"#{row['ID_Pedido']} | {row['Cliente']} | {row['Data'].strftime('%d/%m/%Y') if hasattr(row['Data'], 'strftime') else row['Data']} | R$ {row['Valor']:.2f} | {row['Status']}"
-                for _, row in df_filtrado.iterrows()
-            }
-            
-            pedido_selecionado = st.selectbox(
-                "Selecione o pedido para editar:",
-                options=list(opcoes_pedido.keys()),
-                format_func=lambda x: opcoes_pedido[x]
-            )
-            
-            if pedido_selecionado:
-                pedido = buscar_pedido(pedido_selecionado)
-                
-                if pedido:
-                    st.divider()
-                    st.markdown(f"### 📝 Editando Pedido #{pedido_selecionado}")
-                    
-                    with st.form("form_editar"):
-                        c1, c2 = st.columns(2)
-                        
-                        with c1:
-                            # Lista de clientes para seleção
-                            try:
-                                clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
-                            except:
-                                clis = []
-                            
-                            cliente_atual = pedido.get('Cliente', '')
-                            if cliente_atual and cliente_atual not in clis:
-                                clis = [cliente_atual] + clis
-                            
-                            idx_cliente = clis.index(cliente_atual) if cliente_atual in clis else 0
-                            novo_cliente = st.selectbox("👤 Cliente", clis, index=idx_cliente)
-                            
-                            nova_data = st.date_input(
-                                "📅 Data",
-                                value=pedido.get('Data') or hoje_brasil(),
-                                format="DD/MM/YYYY"
-                            )
-                            
-                            hora_atual = pedido.get('Hora')
-                            if not isinstance(hora_atual, time):
-                                hora_atual = time(12, 0)
-                            nova_hora = st.time_input("⏰ Hora", value=hora_atual)
-                        
-                        with c2:
-                            novo_contato = st.text_input("📱 Contato", value=str(pedido.get('Contato', '')))
-                            
-                            novo_status = st.selectbox(
-                                "📊 Status",
-                                OPCOES_STATUS,
-                                index=OPCOES_STATUS.index(pedido.get('Status', '🔴 Pendente')) if pedido.get('Status') in OPCOES_STATUS else 0
-                            )
-                            
-                            novo_pagamento = st.selectbox(
-                                "💳 Pagamento",
-                                OPCOES_PAGAMENTO,
-                                index=OPCOES_PAGAMENTO.index(pedido.get('Pagamento', 'NÃO PAGO')) if pedido.get('Pagamento') in OPCOES_PAGAMENTO else 1
-                            )
-                        
-                        st.markdown("#### 🍽️ Itens")
-                        c3, c4, c5 = st.columns(3)
-                        
-                        with c3:
-                            novo_caruru = st.number_input(
-                                "🥘 Caruru",
-                                min_value=0, max_value=999, step=1,
-                                value=int(pedido.get('Caruru', 0))
-                            )
-                        with c4:
-                            novo_bobo = st.number_input(
-                                "🦐 Bobó",
-                                min_value=0, max_value=999, step=1,
-                                value=int(pedido.get('Bobo', 0))
-                            )
-                        with c5:
-                            novo_desconto = st.number_input(
-                                "💸 Desconto %",
-                                min_value=0, max_value=100, step=5,
-                                value=int(pedido.get('Desconto', 0))
-                            )
-                        
-                        # Preview do novo valor
-                        novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
-                        valor_anterior = pedido.get('Valor', 0)
-                        
-                        if novo_valor != valor_anterior:
-                            st.warning(f"💵 Valor anterior: R$ {valor_anterior:.2f} → **Novo: R$ {novo_valor:.2f}**")
-                        else:
-                            st.info(f"💵 Valor: R$ {novo_valor:.2f}")
-                        
-                        nova_obs = st.text_area("📝 Observações", value=str(pedido.get('Observacoes', '')))
-                        
-                        col_btn1, col_btn2 = st.columns(2)
-                        with col_btn1:
-                            btn_salvar = st.form_submit_button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary")
-                        with col_btn2:
-                            btn_cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
-                        
-                        if btn_salvar:
-                            # Validação básica
-                            if novo_caruru == 0 and novo_bobo == 0:
-                                st.error("❌ Pedido deve ter pelo menos 1 item.")
-                            else:
-                                campos = {
-                                    "Cliente": novo_cliente,
-                                    "Data": nova_data,
-                                    "Hora": nova_hora,
-                                    "Contato": novo_contato,
-                                    "Status": novo_status,
-                                    "Pagamento": novo_pagamento,
-                                    "Caruru": novo_caruru,
-                                    "Bobo": novo_bobo,
-                                    "Desconto": novo_desconto,
-                                    "Observacoes": nova_obs
-                                }
-                                
-                                sucesso, msg = atualizar_pedido(pedido_selecionado, campos)
-                                
-                                if sucesso:
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                        
-                        if btn_cancelar:
-                            st.rerun()
-
-# --- EXCLUIR PEDIDO ---
-elif menu == "🗑️ Excluir Pedido":
-    st.title("🗑️ Excluir Pedido")
-    
-    df = st.session_state.pedidos
-    
-    if df.empty:
-        st.warning("Nenhum pedido cadastrado.")
-    else:
-        st.warning("⚠️ **Atenção:** A exclusão é permanente! Use com cuidado.")
-        
-        st.markdown("### 🔍 Localizar Pedido")
-        c1, c2 = st.columns(2)
-        
-        with c1:
-            busca_id_del = st.number_input("Buscar por ID", min_value=0, value=0, step=1, key="del_id")
-        with c2:
-            clientes_del = ["Todos"] + sorted(df['Cliente'].unique().tolist())
-            filtro_cliente_del = st.selectbox("Filtrar por Cliente", clientes_del, key="del_cli")
-        
-        # Aplica filtros
-        df_del = df.copy()
-        if busca_id_del > 0:
-            df_del = df_del[df_del['ID_Pedido'] == busca_id_del]
-        if filtro_cliente_del != "Todos":
-            df_del = df_del[df_del['Cliente'] == filtro_cliente_del]
-        
-        if df_del.empty:
-            st.info("Nenhum pedido encontrado.")
-        else:
-            df_del = df_del.sort_values(['Data', 'ID_Pedido'], ascending=[False, False])
-            
-            opcoes_del = {
-                row['ID_Pedido']: f"#{row['ID_Pedido']} | {row['Cliente']} | {row['Data'].strftime('%d/%m/%Y') if hasattr(row['Data'], 'strftime') else row['Data']} | R$ {row['Valor']:.2f}"
-                for _, row in df_del.iterrows()
-            }
-            
-            pedido_excluir = st.selectbox(
-                "Selecione o pedido para EXCLUIR:",
-                options=list(opcoes_del.keys()),
-                format_func=lambda x: opcoes_del[x],
-                key="sel_del"
-            )
-            
-            if pedido_excluir:
-                pedido_info = buscar_pedido(pedido_excluir)
-                
-                if pedido_info:
-                    st.divider()
-                    
-                    # Mostra detalhes do pedido
-                    st.markdown(f"### 📋 Detalhes do Pedido #{pedido_excluir}")
-                    
-                    c1, c2, c3 = st.columns(3)
-                    c1.write(f"**Cliente:** {pedido_info.get('Cliente')}")
-                    c2.write(f"**Data:** {pedido_info.get('Data')}")
-                    c3.write(f"**Valor:** R$ {pedido_info.get('Valor', 0):.2f}")
-                    
-                    c4, c5, c6 = st.columns(3)
-                    c4.write(f"**Caruru:** {int(pedido_info.get('Caruru', 0))}")
-                    c5.write(f"**Bobó:** {int(pedido_info.get('Bobo', 0))}")
-                    c6.write(f"**Status:** {pedido_info.get('Status')}")
-                    
-                    st.divider()
-                    
-                    # Confirmação de exclusão
-                    motivo = st.text_input("📝 Motivo da exclusão (opcional):", placeholder="Ex: Pedido duplicado, cliente cancelou...")
-                    
-                    st.markdown("---")
-                    
-                    # Checkbox de confirmação
-                    confirma = st.checkbox(f"✅ Confirmo que desejo excluir o pedido #{pedido_excluir} permanentemente")
-                    
-                    if st.button("🗑️ EXCLUIR PEDIDO", type="primary", disabled=not confirma, use_container_width=True):
-                        sucesso, msg = excluir_pedido(pedido_excluir, motivo)
-                        
-                        if sucesso:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-
 # --- GERENCIAR TUDO ---
 elif menu == "Gerenciar Tudo":
     st.title("📦 Todos os Pedidos")
@@ -1917,53 +1762,171 @@ elif menu == "Gerenciar Tudo":
             inicio_mes = hoje_brasil().replace(day=1)
             df_view = df_view[df_view['Data'] >= inicio_mes]
         
-        # Métricas
-        st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** R$ {df_view['Valor'].sum():,.2f}")
-        
-        # Editor
-        edited = st.data_editor(
-            df_view,
-            num_rows="fixed",
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "ID_Pedido": st.column_config.NumberColumn("#", disabled=True, width="small"),
-                "Valor": st.column_config.NumberColumn("Total", format="R$ %.2f", disabled=True),
-                "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                "Hora": st.column_config.TimeColumn("Hora", format="HH:mm"),
-                "Status": st.column_config.SelectboxColumn(options=OPCOES_STATUS, required=True),
-                "Pagamento": st.column_config.SelectboxColumn(options=OPCOES_PAGAMENTO, required=True),
-                "Caruru": st.column_config.NumberColumn("Caruru", min_value=0, max_value=999, format="%d"),
-                "Bobo": st.column_config.NumberColumn("Bobó", min_value=0, max_value=999, format="%d"),
-                "Desconto": st.column_config.NumberColumn("Desc %", min_value=0, max_value=100, format="%d"),
-            }
-        )
-        
-        # Salva alterações
-        if not edited.equals(df_view):
-            try:
-                # Recalcula valores
-                edited['Valor'] = edited.apply(
-                    lambda row: calcular_total(row['Caruru'], row['Bobo'], row['Desconto']),
-                    axis=1
-                )
-                
-                # Atualiza no DataFrame principal
-                df_master = st.session_state.pedidos.copy()
-                for idx in edited.index:
-                    id_ped = edited.at[idx, 'ID_Pedido']
-                    mask = df_master['ID_Pedido'] == id_ped
-                    if mask.any():
-                        for col in edited.columns:
-                            if col != 'ID_Pedido':
-                                df_master.loc[mask, col] = edited.at[idx, col]
-                
-                st.session_state.pedidos = df_master
-                salvar_pedidos(df_master)
-                st.toast("💾 Salvo!", icon="✅")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+        # Métricas com totais de caruru e bobó
+        total_caruru = df_view['Caruru'].sum()
+        total_bobo = df_view['Bobo'].sum()
+        st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** R$ {df_view['Valor'].sum():,.2f} | **🥘 Caruru:** {int(total_caruru)} | **🦐 Bobó:** {int(total_bobo)}")
+
+        # Lista de pedidos com visualização e edição inline
+        if df_view.empty:
+            st.info("Nenhum pedido encontrado com os filtros aplicados.")
+        else:
+            for idx, pedido in df_view.iterrows():
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([0.6, 1.5, 1.2, 0.8, 1, 0.5, 0.5])
+
+                with col1:
+                    st.write(f"**#{int(pedido['ID_Pedido'])}**")
+                with col2:
+                    st.write(f"👤 {pedido['Cliente']}")
+                with col3:
+                    data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
+                    hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
+                    st.write(f"📅 {data_str} ⏰ {hora_str}")
+                with col4:
+                    st.write(f"💵 R$ {pedido['Valor']:.2f}")
+                with col5:
+                    st.write(f"📊 {pedido['Status']}")
+                with col6:
+                    if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar detalhes"):
+                        st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
+                        st.rerun()
+                with col7:
+                    if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar pedido"):
+                        st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
+                        st.rerun()
+
+                # Expander para visualização
+                if st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False):
+                    with st.expander("📋 Detalhes Completos", expanded=True):
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
+                            st.markdown(f"**📱 Contato:** {pedido['Contato']}")
+                            st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}")
+                            st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else pedido['Hora']}")
+                        with col_b:
+                            st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} un.")
+                            st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
+                            st.markdown(f"**💸 Desconto:** {int(pedido['Desconto'])}%")
+                            st.markdown(f"**💵 Valor Total:** R$ {pedido['Valor']:.2f}")
+
+                        st.markdown("---")
+                        col_c, col_d = st.columns(2)
+                        with col_c:
+                            st.markdown(f"**💳 Pagamento:** {pedido['Pagamento']}")
+                        with col_d:
+                            st.markdown(f"**📊 Status:** {pedido['Status']}")
+
+                        if pedido['Observacoes']:
+                            st.markdown("**📝 Observações:**")
+                            st.info(pedido['Observacoes'])
+
+                        if st.button("✖️ Fechar", key=f"fechar_vis_all_{pedido['ID_Pedido']}"):
+                            st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = False
+                            st.rerun()
+
+                # Expander para edição
+                if st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False):
+                    with st.expander("✏️ Editar Pedido", expanded=True):
+                        with st.form(f"form_edit_all_{pedido['ID_Pedido']}"):
+                            st.markdown("### 📝 Dados do Pedido")
+
+                            # Cliente e contato
+                            col_e1, col_e2 = st.columns(2)
+                            with col_e1:
+                                clientes_lista = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
+                                try:
+                                    idx_cliente = clientes_lista.index(pedido['Cliente']) if pedido['Cliente'] in clientes_lista else 0
+                                except:
+                                    idx_cliente = 0
+                                novo_cliente = st.selectbox("👤 Cliente", clientes_lista, index=idx_cliente)
+                            with col_e2:
+                                novo_contato = st.text_input("📱 Contato", value=str(pedido['Contato']))
+
+                            # Data e hora
+                            col_e3, col_e4 = st.columns(2)
+                            with col_e3:
+                                nova_data = st.date_input("📅 Data Entrega", value=pedido['Data'], format="DD/MM/YYYY")
+                            with col_e4:
+                                nova_hora = st.time_input("⏰ Hora Retirada", value=pedido['Hora'])
+
+                            # Quantidades
+                            col_e5, col_e6, col_e7 = st.columns(3)
+                            with col_e5:
+                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']))
+                            with col_e6:
+                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']))
+                            with col_e7:
+                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']))
+
+                            # Pagamento e status
+                            col_e8, col_e9 = st.columns(2)
+                            with col_e8:
+                                novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, index=OPCOES_PAGAMENTO.index(pedido['Pagamento']) if pedido['Pagamento'] in OPCOES_PAGAMENTO else 0)
+                            with col_e9:
+                                novo_status = st.selectbox("📊 Status", OPCOES_STATUS, index=OPCOES_STATUS.index(pedido['Status']) if pedido['Status'] in OPCOES_STATUS else 0)
+
+                            # Observações com mais espaço
+                            novas_obs = st.text_area("📝 Observações", value=str(pedido['Observacoes']) if pd.notna(pedido['Observacoes']) else "", height=150)
+
+                            # Botões
+                            col_e10, col_e11, col_e12 = st.columns([2, 2, 1])
+                            with col_e10:
+                                salvar = st.form_submit_button("💾 Salvar Alterações", use_container_width=True, type="primary")
+                            with col_e11:
+                                cancelar = st.form_submit_button("↩️ Cancelar", use_container_width=True)
+                            with col_e12:
+                                st.markdown("")  # Espaço
+
+                            # Checkbox de confirmação para excluir
+                            confirmar_exclusao = st.checkbox("⚠️ Confirmar exclusão do pedido", key=f"confirm_del_all_{pedido['ID_Pedido']}")
+                            excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary", disabled=not confirmar_exclusao)
+
+                            if salvar:
+                                # Atualiza o pedido
+                                novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
+                                df_atualizado = st.session_state.pedidos.copy()
+                                mask = df_atualizado['ID_Pedido'] == pedido['ID_Pedido']
+
+                                df_atualizado.loc[mask, 'Cliente'] = novo_cliente
+                                df_atualizado.loc[mask, 'Contato'] = novo_contato
+                                df_atualizado.loc[mask, 'Data'] = nova_data
+                                df_atualizado.loc[mask, 'Hora'] = nova_hora
+                                df_atualizado.loc[mask, 'Caruru'] = novo_caruru
+                                df_atualizado.loc[mask, 'Bobo'] = novo_bobo
+                                df_atualizado.loc[mask, 'Desconto'] = novo_desconto
+                                df_atualizado.loc[mask, 'Valor'] = novo_valor
+                                df_atualizado.loc[mask, 'Pagamento'] = novo_pagamento
+                                df_atualizado.loc[mask, 'Status'] = novo_status
+                                df_atualizado.loc[mask, 'Observacoes'] = novas_obs
+
+                                if salvar_pedidos(df_atualizado):
+                                    st.session_state.pedidos = df_atualizado
+                                    st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
+                                    st.success(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado com sucesso!")
+                                    logger.info(f"Pedido {pedido['ID_Pedido']} editado via Gerenciar Tudo")
+                                    time_module.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao salvar as alterações.")
+
+                            if cancelar:
+                                st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
+                                st.rerun()
+
+                            if excluir and confirmar_exclusao:
+                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != pedido['ID_Pedido']]
+                                if salvar_pedidos(df_atualizado):
+                                    st.session_state.pedidos = df_atualizado
+                                    st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
+                                    st.success(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído com sucesso!")
+                                    logger.info(f"Pedido {pedido['ID_Pedido']} excluído via Gerenciar Tudo")
+                                    time_module.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao excluir o pedido.")
+
+                st.divider()
         
         st.divider()
         
