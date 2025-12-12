@@ -1046,8 +1046,10 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     df_novo = pd.DataFrame([novo])
     st.session_state.pedidos = pd.concat([df_p, df_novo], ignore_index=True)
     salvar_pedidos(st.session_state.pedidos)
+    # Recarrega do arquivo para garantir sincronização entre abas
+    st.session_state.pedidos = carregar_pedidos()
     registrar_alteracao("CRIAR", nid, "pedido_completo", None, f"{cliente} - R${val}")
-    
+
     return nid, [], avisos
 
 def atualizar_pedido(id_pedido, campos_atualizar):
@@ -1094,9 +1096,10 @@ def atualizar_pedido(id_pedido, campos_atualizar):
                 df.at[idx, 'Bobo'],
                 df.at[idx, 'Desconto']
             )
-        
-        st.session_state.pedidos = df
+
         salvar_pedidos(df)
+        # Recarrega do arquivo para garantir sincronização entre abas
+        st.session_state.pedidos = carregar_pedidos()
         return True, f"✅ Pedido #{id_pedido} atualizado."
     
     except Exception as e:
@@ -2114,7 +2117,8 @@ elif menu == "Gerenciar Tudo":
                                 df_atualizado.loc[mask, 'Observacoes'] = novas_obs
 
                                 if salvar_pedidos(df_atualizado):
-                                    st.session_state.pedidos = df_atualizado
+                                    # Recarrega do arquivo para garantir sincronização entre abas
+                                    st.session_state.pedidos = carregar_pedidos()
                                     st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
                                     st.toast(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado!", icon="✅")
                                     logger.info(f"Pedido {pedido['ID_Pedido']} editado via Gerenciar Tudo")
