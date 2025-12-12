@@ -330,6 +330,12 @@ def importar_csv_externo(arquivo_upload, destino):
     Importa CSV externo para um dos arquivos do sistema.
     """
     try:
+        # Garante que vamos ler o arquivo desde o início para evitar CSV parcial
+        try:
+            arquivo_upload.seek(0)
+        except Exception:
+            pass
+
         # Valida destino
         destinos_validos = {
             'Pedidos': ARQUIVO_PEDIDOS,
@@ -3002,6 +3008,15 @@ elif menu == "🛠️ Manutenção":
                                 st.session_state.pedidos = carregar_pedidos()
                             elif destino == "Clientes":
                                 st.session_state.clientes = carregar_clientes()
+
+                                # Após atualizar clientes, sincroniza telefones nos pedidos
+                                atualizados, total_clientes = sincronizar_contatos_pedidos()
+                                if atualizados:
+                                    st.info(
+                                        f"🔄 {atualizados} pedido(s) atualizado(s) com base em {total_clientes} cliente(s)"
+                                    )
+                                else:
+                                    st.info("Nenhum pedido precisou de atualização de telefone.")
 
                             st.toast("Dados recarregados!", icon="✅")
                             st.rerun()
