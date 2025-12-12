@@ -1300,23 +1300,40 @@ def gerar_recibo_pdf(dados):
         p.setFont("Helvetica", 9)
         # Monta lista de produtos
         produtos = []
-        if float(dados.get('Caruru', 0)) > 0:
-            produtos.append(f"{int(float(dados.get('Caruru')))} unidade(s) de Caruru Tradicional")
-        if float(dados.get('Bobo', 0)) > 0:
-            produtos.append(f"{int(float(dados.get('Bobo')))} unidade(s) de Bobó de Camarão")
+        caruru_qtd = 0
+        bobo_qtd = 0
+
+        try:
+            caruru_qtd = int(float(dados.get('Caruru', 0)))
+            if caruru_qtd > 0:
+                produtos.append(f"{caruru_qtd} unidade(s) de Caruru Tradicional")
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            bobo_qtd = int(float(dados.get('Bobo', 0)))
+            if bobo_qtd > 0:
+                produtos.append(f"{bobo_qtd} unidade(s) de Bobó de Camarão")
+        except (ValueError, TypeError):
+            pass
 
         produtos_texto = " e ".join(produtos) if len(produtos) == 2 else produtos[0] if produtos else "produtos"
-        total_unidades = int(float(dados.get('Caruru', 0))) + int(float(dados.get('Bobo', 0)))
+        total_unidades = caruru_qtd + bobo_qtd
 
         # Texto da declaração com quebra de linha automática
-        valor_br = f"{float(dados.get('Valor', 0)):.2f}".replace(".", ",")
-        texto = f"Declaramos que recebemos de {dados.get('Cliente', '')} o valor total de R$ {valor_br}, "
-        texto += f"referente à compra de {total_unidades} unidades de {produtos_texto}, "
+        try:
+            valor_num = float(dados.get('Valor', 0))
+        except (ValueError, TypeError):
+            valor_num = 0.0
+
+        valor_br = f"{valor_num:.2f}".replace(".", ",")
+        cliente_nome = str(dados.get('Cliente', '')).strip() or "o cliente"
+
+        texto = f"Declaramos que recebemos de {cliente_nome} o valor total de R$ {valor_br}, "
+        texto += f"referente à compra de {total_unidades} unidade(s) de {produtos_texto}, "
         texto += "conforme discriminado neste comprovante."
 
         # Quebra o texto em múltiplas linhas
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
         width = 535  # Largura disponível
         lines = []
         words = texto.split()
