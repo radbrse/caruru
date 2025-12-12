@@ -1257,11 +1257,81 @@ def gerar_recibo_pdf(dados):
             p.drawString(30, y, f"Pix: {CHAVE_PIX}")
         
         p.setFillColor(colors.black)
+
+        # Declaração de recebimento
+        y -= 50
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(30, y, "DECLARAÇÃO DE RECEBIMENTO")
+        y -= 20
+
+        p.setFont("Helvetica", 9)
+        # Monta lista de produtos
+        produtos = []
+        if float(dados.get('Caruru', 0)) > 0:
+            produtos.append(f"{int(float(dados.get('Caruru')))} unidade(s) de Caruru Tradicional")
+        if float(dados.get('Bobo', 0)) > 0:
+            produtos.append(f"{int(float(dados.get('Bobo')))} unidade(s) de Bobó de Camarão")
+
+        produtos_texto = " e ".join(produtos) if len(produtos) == 2 else produtos[0] if produtos else "produtos"
+        total_unidades = int(float(dados.get('Caruru', 0))) + int(float(dados.get('Bobo', 0)))
+
+        # Texto da declaração com quebra de linha automática
+        valor_br = f"{float(dados.get('Valor', 0)):.2f}".replace(".", ",")
+        texto = f"Declaramos que recebemos de {dados.get('Cliente', '')} o valor total de R$ {valor_br}, "
+        texto += f"referente à compra de {total_unidades} unidades de {produtos_texto}, "
+        texto += "conforme discriminado neste comprovante."
+
+        # Quebra o texto em múltiplas linhas
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        width = 535  # Largura disponível
+        lines = []
+        words = texto.split()
+        line = ""
+
+        for word in words:
+            test_line = f"{line} {word}".strip()
+            if p.stringWidth(test_line, "Helvetica", 9) < width:
+                line = test_line
+            else:
+                lines.append(line)
+                line = word
+        if line:
+            lines.append(line)
+
+        for line in lines:
+            p.drawString(30, y, line)
+            y -= 12
+
+        y -= 8
+        texto2 = "O pagamento foi realizado e devidamente confirmado na data informada, "
+        texto2 += "dando plena quitação do valor acima."
+
+        # Quebra o segundo parágrafo
+        lines2 = []
+        words2 = texto2.split()
+        line2 = ""
+
+        for word in words2:
+            test_line2 = f"{line2} {word}".strip()
+            if p.stringWidth(test_line2, "Helvetica", 9) < width:
+                line2 = test_line2
+            else:
+                lines2.append(line2)
+                line2 = word
+        if line2:
+            lines2.append(line2)
+
+        for line in lines2:
+            p.drawString(30, y, line)
+            y -= 12
+
+        # Observações (se houver)
         if dados.get('Observacoes'):
-            y -= 30
-            p.setFont("Helvetica-Oblique", 10)
+            y -= 15
+            p.setFont("Helvetica-Oblique", 9)
             p.drawString(30, y, f"Obs: {dados.get('Observacoes')[:80]}")
-            
+
         y_ass = 150
         p.setLineWidth(1)
         p.line(150, y_ass, 450, y_ass)
