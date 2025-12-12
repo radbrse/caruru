@@ -1697,25 +1697,34 @@ if menu == "📅 Pedidos do Dia":
 
                                 if excluir:
                                     st.warning("⚠️ Para excluir, confirme abaixo:")
-                                    if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
+                                    checkbox_key = f"conf_del_{pedido['ID_Pedido']}"
+                                    if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=checkbox_key):
                                         id_para_excluir = int(pedido['ID_Pedido'])
                                         sucesso, msg = excluir_pedido(id_para_excluir, "Excluído via interface")
                                         if sucesso:
-                                            # Limpa cache e força recarregamento completo
-                                            if f"editando_{id_para_excluir}" in st.session_state:
-                                                del st.session_state[f"editando_{id_para_excluir}"]
-                                            if f"visualizar_{id_para_excluir}" in st.session_state:
-                                                del st.session_state[f"visualizar_{id_para_excluir}"]
+                                            # Limpa TODOS os estados relacionados ao pedido
+                                            keys_to_delete = [
+                                                f"editando_{id_para_excluir}",
+                                                f"visualizar_{id_para_excluir}",
+                                                checkbox_key,  # ← IMPORTANTE: Limpa o checkbox!
+                                                f"form_edit_{id_para_excluir}"
+                                            ]
+                                            for key in keys_to_delete:
+                                                if key in st.session_state:
+                                                    del st.session_state[key]
+
+                                            # Força delay para garantir que arquivo foi salvo
+                                            time_module.sleep(0.5)
 
                                             # Recarrega dados do arquivo
                                             st.session_state.pedidos = carregar_pedidos()
 
-                                            st.toast(f"🗑️ Pedido #{id_para_excluir} excluído!", icon="🗑️")
-                                            logger.info(f"Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
-                                            time_module.sleep(0.3)
+                                            st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
+                                            logger.info(f"✅ Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
                                             st.rerun()
                                         else:
                                             st.error(msg)
+                                            logger.error(f"❌ Falha ao excluir pedido {id_para_excluir}: {msg}")
 
                 # Incrementa contador para zebra stripes
                 linha_num += 1
@@ -2122,18 +2131,25 @@ elif menu == "Gerenciar Tudo":
                                 id_para_excluir = int(pedido['ID_Pedido'])
                                 df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_para_excluir].reset_index(drop=True)
                                 if salvar_pedidos(df_atualizado):
-                                    # Limpa cache e força recarregamento completo
-                                    if f"editando_all_{id_para_excluir}" in st.session_state:
-                                        del st.session_state[f"editando_all_{id_para_excluir}"]
-                                    if f"visualizar_all_{id_para_excluir}" in st.session_state:
-                                        del st.session_state[f"visualizar_all_{id_para_excluir}"]
+                                    # Limpa TODOS os estados relacionados ao pedido
+                                    keys_to_delete = [
+                                        f"editando_all_{id_para_excluir}",
+                                        f"visualizar_all_{id_para_excluir}",
+                                        f"confirm_del_all_{id_para_excluir}",  # ← CRÍTICO: Limpa o checkbox!
+                                        f"form_edit_all_{id_para_excluir}"
+                                    ]
+                                    for key in keys_to_delete:
+                                        if key in st.session_state:
+                                            del st.session_state[key]
+
+                                    # Força delay para sync de arquivo
+                                    time_module.sleep(0.5)
 
                                     # Recarrega dados do arquivo
                                     st.session_state.pedidos = carregar_pedidos()
 
-                                    st.toast(f"🗑️ Pedido #{id_para_excluir} excluído!", icon="🗑️")
-                                    logger.info(f"Pedido {id_para_excluir} excluído via Gerenciar Tudo - Total restante: {len(st.session_state.pedidos)}")
-                                    time_module.sleep(0.3)
+                                    st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
+                                    logger.info(f"✅ Pedido {id_para_excluir} excluído via Gerenciar Tudo - Total restante: {len(st.session_state.pedidos)}")
                                     st.rerun()
                                 else:
                                     st.error("❌ Erro ao excluir o pedido.")
