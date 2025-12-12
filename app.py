@@ -184,6 +184,19 @@ def limpar_backups_antigos(arquivo_base):
     except Exception as e:
         logger.error(f"Erro ao limpar backups: {e}")
 
+
+def get_mtime_seguro(caminho):
+    """
+    Retorna o mtime de um arquivo sem interromper o fluxo em caso de erro.
+    """
+    try:
+        return os.path.getmtime(caminho)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.error(f"Erro ao obter mtime de {caminho}: {e}")
+        return None
+
 def criar_backup_com_timestamp(arquivo):
     """
     Cria backup com timestamp para melhor rastreamento.
@@ -517,7 +530,7 @@ def sincronizar_com_sheets(modo="enviar"):
             df_pedidos, msg = carregar_do_sheets(client, "Pedidos")
             if df_pedidos is not None and not df_pedidos.empty:
                 salvar_pedidos(df_pedidos)
-                st.session_state.pedidos = carregar_pedidos()
+                recarregar_pedidos()
                 resultados.append(f"Pedidos: {msg}")
 
             # Recebe Clientes
@@ -871,6 +884,21 @@ def carregar_pedidos():
         logger.error(f"Erro ao carregar pedidos: {e}", exc_info=True)
         return pd.DataFrame(columns=colunas_padrao)
 
+
+def sincronizar_pedidos_em_memoria():
+    """Garante que o DataFrame em memória está alinhado com o arquivo em disco."""
+    mtime_atual = get_mtime_seguro(ARQUIVO_PEDIDOS)
+    if ('pedidos_mtime' not in st.session_state
+            or st.session_state.pedidos_mtime != mtime_atual):
+        st.session_state.pedidos = carregar_pedidos()
+        st.session_state.pedidos_mtime = mtime_atual
+
+
+def recarregar_pedidos():
+    """Recarrega pedidos do disco e atualiza o mtime em sessão."""
+    st.session_state.pedidos = carregar_pedidos()
+    st.session_state.pedidos_mtime = get_mtime_seguro(ARQUIVO_PEDIDOS)
+
 def salvar_pedidos(df):
     """Salva pedidos com backup automático, file locking e transação."""
     if df is None or not isinstance(df, pd.DataFrame):
@@ -900,6 +928,10 @@ def salvar_pedidos(df):
             shutil.move(temp_file, ARQUIVO_PEDIDOS)
 
             logger.info(f"Pedidos salvos com sucesso: {len(df)} registros")
+
+            # Atualiza cache em memória para refletir a escrita em disco
+            if 'pedidos_mtime' in st.session_state:
+                st.session_state.pedidos_mtime = get_mtime_seguro(ARQUIVO_PEDIDOS)
             return True
 
     except Exception as e:
@@ -1426,8 +1458,12 @@ def get_valor_destaque(valor):
 # ==============================================================================
 # INICIALIZAÇÃO
 # ==============================================================================
-if 'pedidos' not in st.session_state:
-    st.session_state.pedidos = carregar_pedidos()
+if 'pedidos_mtime' not in st.session_state:
+    st.session_state.pedidos_mtime = None
+
+# Mantém os pedidos em memória sempre sincronizados com o arquivo em disco
+sincronizar_pedidos_em_memoria()
+
 if 'clientes' not in st.session_state:
     st.session_state.clientes = carregar_clientes()
 if 'chave_contato_automatico' not in st.session_state:
@@ -1693,7 +1729,7 @@ if menu == "📅 Pedidos do Dia":
                                     if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
                                         sucesso, msg = excluir_pedido(int(pedido['ID_Pedido']), "Excluído via interface")
                                         if sucesso:
-                                            st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
+                                            recarregar_pedidos()  # Recarrega do arquivo
                                             st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
                                             st.rerun()
@@ -2104,7 +2140,7 @@ elif menu == "Gerenciar Tudo":
                             if excluir and confirmar_exclusao:
                                 df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != pedido['ID_Pedido']].reset_index(drop=True)
                                 if salvar_pedidos(df_atualizado):
-                                    st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
+                                    recarregar_pedidos()  # Recarrega do arquivo
                                     st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
                                     st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                     logger.info(f"Pedido {pedido['ID_Pedido']} excluído via Gerenciar Tudo")
@@ -2171,7 +2207,7 @@ elif menu == "Gerenciar Tudo":
             try:
                 df_n = pd.read_csv(up)
                 salvar_pedidos(df_n)
-                st.session_state.pedidos = carregar_pedidos()
+                recarregar_pedidos()
                 st.toast("Backup restaurado!", icon="✅")
                 st.rerun()
             except Exception as e:
@@ -2256,7 +2292,7 @@ elif menu == "📜 Histórico":
                             # Remove todos os pedidos entregues
                             df_atual = df_atual[df_atual['Status'] != "✅ Entregue"]
                             salvar_pedidos(df_atual)
-                            st.session_state.pedidos = carregar_pedidos()
+                            recarregar_pedidos()
                             st.session_state['confirmar_limpar_historico'] = False
                             st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
                             st.rerun()
@@ -2341,7 +2377,7 @@ elif menu == "📜 Histórico":
                             df_atual = st.session_state.pedidos
                             df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
                             salvar_pedidos(df_atual)
-                            st.session_state.pedidos = carregar_pedidos()
+                            recarregar_pedidos()
                             st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
                             st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
                             st.rerun()
@@ -2706,7 +2742,7 @@ elif menu == "🛠️ Manutenção":
 
                                 # Botão para recarregar
                                 if st.button("🔄 Recarregar Dados Agora", use_container_width=True):
-                                    st.session_state.pedidos = carregar_pedidos()
+                                    recarregar_pedidos()
                                     st.session_state.clientes = carregar_clientes()
                                     st.toast("Dados recarregados!", icon="✅")
                                     st.rerun()
@@ -2820,7 +2856,7 @@ elif menu == "🛠️ Manutenção":
 
                             # Botão para recarregar
                             if st.button("🔄 Recarregar Dados Agora", use_container_width=True, key="reload_import"):
-                                st.session_state.pedidos = carregar_pedidos()
+                                recarregar_pedidos()
                                 st.session_state.clientes = carregar_clientes()
                                 st.toast("Dados recarregados!", icon="✅")
                                 st.rerun()
@@ -2954,7 +2990,7 @@ elif menu == "🛠️ Manutenção":
 
                                     if st.button("✅ Confirmar e Aplicar"):
                                         salvar_pedidos(df)
-                                        st.session_state.pedidos = carregar_pedidos()
+                                        recarregar_pedidos()
                                         st.success("✅ Pedidos restaurados!")
                                         st.rerun()
 
@@ -3051,7 +3087,7 @@ elif menu == "🛠️ Manutenção":
         st.divider()
         
         if st.button("🔄 Recarregar Dados", use_container_width=True):
-            st.session_state.pedidos = carregar_pedidos()
+            recarregar_pedidos()
             st.session_state.clientes = carregar_clientes()
             st.success("✅ Dados recarregados!")
             st.rerun()
