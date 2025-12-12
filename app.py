@@ -899,7 +899,14 @@ def salvar_pedidos(df):
             # Move arquivo temporário para o definitivo (operação atômica)
             shutil.move(temp_file, ARQUIVO_PEDIDOS)
 
-            logger.info(f"Pedidos salvos com sucesso: {len(df)} registros")
+            # Verifica se o arquivo foi salvo corretamente
+            if os.path.exists(ARQUIVO_PEDIDOS):
+                tamanho = os.path.getsize(ARQUIVO_PEDIDOS)
+                logger.info(f"✅ Pedidos salvos com sucesso: {len(df)} registros, arquivo: {tamanho} bytes")
+            else:
+                logger.error(f"❌ ERRO: Arquivo {ARQUIVO_PEDIDOS} não existe após salvar!")
+                return False
+
             return True
 
     except Exception as e:
@@ -1691,11 +1698,21 @@ if menu == "📅 Pedidos do Dia":
                                 if excluir:
                                     st.warning("⚠️ Para excluir, confirme abaixo:")
                                     if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
-                                        sucesso, msg = excluir_pedido(int(pedido['ID_Pedido']), "Excluído via interface")
+                                        id_para_excluir = int(pedido['ID_Pedido'])
+                                        sucesso, msg = excluir_pedido(id_para_excluir, "Excluído via interface")
                                         if sucesso:
-                                            st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
-                                            st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
-                                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                            # Limpa cache e força recarregamento completo
+                                            if f"editando_{id_para_excluir}" in st.session_state:
+                                                del st.session_state[f"editando_{id_para_excluir}"]
+                                            if f"visualizar_{id_para_excluir}" in st.session_state:
+                                                del st.session_state[f"visualizar_{id_para_excluir}"]
+
+                                            # Recarrega dados do arquivo
+                                            st.session_state.pedidos = carregar_pedidos()
+
+                                            st.toast(f"🗑️ Pedido #{id_para_excluir} excluído!", icon="🗑️")
+                                            logger.info(f"Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
+                                            time_module.sleep(0.3)
                                             st.rerun()
                                         else:
                                             st.error(msg)
@@ -2102,13 +2119,21 @@ elif menu == "Gerenciar Tudo":
                                 st.rerun()
 
                             if excluir and confirmar_exclusao:
-                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != pedido['ID_Pedido']].reset_index(drop=True)
+                                id_para_excluir = int(pedido['ID_Pedido'])
+                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_para_excluir].reset_index(drop=True)
                                 if salvar_pedidos(df_atualizado):
-                                    st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
-                                    st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
-                                    st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
-                                    logger.info(f"Pedido {pedido['ID_Pedido']} excluído via Gerenciar Tudo")
-                                    time_module.sleep(0.5)
+                                    # Limpa cache e força recarregamento completo
+                                    if f"editando_all_{id_para_excluir}" in st.session_state:
+                                        del st.session_state[f"editando_all_{id_para_excluir}"]
+                                    if f"visualizar_all_{id_para_excluir}" in st.session_state:
+                                        del st.session_state[f"visualizar_all_{id_para_excluir}"]
+
+                                    # Recarrega dados do arquivo
+                                    st.session_state.pedidos = carregar_pedidos()
+
+                                    st.toast(f"🗑️ Pedido #{id_para_excluir} excluído!", icon="🗑️")
+                                    logger.info(f"Pedido {id_para_excluir} excluído via Gerenciar Tudo - Total restante: {len(st.session_state.pedidos)}")
+                                    time_module.sleep(0.3)
                                     st.rerun()
                                 else:
                                     st.error("❌ Erro ao excluir o pedido.")
