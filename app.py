@@ -1408,14 +1408,18 @@ def get_pagamento_badge(pagamento):
         ">{pagamento}</span>
     """
 
+def formatar_valor_br(valor):
+    """Formata valor para padrão brasileiro (50,00 ou 1.500,00)"""
+    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 def get_valor_destaque(valor):
-    """Retorna HTML com valor monetário em destaque"""
+    """Retorna HTML com valor monetário em destaque (formato brasileiro)"""
     return f"""
         <span style="
             color: #059669;
             font-weight: 700;
             font-size: 1.05rem;
-        ">R$ {valor:.2f}</span>
+        ">R$ {formatar_valor_br(valor)}</span>
     """
 
 # ==============================================================================
@@ -1573,9 +1577,9 @@ if menu == "📅 Pedidos do Dia":
                         st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
-                        st.markdown(f"<div style='font-size:0.85rem; color:#6b7280;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
-                        st.markdown(f"<div style='font-size:0.8rem; color:#6b7280;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
                     with col5:
                         st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col6:
@@ -1608,7 +1612,7 @@ if menu == "📅 Pedidos do Dia":
                                 **🥘 Caruru:** {int(pedido['Caruru'])}
                                 **🦐 Bobó:** {int(pedido['Bobo'])}
                                 **💸 Desconto:** {pedido['Desconto']:.0f}%
-                                **💰 Valor Total:** R$ {pedido['Valor']:.2f}
+                                **💰 Valor Total:** R$ {formatar_valor_br(pedido['Valor'])}
                                 **📊 Status:** {pedido['Status']}
                                 **💳 Pagamento:** {pedido['Pagamento']}
                                 """)
@@ -1960,7 +1964,7 @@ elif menu == "Gerenciar Tudo":
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                        st.markdown(f"<div style='font-size:0.8rem; color:#6b7280;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
                         st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                     with col5:
@@ -1989,7 +1993,7 @@ elif menu == "Gerenciar Tudo":
                             st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} un.")
                             st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
                             st.markdown(f"**💸 Desconto:** {int(pedido['Desconto'])}%")
-                            st.markdown(f"**💵 Valor Total:** R$ {pedido['Valor']:.2f}")
+                            st.markdown(f"**💵 Valor Total:** R$ {formatar_valor_br(pedido['Valor'])}")
 
                         st.markdown("---")
                         col_c, col_d = st.columns(2)
@@ -2125,7 +2129,7 @@ elif menu == "Gerenciar Tudo":
                         msg += f"• {int(d['Caruru'])}x Caruru\n"
                     if d['Bobo'] > 0:
                         msg += f"• {int(d['Bobo'])}x Bobó\n"
-                    msg += f"\n💵 Total: R$ {d['Valor']:.2f}"
+                    msg += f"\n💵 Total: R$ {formatar_valor_br(d['Valor'])}"
                     if d['Pagamento'] in ["NÃO PAGO", "METADE"]:
                         msg += f"\n\n📲 Pix: {CHAVE_PIX}"
                     
@@ -2222,15 +2226,44 @@ elif menu == "📜 Histórico":
 
         # Métricas
         st.markdown("### 📊 Resumo")
-        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1, col_m2, col_m3, col_m4 = st.columns([1, 1, 1, 1])
         with col_m1:
             st.metric("📦 Total de Entregas", len(df_entregues))
         with col_m2:
             valor_total = df_entregues['Valor'].sum()
-            st.metric("💰 Valor Total", f"R$ {valor_total:.2f}")
+            st.metric("💰 Valor Total", f"R$ {formatar_valor_br(valor_total)}")
         with col_m3:
             df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
             st.metric("✅ Totalmente Pagos", len(df_pagos))
+        with col_m4:
+            if st.button("🗑️ Limpar Histórico", type="secondary", use_container_width=True):
+                st.session_state['confirmar_limpar_historico'] = True
+                st.rerun()
+
+        # Confirmação de limpeza de histórico
+        if st.session_state.get('confirmar_limpar_historico', False):
+            with st.container():
+                st.warning("⚠️ Tem certeza que deseja limpar TODO o histórico de pedidos entregues?")
+                st.error("⚠️ ESTA AÇÃO É IRREVERSÍVEL! Todos os pedidos entregues serão PERMANENTEMENTE EXCLUÍDOS.")
+
+                col_limpar1, col_limpar2 = st.columns(2)
+                with col_limpar1:
+                    if st.button("✅ Sim, Limpar Tudo", key="confirmar_limpar_hist", type="primary", use_container_width=True):
+                        try:
+                            df_atual = st.session_state.pedidos
+                            # Remove todos os pedidos entregues
+                            df_atual = df_atual[df_atual['Status'] != "✅ Entregue"]
+                            salvar_pedidos(df_atual)
+                            st.session_state.pedidos = carregar_pedidos()
+                            st.session_state['confirmar_limpar_historico'] = False
+                            st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao limpar histórico: {e}")
+                with col_limpar2:
+                    if st.button("❌ Cancelar", key="cancelar_limpar_hist", use_container_width=True):
+                        st.session_state['confirmar_limpar_historico'] = False
+                        st.rerun()
 
         st.divider()
         st.subheader("📋 Pedidos Entregues")
@@ -2258,7 +2291,7 @@ elif menu == "📜 Histórico":
                 with col3:
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                    st.markdown(f"<div style='font-size:0.8rem; color:#6b7280;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                 with col4:
                     st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                 with col5:
@@ -2270,9 +2303,10 @@ elif menu == "📜 Histórico":
                         st.session_state[f"visualizar_hist_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_hist_{pedido['ID_Pedido']}", False)
                         st.rerun()
                 with col8:
-                    if st.button("↩️", key=f"reverter_{pedido['ID_Pedido']}", help="Reverter para Pendente", use_container_width=True):
-                        st.session_state[f"reverter_{pedido['ID_Pedido']}"] = True
-                        st.rerun()
+                    # Usar checkbox para controlar estado de reversão
+                    reverter_check = st.checkbox("", key=f"reverter_check_{pedido['ID_Pedido']}",
+                                                  label_visibility="collapsed",
+                                                  help="Marcar para reverter")
 
             # Visualização detalhada
             if st.session_state.get(f"visualizar_hist_{pedido['ID_Pedido']}", False):
@@ -2286,7 +2320,7 @@ elif menu == "📜 Histórico":
                     with col_b:
                         st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} potes")
                         st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} potes")
-                        st.markdown(f"**💰 Valor:** R$ {pedido['Valor']:.2f}")
+                        st.markdown(f"**💰 Valor:** R$ {formatar_valor_br(pedido['Valor'])}")
                         if pedido.get('Desconto', 0) > 0:
                             st.markdown(f"**💸 Desconto:** {pedido['Desconto']}%")
                     st.markdown(f"**📊 Status:** {pedido['Status']}")
@@ -2294,13 +2328,13 @@ elif menu == "📜 Histórico":
                     if pedido.get('Observacoes'):
                         st.markdown(f"**📝 Observações:**\n{pedido['Observacoes']}")
 
-            # Confirmação de reversão
-            if st.session_state.get(f"reverter_{pedido['ID_Pedido']}", False):
-                with st.expander("⚠️ Confirmar Reversão", expanded=True):
-                    st.warning(f"Tem certeza que deseja reverter o pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
+            # Confirmação de reversão (se checkbox marcado)
+            if reverter_check:
+                with st.container():
+                    st.warning(f"⚠️ Reverter pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
                     st.info("O pedido será marcado como '🔴 Pendente' e voltará para as abas principais.")
 
-                    col_conf1, col_conf2, col_conf3 = st.columns([1, 1, 2])
+                    col_conf1, col_conf2 = st.columns(2)
                     with col_conf1:
                         if st.button("✅ Sim, Reverter", key=f"confirmar_reverter_{pedido['ID_Pedido']}", use_container_width=True):
                             try:
@@ -2308,14 +2342,12 @@ elif menu == "📜 Histórico":
                                 df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
                                 salvar_pedidos(df_atual)
                                 st.session_state.pedidos = carregar_pedidos()
-                                st.session_state[f"reverter_{pedido['ID_Pedido']}"] = False
                                 st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Erro ao reverter: {e}")
                     with col_conf2:
                         if st.button("❌ Cancelar", key=f"cancelar_reverter_{pedido['ID_Pedido']}", use_container_width=True):
-                            st.session_state[f"reverter_{pedido['ID_Pedido']}"] = False
                             st.rerun()
 
             linha_num += 1
@@ -2336,7 +2368,7 @@ elif menu == "🖨️ Relatórios & Recibos":
             
             if not peds.empty:
                 opc = {
-                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | R$ {p['Valor']:.2f} | {p['Status']}"
+                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | R$ {formatar_valor_br(p['Valor'])} | {p['Status']}"
                     for i, p in peds.iterrows()
                 }
                 sid = st.selectbox("📋 Selecione o pedido:", options=opc.keys(), format_func=lambda x: opc[x])
