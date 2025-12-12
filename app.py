@@ -1470,6 +1470,23 @@ def get_pagamento_badge(pagamento):
         ">{pagamento}</span>
     """
 
+def get_obs_icon(observacoes):
+    """Retorna ícone OBS se houver observações preenchidas"""
+    if observacoes and str(observacoes).strip() and str(observacoes).strip() != "nan":
+        return """
+            <span style="
+                background-color: #dbeafe;
+                color: #1e40af;
+                padding: 2px 8px;
+                border-radius: 8px;
+                font-size: 0.75rem;
+                font-weight: 700;
+                display: inline-block;
+                border: 1px solid #3b82f6;
+            ">📝 OBS</span>
+        """
+    return ""
+
 def formatar_valor_br(valor):
     """Formata valor para padrão brasileiro (R$ 50,00 ou R$ 1.500,00)"""
     valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -1632,7 +1649,7 @@ if menu == "📅 Pedidos do Dia":
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.3, 0.3])
+                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3])
 
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
@@ -1650,10 +1667,12 @@ if menu == "📅 Pedidos do Dia":
                     with col7:
                         st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
                     with col8:
+                        st.markdown(get_obs_icon(pedido['Observacoes']), unsafe_allow_html=True)
+                    with col9:
                         if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                             st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
                             st.rerun()
-                    with col9:
+                    with col10:
                         if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
                             st.rerun()
@@ -2038,7 +2057,7 @@ elif menu == "Gerenciar Tudo":
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.3, 0.3])
+                    col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3])
 
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
@@ -2055,10 +2074,12 @@ elif menu == "Gerenciar Tudo":
                     with col6:
                         st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
                     with col7:
+                        st.markdown(get_obs_icon(pedido['Observacoes']), unsafe_allow_html=True)
+                    with col8:
                         if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                             st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
-                    with col8:
+                    with col9:
                         if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
                             st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
                             st.rerun()
@@ -2381,7 +2402,7 @@ elif menu == "📜 Histórico":
                     </style>
                 """, unsafe_allow_html=True)
 
-                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.4])
+                col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.4, 0.4])
 
                 with col1:
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
@@ -2398,10 +2419,12 @@ elif menu == "📜 Histórico":
                 with col6:
                     st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
                 with col7:
+                    st.markdown(get_obs_icon(pedido['Observacoes']), unsafe_allow_html=True)
+                with col8:
                     if st.button("👁️", key=f"ver_hist_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
                         st.session_state[f"visualizar_hist_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_hist_{pedido['ID_Pedido']}", False)
                         st.rerun()
-                with col8:
+                with col9:
                     if st.button("↩️", key=f"reverter_hist_{pedido['ID_Pedido']}", help="Reverter para Pendente", use_container_width=True):
                         st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = True
                         st.rerun()
