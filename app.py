@@ -433,6 +433,10 @@ def salvar_no_sheets(client, nome_aba, df):
         for col in df_str.columns:
             df_str[col] = df_str[col].astype(str)
 
+        # Remove ".0" do campo Contato se existir
+        if 'Contato' in df_str.columns:
+            df_str['Contato'] = df_str['Contato'].str.replace(".0", "", regex=False)
+
         # Atualiza planilha
         worksheet.update([df_str.columns.values.tolist()] + df_str.values.tolist())
 
