@@ -2553,12 +2553,15 @@ elif menu == "👥 Cadastrar Clientes":
                         }])
                         st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
                         salvar_clientes(st.session_state.clientes)
+                        # Recarrega do arquivo para garantir sincronização
+                        st.session_state.clientes = carregar_clientes()
                         st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
                         st.rerun()
     
     with t2:
         st.subheader("Lista de Clientes")
         if not st.session_state.clientes.empty:
+            clientes_antes = st.session_state.clientes.copy()
             edited = st.data_editor(
                 st.session_state.clientes,
                 num_rows="fixed",
@@ -2566,10 +2569,31 @@ elif menu == "👥 Cadastrar Clientes":
                 hide_index=True
             )
             if not edited.equals(st.session_state.clientes):
+                # Detecta mudanças de telefone e sincroniza com pedidos
+                for idx in edited.index:
+                    nome_cliente = edited.loc[idx, 'Nome']
+                    contato_novo = edited.loc[idx, 'Contato']
+
+                    # Verifica se o telefone mudou
+                    if idx in clientes_antes.index:
+                        contato_antigo = clientes_antes.loc[idx, 'Contato']
+                        if contato_novo != contato_antigo:
+                            # Atualiza telefone em todos os pedidos deste cliente
+                            mask_pedidos = st.session_state.pedidos['Cliente'] == nome_cliente
+                            qtd_pedidos = mask_pedidos.sum()
+
+                            if qtd_pedidos > 0:
+                                st.session_state.pedidos.loc[mask_pedidos, 'Contato'] = contato_novo
+                                salvar_pedidos(st.session_state.pedidos)
+                                st.info(f"📱 Telefone de '{nome_cliente}' atualizado em {qtd_pedidos} pedido(s)")
+
                 st.session_state.clientes = edited
                 salvar_clientes(edited)
+                # Recarrega clientes do arquivo
+                st.session_state.clientes = carregar_clientes()
                 st.toast("💾 Salvo!")
-            
+                st.rerun()
+
             st.divider()
             c1, c2 = st.columns(2)
             with c1:
@@ -2611,6 +2635,8 @@ elif menu == "👥 Cadastrar Clientes":
             if st.button("🗑️ Excluir Cliente", type="primary", disabled=not confirma, use_container_width=True):
                 st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
                 salvar_clientes(st.session_state.clientes)
+                # Recarrega do arquivo para garantir sincronização
+                st.session_state.clientes = carregar_clientes()
                 st.toast(f"Cliente '{d}' excluído!", icon="🗑️")
                 st.rerun()
         else:
