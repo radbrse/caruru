@@ -1693,6 +1693,7 @@ if menu == "📅 Pedidos do Dia":
                                     if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=f"conf_del_{pedido['ID_Pedido']}"):
                                         sucesso, msg = excluir_pedido(int(pedido['ID_Pedido']), "Excluído via interface")
                                         if sucesso:
+                                            st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
                                             st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                             st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
                                             st.rerun()
@@ -2101,9 +2102,9 @@ elif menu == "Gerenciar Tudo":
                                 st.rerun()
 
                             if excluir and confirmar_exclusao:
-                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != pedido['ID_Pedido']]
+                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != pedido['ID_Pedido']].reset_index(drop=True)
                                 if salvar_pedidos(df_atualizado):
-                                    st.session_state.pedidos = df_atualizado
+                                    st.session_state.pedidos = carregar_pedidos()  # Recarrega do arquivo
                                     st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
                                     st.toast(f"🗑️ Pedido #{int(pedido['ID_Pedido'])} excluído!", icon="🗑️")
                                     logger.info(f"Pedido {pedido['ID_Pedido']} excluído via Gerenciar Tudo")
