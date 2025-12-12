@@ -1409,8 +1409,9 @@ def get_pagamento_badge(pagamento):
     """
 
 def formatar_valor_br(valor):
-    """Formata valor para padrão brasileiro (50,00 ou 1.500,00)"""
-    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    """Formata valor para padrão brasileiro (R$ 50,00 ou R$ 1.500,00)"""
+    valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {valor_formatado}"
 
 def get_valor_destaque(valor):
     """Retorna HTML com valor monetário em destaque (formato brasileiro)"""
@@ -1419,7 +1420,7 @@ def get_valor_destaque(valor):
             color: #059669;
             font-weight: 700;
             font-size: 1.05rem;
-        ">R$ {formatar_valor_br(valor)}</span>
+        ">{formatar_valor_br(valor)}</span>
     """
 
 # ==============================================================================
@@ -1612,7 +1613,7 @@ if menu == "📅 Pedidos do Dia":
                                 **🥘 Caruru:** {int(pedido['Caruru'])}
                                 **🦐 Bobó:** {int(pedido['Bobo'])}
                                 **💸 Desconto:** {pedido['Desconto']:.0f}%
-                                **💰 Valor Total:** R$ {formatar_valor_br(pedido['Valor'])}
+                                **💰 Valor Total:** {formatar_valor_br(pedido['Valor'])}
                                 **📊 Status:** {pedido['Status']}
                                 **💳 Pagamento:** {pedido['Pagamento']}
                                 """)
@@ -1993,7 +1994,7 @@ elif menu == "Gerenciar Tudo":
                             st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} un.")
                             st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
                             st.markdown(f"**💸 Desconto:** {int(pedido['Desconto'])}%")
-                            st.markdown(f"**💵 Valor Total:** R$ {formatar_valor_br(pedido['Valor'])}")
+                            st.markdown(f"**💵 Valor Total:** {formatar_valor_br(pedido['Valor'])}")
 
                         st.markdown("---")
                         col_c, col_d = st.columns(2)
@@ -2129,7 +2130,7 @@ elif menu == "Gerenciar Tudo":
                         msg += f"• {int(d['Caruru'])}x Caruru\n"
                     if d['Bobo'] > 0:
                         msg += f"• {int(d['Bobo'])}x Bobó\n"
-                    msg += f"\n💵 Total: R$ {formatar_valor_br(d['Valor'])}"
+                    msg += f"\n💵 Total: {formatar_valor_br(d['Valor'])}"
                     if d['Pagamento'] in ["NÃO PAGO", "METADE"]:
                         msg += f"\n\n📲 Pix: {CHAVE_PIX}"
                     
@@ -2231,7 +2232,7 @@ elif menu == "📜 Histórico":
             st.metric("📦 Total de Entregas", len(df_entregues))
         with col_m2:
             valor_total = df_entregues['Valor'].sum()
-            st.metric("💰 Valor Total", f"R$ {formatar_valor_br(valor_total)}")
+            st.metric("💰 Valor Total", formatar_valor_br(valor_total))
         with col_m3:
             df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
             st.metric("✅ Totalmente Pagos", len(df_pagos))
@@ -2303,10 +2304,9 @@ elif menu == "📜 Histórico":
                         st.session_state[f"visualizar_hist_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_hist_{pedido['ID_Pedido']}", False)
                         st.rerun()
                 with col8:
-                    # Usar checkbox para controlar estado de reversão
-                    reverter_check = st.checkbox("", key=f"reverter_check_{pedido['ID_Pedido']}",
-                                                  label_visibility="collapsed",
-                                                  help="Marcar para reverter")
+                    if st.button("↩️", key=f"reverter_hist_{pedido['ID_Pedido']}", help="Reverter para Pendente", use_container_width=True):
+                        st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = True
+                        st.rerun()
 
             # Visualização detalhada
             if st.session_state.get(f"visualizar_hist_{pedido['ID_Pedido']}", False):
@@ -2320,7 +2320,7 @@ elif menu == "📜 Histórico":
                     with col_b:
                         st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} potes")
                         st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} potes")
-                        st.markdown(f"**💰 Valor:** R$ {formatar_valor_br(pedido['Valor'])}")
+                        st.markdown(f"**💰 Valor:** {formatar_valor_br(pedido['Valor'])}")
                         if pedido.get('Desconto', 0) > 0:
                             st.markdown(f"**💸 Desconto:** {pedido['Desconto']}%")
                     st.markdown(f"**📊 Status:** {pedido['Status']}")
@@ -2328,27 +2328,28 @@ elif menu == "📜 Histórico":
                     if pedido.get('Observacoes'):
                         st.markdown(f"**📝 Observações:**\n{pedido['Observacoes']}")
 
-            # Confirmação de reversão (se checkbox marcado)
-            if reverter_check:
-                with st.container():
-                    st.warning(f"⚠️ Reverter pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
-                    st.info("O pedido será marcado como '🔴 Pendente' e voltará para as abas principais.")
+            # Confirmação de reversão
+            if st.session_state.get(f"confirmar_reverter_{pedido['ID_Pedido']}", False):
+                st.warning(f"⚠️ Reverter pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
+                st.info("O pedido será marcado como '🔴 Pendente' e voltará para as abas principais.")
 
-                    col_conf1, col_conf2 = st.columns(2)
-                    with col_conf1:
-                        if st.button("✅ Sim, Reverter", key=f"confirmar_reverter_{pedido['ID_Pedido']}", use_container_width=True):
-                            try:
-                                df_atual = st.session_state.pedidos
-                                df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
-                                salvar_pedidos(df_atual)
-                                st.session_state.pedidos = carregar_pedidos()
-                                st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erro ao reverter: {e}")
-                    with col_conf2:
-                        if st.button("❌ Cancelar", key=f"cancelar_reverter_{pedido['ID_Pedido']}", use_container_width=True):
+                col_conf1, col_conf2 = st.columns(2)
+                with col_conf1:
+                    if st.button("✅ Sim, Reverter", key=f"sim_reverter_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
+                        try:
+                            df_atual = st.session_state.pedidos
+                            df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
+                            salvar_pedidos(df_atual)
+                            st.session_state.pedidos = carregar_pedidos()
+                            st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
+                            st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao reverter: {e}")
+                with col_conf2:
+                    if st.button("❌ Cancelar", key=f"nao_reverter_{pedido['ID_Pedido']}", use_container_width=True):
+                        st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
+                        st.rerun()
 
             linha_num += 1
 
@@ -2368,7 +2369,7 @@ elif menu == "🖨️ Relatórios & Recibos":
             
             if not peds.empty:
                 opc = {
-                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | R$ {formatar_valor_br(p['Valor'])} | {p['Status']}"
+                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | {formatar_valor_br(p['Valor'])} | {p['Status']}"
                     for i, p in peds.iterrows()
                 }
                 sid = st.selectbox("📋 Selecione o pedido:", options=opc.keys(), format_func=lambda x: opc[x])
