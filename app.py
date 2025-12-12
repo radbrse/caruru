@@ -1244,15 +1244,16 @@ def gerar_recibo_pdf(dados):
         y -= 25
         p.setFont("Helvetica", 10)
         
+        preco_formatado = f"{PRECO_BASE:.2f}".replace(".", ",")
         if float(dados.get('Caruru', 0)) > 0:
             p.drawString(40, y, "Caruru Tradicional")
             p.drawString(350, y, f"{int(float(dados.get('Caruru')))}")
-            p.drawString(450, y, f"R$ {PRECO_BASE:.2f}")
+            p.drawString(450, y, f"R$ {preco_formatado}")
             y -= 15
         if float(dados.get('Bobo', 0)) > 0:
             p.drawString(40, y, "Bobó de Camarão")
             p.drawString(350, y, f"{int(float(dados.get('Bobo')))}")
-            p.drawString(450, y, f"R$ {PRECO_BASE:.2f}")
+            p.drawString(450, y, f"R$ {preco_formatado}")
             y -= 15
         
         if float(dados.get('Desconto', 0)) > 0:
@@ -1266,7 +1267,8 @@ def gerar_recibo_pdf(dados):
         y -= 40
         p.setFont("Helvetica-Bold", 14)
         lbl = "TOTAL PAGO" if dados.get('Pagamento') == "PAGO" else "VALOR A PAGAR"
-        p.drawString(350, y, f"{lbl}: R$ {float(dados.get('Valor', 0)):.2f}")
+        valor_total_formatado = f"{float(dados.get('Valor', 0)):.2f}".replace(".", ",")
+        p.drawString(350, y, f"{lbl}: R$ {valor_total_formatado}")
         
         y -= 25
         p.setFont("Helvetica-Bold", 12)
@@ -1346,7 +1348,8 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
             p.drawString(100, y, str(row.get('Cliente', ''))[:15])
             p.drawString(200, y, str(int(row.get('Caruru', 0))))
             p.drawString(240, y, str(int(row.get('Bobo', 0))))
-            p.drawString(280, y, f"{row.get('Valor', 0):.2f}")
+            valor_formatado = f"{row.get('Valor', 0):.2f}".replace(".", ",")
+            p.drawString(280, y, valor_formatado)
             p.drawString(330, y, st_cl)
             p.drawString(400, y, str(row.get('Pagamento', ''))[:10])
             p.drawString(480, y, h_s)
@@ -1356,7 +1359,8 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         
         p.line(30, y, 565, y)
         p.setFont("Helvetica-Bold", 11)
-        p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total:,.2f}")
+        total_formatado = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total_formatado}")
         p.setFont("Helvetica", 9)
         p.drawString(30, y - 20, f"Total de pedidos: {len(df_filtrado)}")
         
@@ -1628,8 +1632,8 @@ if menu == "📅 Pedidos do Dia":
         
         c1.metric("🥘 Caruru (Pend)", int(pend['Caruru'].sum()))
         c2.metric("🦐 Bobó (Pend)", int(pend['Bobo'].sum()))
-        c3.metric("💰 Faturamento", f"R$ {faturamento:,.2f}")
-        c4.metric("📥 A Receber", f"R$ {a_receber:,.2f}", delta_color="inverse")
+        c3.metric("💰 Faturamento", formatar_valor_br(faturamento))
+        c4.metric("📥 A Receber", formatar_valor_br(a_receber), delta_color="inverse")
         
         st.divider()
         st.subheader("📋 Entregas do Dia")
@@ -1654,7 +1658,7 @@ if menu == "📅 Pedidos do Dia":
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
                         st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
@@ -2037,7 +2041,7 @@ elif menu == "Gerenciar Tudo":
         # Métricas com totais de caruru e bobó
         total_caruru = df_view['Caruru'].sum()
         total_bobo = df_view['Bobo'].sum()
-        st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** R$ {df_view['Valor'].sum():,.2f} | **🥘 Caruru:** {int(total_caruru)} | **🦐 Bobó:** {int(total_bobo)}")
+        st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** {formatar_valor_br(df_view['Valor'].sum())} | **🥘 Caruru:** {int(total_caruru)} | **🦐 Bobó:** {int(total_bobo)}")
 
         # Lista de pedidos com visualização e edição inline
         if df_view.empty:
@@ -2062,7 +2066,7 @@ elif menu == "Gerenciar Tudo":
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
@@ -2407,7 +2411,7 @@ elif menu == "📜 Histórico":
                 with col1:
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                 with col2:
-                    st.markdown(f"<div style='font-size:0.9rem; font-weight:500; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
                 with col3:
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
@@ -2526,7 +2530,7 @@ elif menu == "🖨️ Relatórios & Recibos":
             df_rel = df
             nome = "Relatorio_Geral.pdf"
         
-        st.write(f"📊 **{len(df_rel)}** pedidos | **Total:** R$ {df_rel['Valor'].sum():,.2f}")
+        st.write(f"📊 **{len(df_rel)}** pedidos | **Total:** {formatar_valor_br(df_rel['Valor'].sum())}")
         
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório PDF", use_container_width=True, type="primary"):
