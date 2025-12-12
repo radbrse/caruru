@@ -1330,7 +1330,7 @@ def gerar_recibo_pdf(dados):
         cliente_nome = str(dados.get('Cliente', '')).strip() or "o cliente"
 
         texto = f"Declaramos que recebemos de {cliente_nome} o valor total de R$ {valor_br}, "
-        texto += f"referente à compra de {total_unidades} unidade(s) de {produtos_texto}, "
+        texto += f"referente à compra de {produtos_texto}, "
         texto += "conforme discriminado neste comprovante."
 
         # Quebra o texto em múltiplas linhas
