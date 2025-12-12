@@ -798,6 +798,9 @@ def carregar_clientes():
                     df[c] = ""
                     logger.warning(f"Coluna {c} não encontrada, adicionando")
 
+            # Remove ".0" de contatos antigos (corrige dados legados)
+            df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
+
             logger.info(f"Clientes carregados: {len(df)} registros")
             return df[colunas]
 
@@ -815,7 +818,8 @@ def carregar_pedidos():
 
     try:
         with file_lock(ARQUIVO_PEDIDOS):
-            df = pd.read_csv(ARQUIVO_PEDIDOS)
+            # Força Contato como string ao ler CSV para evitar conversão para float
+            df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
 
             # Garante colunas obrigatórias
             for c in colunas_padrao:
@@ -854,9 +858,12 @@ def carregar_pedidos():
                 logger.warning(f"{invalid_status.sum()} pedidos com status inválido, ajustando")
                 df.loc[invalid_status, 'Status'] = "🔴 Pendente"
 
-            # Garante tipos de string
-            for c in ["Cliente", "Status", "Pagamento", "Contato", "Observacoes"]:
+            # Garante tipos de string (Contato já é string pelo dtype no read_csv)
+            for c in ["Cliente", "Status", "Pagamento", "Observacoes"]:
                 df[c] = df[c].fillna("").astype(str)
+
+            # Contato já foi lido como string, só garante que não há NaN
+            df["Contato"] = df["Contato"].fillna("").str.replace(".0", "", regex=False)
 
             # Garante pagamento válido
             invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
@@ -891,6 +898,8 @@ def salvar_pedidos(df):
             salvar['Hora'] = salvar['Hora'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x) if x else "12:00"
             )
+            # Garante que Contato seja string sem ".0" antes de salvar
+            salvar['Contato'] = salvar['Contato'].astype(str).str.replace(".0", "", regex=False)
 
             # Salva em arquivo temporário primeiro (atomic write)
             temp_file = f"{ARQUIVO_PEDIDOS}.tmp"
@@ -934,9 +943,15 @@ def salvar_clientes(df):
             # Cria backup com timestamp antes de salvar
             backup_path = criar_backup_com_timestamp(ARQUIVO_CLIENTES)
 
+            # Prepara dados para salvar
+            salvar = df.copy()
+            # Garante que Contato seja string sem ".0" antes de salvar
+            if 'Contato' in salvar.columns:
+                salvar['Contato'] = salvar['Contato'].astype(str).str.replace(".0", "", regex=False)
+
             # Salva em arquivo temporário primeiro (atomic write)
             temp_file = f"{ARQUIVO_CLIENTES}.tmp"
-            df.to_csv(temp_file, index=False)
+            salvar.to_csv(temp_file, index=False)
 
             # Move arquivo temporário para o definitivo (operação atômica)
             shutil.move(temp_file, ARQUIVO_CLIENTES)
