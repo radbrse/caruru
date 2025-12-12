@@ -290,6 +290,41 @@ def limpar_backups_por_data(dias):
         logger.error(f"Erro ao limpar backups por data: {e}", exc_info=True)
         return False, f"❌ Erro: {e}"
 
+def _normalizar_importacao(destino, df_novo):
+    """Garante colunas esperadas e limpa campos sensíveis por destino."""
+    if destino == 'Clientes':
+        df_norm = df_novo.reindex(columns=["Nome", "Contato", "Observacoes"], fill_value="")
+        df_norm['Nome'] = df_norm['Nome'].fillna("").astype(str).str.strip()
+        df_norm['Contato'] = df_norm['Contato'].fillna("").astype(str).apply(limpar_telefone)
+        df_norm['Observacoes'] = df_norm['Observacoes'].fillna("").astype(str).str.strip()
+        return df_norm
+
+    if destino == 'Pedidos':
+        colunas_padrao = [
+            "ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor",
+            "Data", "Hora", "Status", "Pagamento", "Contato",
+            "Desconto", "Observacoes"
+        ]
+        df_norm = df_novo.reindex(columns=colunas_padrao, fill_value="")
+        df_norm['ID_Pedido'] = pd.to_numeric(df_norm['ID_Pedido'], errors='coerce').fillna(0).astype(int)
+        df_norm['Cliente'] = df_norm['Cliente'].fillna("").astype(str).str.strip()
+        df_norm['Caruru'] = pd.to_numeric(df_norm['Caruru'], errors='coerce').fillna(0)
+        df_norm['Bobo'] = pd.to_numeric(df_norm['Bobo'], errors='coerce').fillna(0)
+        df_norm['Desconto'] = pd.to_numeric(df_norm['Desconto'], errors='coerce').fillna(0)
+        df_norm['Valor'] = pd.to_numeric(df_norm['Valor'], errors='coerce').fillna(0)
+        df_norm['Data'] = pd.to_datetime(df_norm['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
+        df_norm['Hora'] = df_norm['Hora'].apply(lambda x: validar_hora(x)[0]).astype(str)
+        df_norm['Status'] = df_norm['Status'].fillna("").astype(str)
+        df_norm['Pagamento'] = df_norm['Pagamento'].fillna("").astype(str)
+        df_norm['Contato'] = df_norm['Contato'].fillna("").astype(str).apply(limpar_telefone)
+        df_norm['Observacoes'] = df_norm['Observacoes'].fillna("").astype(str)
+        return df_norm
+
+    if destino == 'Histórico':
+        return df_novo.copy()
+
+    return df_novo
+
 def importar_csv_externo(arquivo_upload, destino):
     """
     Importa CSV externo para um dos arquivos do sistema.
@@ -309,6 +344,7 @@ def importar_csv_externo(arquivo_upload, destino):
 
         # Lê o CSV enviado
         df_novo = pd.read_csv(arquivo_upload)
+        df_normalizado = _normalizar_importacao(destino, df_novo)
 
         # Cria backup do arquivo atual
         if os.path.exists(arquivo_destino):
@@ -318,10 +354,10 @@ def importar_csv_externo(arquivo_upload, destino):
         # Salva o novo CSV com file locking
         with file_lock(arquivo_destino):
             temp_file = f"{arquivo_destino}.tmp"
-            df_novo.to_csv(temp_file, index=False)
+            df_normalizado.to_csv(temp_file, index=False)
             shutil.move(temp_file, arquivo_destino)
 
-        logger.info(f"CSV importado: {destino} ({len(df_novo)} registros)")
+        logger.info(f"CSV importado: {destino} ({len(df_normalizado)} registros)")
 
         # Registra no histórico
         registrar_alteracao(
@@ -329,10 +365,10 @@ def importar_csv_externo(arquivo_upload, destino):
             0,
             destino,
             f"Importação externa",
-            f"{len(df_novo)} registros"
+            f"{len(df_normalizado)} registros"
         )
 
-        return True, f"✅ {len(df_novo)} registros importados com sucesso!", df_novo
+        return True, f"✅ {len(df_normalizado)} registros importados com sucesso!", df_normalizado
 
     except Exception as e:
         logger.error(f"Erro ao importar CSV: {e}", exc_info=True)
@@ -2955,14 +2991,14 @@ elif menu == "🛠️ Manutenção":
 
                         if sucesso:
                             st.success(msg)
-                            st.info("💡 Clique em 'Recarregar Dados' para aplicar as mudanças")
-
-                            # Botão para recarregar
-                            if st.button("🔄 Recarregar Dados Agora", use_container_width=True, key="reload_import"):
+                            # Atualiza cache em memória para refletir imediatamente o novo arquivo
+                            if destino == "Pedidos":
                                 st.session_state.pedidos = carregar_pedidos()
+                            elif destino == "Clientes":
                                 st.session_state.clientes = carregar_clientes()
-                                st.toast("Dados recarregados!", icon="✅")
-                                st.rerun()
+
+                            st.toast("Dados recarregados!", icon="✅")
+                            st.rerun()
                         else:
                             st.error(msg)
 
