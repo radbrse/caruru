@@ -2711,13 +2711,19 @@ elif menu == "👥 Cadastrar Clientes":
             if up_c and st.button("⚠️ Importar"):
                 try:
                     df_c = pd.read_csv(up_c)
-                    # Garante colunas esperadas e normaliza telefones para evitar valores como "7999.0"
-                    df_c = df_c.reindex(columns=["Nome", "Contato", "Observacoes"], fill_value="")
-                    df_c['Nome'] = df_c['Nome'].fillna("").astype(str).str.strip()
-                    df_c['Contato'] = df_c['Contato'].fillna("").astype(str).apply(limpar_telefone)
-                    df_c['Observacoes'] = df_c['Observacoes'].fillna("").astype(str)
+                    df_c = _normalizar_importacao("Clientes", df_c)
                     salvar_clientes(df_c)
                     st.session_state.clientes = carregar_clientes()
+
+                    atualizados, total_clientes = sincronizar_contatos_pedidos()
+
+                    if atualizados:
+                        st.success(
+                            f"✅ {atualizados} pedido(s) atualizado(s) após importar {total_clientes} cliente(s)"
+                        )
+                    else:
+                        st.info("Nenhum pedido precisou de atualização de telefone.")
+
                     st.toast("Clientes importados!", icon="✅")
                     st.rerun()
                 except Exception as e:
