@@ -772,9 +772,42 @@ def gerar_link_whatsapp(telefone, mensagem):
     tel_limpo = limpar_telefone(telefone)
     if len(tel_limpo) < 10:
         return None
-    
+
     msg_encoded = urllib.parse.quote(mensagem)
     return f"https://wa.me/55{tel_limpo}?text={msg_encoded}"
+
+def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
+    """Sincroniza contatos dos clientes em todos os pedidos existentes."""
+    pedidos = df_pedidos.copy() if df_pedidos is not None else st.session_state.pedidos.copy()
+    clientes = df_clientes if df_clientes is not None else st.session_state.clientes
+
+    if pedidos is None or clientes is None or pedidos.empty or clientes.empty:
+        return 0, 0
+
+    clientes_norm = clientes.copy()
+    clientes_norm['Nome'] = clientes_norm['Nome'].fillna("").astype(str).str.strip()
+    clientes_norm['Contato'] = clientes_norm['Contato'].fillna("").astype(str).apply(limpar_telefone)
+
+    mapa_contatos = clientes_norm.set_index('Nome')['Contato'].to_dict()
+
+    atualizados = 0
+    for idx, pedido in pedidos.iterrows():
+        nome = str(pedido.get('Cliente', '')).strip()
+        if not nome:
+            continue
+
+        contato_cliente = mapa_contatos.get(nome, "")
+        contato_atual = str(pedido.get('Contato', '')) if pd.notna(pedido.get('Contato', '')) else ""
+
+        if contato_cliente and contato_cliente != contato_atual:
+            pedidos.at[idx, 'Contato'] = contato_cliente
+            atualizados += 1
+
+    if atualizados > 0:
+        salvar_pedidos(pedidos)
+        st.session_state.pedidos = carregar_pedidos()
+
+    return atualizados, len(mapa_contatos)
 
 # ==============================================================================
 # BANCO DE DADOS COM LOCKING E CACHE
@@ -797,6 +830,11 @@ def carregar_clientes():
                 if c not in df.columns:
                     df[c] = ""
                     logger.warning(f"Coluna {c} não encontrada, adicionando")
+
+            # Normaliza tipos e remove formatação indesejada dos telefones
+            df['Nome'] = df['Nome'].astype(str).str.strip()
+            df['Contato'] = df['Contato'].astype(str).apply(limpar_telefone)
+            df['Observacoes'] = df['Observacoes'].astype(str)
 
             logger.info(f"Clientes carregados: {len(df)} registros")
             return df[colunas]
@@ -857,6 +895,9 @@ def carregar_pedidos():
             # Garante tipos de string
             for c in ["Cliente", "Status", "Pagamento", "Contato", "Observacoes"]:
                 df[c] = df[c].fillna("").astype(str)
+
+            # Remove sufixos como ".0" e qualquer outro caractere não numérico do contato
+            df['Contato'] = df['Contato'].apply(limpar_telefone)
 
             # Garante pagamento válido
             invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
@@ -2569,14 +2610,20 @@ elif menu == "👥 Cadastrar Clientes":
                 hide_index=True
             )
             if not edited.equals(st.session_state.clientes):
+                # Normaliza dados e limpa formatação dos telefones
+                edited_limpo = edited.copy()
+                edited_limpo['Nome'] = edited_limpo['Nome'].fillna("").astype(str).str.strip()
+                edited_limpo['Contato'] = edited_limpo['Contato'].fillna("").astype(str).apply(limpar_telefone)
+                edited_limpo['Observacoes'] = edited_limpo['Observacoes'].fillna("").astype(str).str.strip()
+
                 # Detecta mudanças de telefone e sincroniza com pedidos
-                for idx in edited.index:
-                    nome_cliente = edited.loc[idx, 'Nome']
-                    contato_novo = edited.loc[idx, 'Contato']
+                for idx in edited_limpo.index:
+                    nome_cliente = edited_limpo.loc[idx, 'Nome']
+                    contato_novo = edited_limpo.loc[idx, 'Contato']
 
                     # Verifica se o telefone mudou
                     if idx in clientes_antes.index:
-                        contato_antigo = clientes_antes.loc[idx, 'Contato']
+                        contato_antigo = limpar_telefone(clientes_antes.loc[idx, 'Contato'])
                         if contato_novo != contato_antigo:
                             # Atualiza telefone em todos os pedidos deste cliente
                             mask_pedidos = st.session_state.pedidos['Cliente'] == nome_cliente
@@ -2587,10 +2634,16 @@ elif menu == "👥 Cadastrar Clientes":
                                 salvar_pedidos(st.session_state.pedidos)
                                 st.info(f"📱 Telefone de '{nome_cliente}' atualizado em {qtd_pedidos} pedido(s)")
 
-                st.session_state.clientes = edited
-                salvar_clientes(edited)
+                st.session_state.clientes = edited_limpo
+                salvar_clientes(edited_limpo)
                 # Recarrega clientes do arquivo
                 st.session_state.clientes = carregar_clientes()
+
+                # Sincroniza todos os pedidos com a base de clientes
+                atualizados, total_clientes = sincronizar_contatos_pedidos()
+                if atualizados:
+                    st.success(f"🔄 Telefones sincronizados em {atualizados} pedido(s) com base em {total_clientes} cliente(s)")
+
                 st.toast("💾 Salvo!")
                 st.rerun()
 
@@ -2606,12 +2659,27 @@ elif menu == "👥 Cadastrar Clientes":
                 st.download_button("📊 Exportar CSV", csv, "clientes.csv", "text/csv", use_container_width=True)
         else:
             st.info("Nenhum cliente cadastrado.")
-        
+
+        st.markdown("---")
+        st.subheader("🔄 Sincronizar Telefones nos Pedidos")
+        st.caption("Atualize todos os pedidos com os telefones mais recentes do cadastro de clientes.")
+        if st.button("🔄 Sincronizar agora", use_container_width=True, type="secondary"):
+            atualizados, total_clientes = sincronizar_contatos_pedidos()
+            if atualizados:
+                st.success(f"✅ {atualizados} pedido(s) atualizado(s) com base em {total_clientes} cliente(s) cadastrado(s)")
+            else:
+                st.info("Nenhum pedido precisava de atualização no telefone.")
+
         with st.expander("📤 Importar Clientes"):
             up_c = st.file_uploader("Arquivo CSV", type="csv", key="rest_cli")
             if up_c and st.button("⚠️ Importar"):
                 try:
                     df_c = pd.read_csv(up_c)
+                    # Garante colunas esperadas e normaliza telefones para evitar valores como "7999.0"
+                    df_c = df_c.reindex(columns=["Nome", "Contato", "Observacoes"], fill_value="")
+                    df_c['Nome'] = df_c['Nome'].fillna("").astype(str).str.strip()
+                    df_c['Contato'] = df_c['Contato'].fillna("").astype(str).apply(limpar_telefone)
+                    df_c['Observacoes'] = df_c['Observacoes'].fillna("").astype(str)
                     salvar_clientes(df_c)
                     st.session_state.clientes = carregar_clientes()
                     st.toast("Clientes importados!", icon="✅")
