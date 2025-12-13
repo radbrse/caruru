@@ -2007,53 +2007,97 @@ elif menu == "Novo Pedido":
         
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
-        
+
         if submitted:
             # Usa o cliente selecionado FORA do form
             cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
 
-            # Confirmação visual da data
-            meses_nome = {
-                1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
-                5: "maio", 6: "junho", 7: "julho", 8: "agosto",
-                9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
+            # Guarda os dados do pedido em session_state para confirmação
+            st.session_state.pedido_pendente = {
+                'cliente': cliente_final,
+                'caruru': qc,
+                'bobo': qb,
+                'data': dt,
+                'hora': h_ent,
+                'status': stt,
+                'pagamento': pg,
+                'contato': cont,
+                'desconto': dc,
+                'observacoes': obs
             }
-            data_formatada = f"{dt.day} de {meses_nome[dt.month]} de {dt.year}"
+            st.rerun()
 
-            # Verifica se a data não é hoje e mostra alerta
-            if dt != hoje_brasil():
-                dias_diferenca = (dt - hoje_brasil()).days
-                if dias_diferenca == 1:
-                    st.warning(f"⚠️ **ATENÇÃO:** Data selecionada é AMANHÃ ({data_formatada})")
-                elif dias_diferenca > 1:
-                    st.warning(f"⚠️ **ATENÇÃO:** Data selecionada é daqui a {dias_diferenca} dias ({data_formatada})")
-            else:
-                st.info(f"📅 Data do pedido: **HOJE** ({data_formatada})")
+    # Confirmação de data - aparece FORA do form
+    if 'pedido_pendente' in st.session_state and st.session_state.pedido_pendente:
+        pedido_temp = st.session_state.pedido_pendente
+        dt_temp = pedido_temp['data']
 
-            id_criado, erros, avisos = criar_pedido(
-                cliente=cliente_final,
-                caruru=qc,
-                bobo=qb,
-                data=dt,
-                hora=h_ent,
-                status=stt,
-                pagamento=pg,
-                contato=cont,
-                desconto=dc,
-                observacoes=obs
-            )
-            
-            for aviso in avisos:
-                st.warning(aviso)
-            
-            if erros:
-                for erro in erros:
-                    st.error(erro)
+        # Formata a data por extenso
+        meses_nome = {
+            1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+            5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+            9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
+        }
+        dias_semana = {
+            0: "segunda-feira", 1: "terça-feira", 2: "quarta-feira",
+            3: "quinta-feira", 4: "sexta-feira", 5: "sábado", 6: "domingo"
+        }
+        dia_semana = dias_semana[dt_temp.weekday()]
+        data_formatada = f"{dia_semana}, {dt_temp.day} de {meses_nome[dt_temp.month]} de {dt_temp.year}"
+
+        st.divider()
+
+        # Caixa de confirmação destacada
+        if dt_temp == hoje_brasil():
+            st.success(f"### ✅ CONFIRMAÇÃO DE DATA\n\n📅 Data do pedido: **HOJE** ({data_formatada})")
+        else:
+            dias_diferenca = (dt_temp - hoje_brasil()).days
+            if dias_diferenca == 1:
+                st.warning(f"### ⚠️ CONFIRMAÇÃO DE DATA\n\n📅 Data selecionada: **AMANHÃ** ({data_formatada})")
             else:
-                st.toast(f"✅ Pedido #{id_criado} criado com sucesso!", icon="✅")
-                st.balloons()
-                # Seta flag para resetar o cliente na próxima execução
-                st.session_state.resetar_cliente_novo = True
+                st.warning(f"### ⚠️ CONFIRMAÇÃO DE DATA\n\n📅 Data selecionada: **daqui a {dias_diferenca} dias** ({data_formatada})")
+
+        st.markdown("**A data está correta?**")
+
+        col_confirma, col_cancela = st.columns(2)
+
+        with col_confirma:
+            if st.button("✅ SIM, CONFIRMAR E SALVAR", use_container_width=True, type="primary"):
+                # Salva o pedido
+                id_criado, erros, avisos = criar_pedido(
+                    cliente=pedido_temp['cliente'],
+                    caruru=pedido_temp['caruru'],
+                    bobo=pedido_temp['bobo'],
+                    data=pedido_temp['data'],
+                    hora=pedido_temp['hora'],
+                    status=pedido_temp['status'],
+                    pagamento=pedido_temp['pagamento'],
+                    contato=pedido_temp['contato'],
+                    desconto=pedido_temp['desconto'],
+                    observacoes=pedido_temp['observacoes']
+                )
+
+                for aviso in avisos:
+                    st.warning(aviso)
+
+                if erros:
+                    for erro in erros:
+                        st.error(erro)
+                    # Limpa o pedido pendente mesmo com erro
+                    del st.session_state.pedido_pendente
+                else:
+                    st.toast(f"✅ Pedido #{id_criado} criado com sucesso!", icon="✅")
+                    st.balloons()
+                    # Limpa o pedido pendente
+                    del st.session_state.pedido_pendente
+                    # Seta flag para resetar o cliente na próxima execução
+                    st.session_state.resetar_cliente_novo = True
+                    st.rerun()
+
+        with col_cancela:
+            if st.button("❌ NÃO, CORRIGIR DATA", use_container_width=True):
+                # Remove o pedido pendente e volta para o formulário
+                del st.session_state.pedido_pendente
                 st.rerun()
     
     # Mostrar valor estimado fora do form (para referência)
