@@ -1936,6 +1936,19 @@ elif menu == "Novo Pedido":
             cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
         with c2:
             dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY")
+            # Mostra a data por extenso para confirmação visual
+            meses = {
+                1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+                5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+                9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
+            }
+            dias_semana = {
+                0: "segunda-feira", 1: "terça-feira", 2: "quarta-feira",
+                3: "quinta-feira", 4: "sexta-feira", 5: "sábado", 6: "domingo"
+            }
+            dia_semana = dias_semana[dt.weekday()]
+            data_extenso = f"{dia_semana}, {dt.day} de {meses[dt.month]} de {dt.year}"
+            st.caption(f"📆 **{data_extenso}**")
         with c3:
             h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido")
         
@@ -1965,7 +1978,25 @@ elif menu == "Novo Pedido":
         if submitted:
             # Usa o cliente selecionado FORA do form
             cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
-            
+
+            # Confirmação visual da data
+            meses_nome = {
+                1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+                5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+                9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
+            }
+            data_formatada = f"{dt.day} de {meses_nome[dt.month]} de {dt.year}"
+
+            # Verifica se a data não é hoje e mostra alerta
+            if dt != hoje_brasil():
+                dias_diferenca = (dt - hoje_brasil()).days
+                if dias_diferenca == 1:
+                    st.warning(f"⚠️ **ATENÇÃO:** Data selecionada é AMANHÃ ({data_formatada})")
+                elif dias_diferenca > 1:
+                    st.warning(f"⚠️ **ATENÇÃO:** Data selecionada é daqui a {dias_diferenca} dias ({data_formatada})")
+            else:
+                st.info(f"📅 Data do pedido: **HOJE** ({data_formatada})")
+
             id_criado, erros, avisos = criar_pedido(
                 cliente=cliente_final,
                 caruru=qc,
