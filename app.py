@@ -1828,35 +1828,54 @@ if menu == "📅 Pedidos do Dia":
                                     st.rerun()
 
                                 if excluir:
-                                    st.warning("⚠️ Para excluir, confirme abaixo:")
-                                    checkbox_key = f"conf_del_{pedido['ID_Pedido']}"
-                                    if st.checkbox(f"Confirmo exclusão do pedido #{int(pedido['ID_Pedido'])}", key=checkbox_key):
-                                        id_para_excluir = int(pedido['ID_Pedido'])
-                                        sucesso, msg = excluir_pedido(id_para_excluir, "Excluído via interface")
-                                        if sucesso:
-                                            # Limpa TODOS os estados relacionados ao pedido
-                                            keys_to_delete = [
-                                                f"editando_{id_para_excluir}",
-                                                f"visualizar_{id_para_excluir}",
-                                                checkbox_key,  # ← IMPORTANTE: Limpa o checkbox!
-                                                f"form_edit_{id_para_excluir}"
-                                            ]
-                                            for key in keys_to_delete:
-                                                if key in st.session_state:
-                                                    del st.session_state[key]
+                                    # Define flag para mostrar confirmação FORA do form
+                                    st.session_state[f"confirmar_exclusao_{pedido['ID_Pedido']}"] = True
+                                    st.rerun()
 
-                                            # Força delay para garantir que arquivo foi salvo
-                                            time_module.sleep(0.5)
+                        # Confirmação de exclusão - FORA do form
+                        if st.session_state.get(f"confirmar_exclusao_{pedido['ID_Pedido']}", False):
+                            st.warning(f"⚠️ **ATENÇÃO:** Você tem certeza que deseja excluir o pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
+                            st.markdown("**Esta ação não pode ser desfeita!**")
 
-                                            # Recarrega dados do arquivo
-                                            st.session_state.pedidos = carregar_pedidos()
+                            col_conf_del1, col_conf_del2 = st.columns(2)
 
-                                            st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
-                                            logger.info(f"✅ Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
-                                            st.rerun()
-                                        else:
-                                            st.error(msg)
-                                            logger.error(f"❌ Falha ao excluir pedido {id_para_excluir}: {msg}")
+                            with col_conf_del1:
+                                if st.button("✅ SIM, EXCLUIR", key=f"confirmar_sim_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
+                                    id_para_excluir = int(pedido['ID_Pedido'])
+                                    sucesso, msg = excluir_pedido(id_para_excluir, "Excluído via interface")
+                                    if sucesso:
+                                        # Limpa TODOS os estados relacionados ao pedido
+                                        keys_to_delete = [
+                                            f"editando_{id_para_excluir}",
+                                            f"visualizar_{id_para_excluir}",
+                                            f"confirmar_exclusao_{id_para_excluir}",
+                                            f"form_edit_{id_para_excluir}"
+                                        ]
+                                        for key in keys_to_delete:
+                                            if key in st.session_state:
+                                                del st.session_state[key]
+
+                                        # Força delay para garantir que arquivo foi salvo
+                                        time_module.sleep(0.5)
+
+                                        # Recarrega dados do arquivo
+                                        st.session_state.pedidos = carregar_pedidos()
+
+                                        st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
+                                        logger.info(f"✅ Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
+                                        logger.error(f"❌ Falha ao excluir pedido {id_para_excluir}: {msg}")
+                                        # Remove flag de confirmação
+                                        del st.session_state[f"confirmar_exclusao_{id_para_excluir}"]
+                                        st.rerun()
+
+                            with col_conf_del2:
+                                if st.button("❌ CANCELAR", key=f"confirmar_nao_{pedido['ID_Pedido']}", use_container_width=True):
+                                    # Remove flag de confirmação
+                                    del st.session_state[f"confirmar_exclusao_{pedido['ID_Pedido']}"]
+                                    st.rerun()
 
                 # Incrementa contador para zebra stripes
                 linha_num += 1
@@ -2300,9 +2319,8 @@ elif menu == "Gerenciar Tudo":
                             with col_e12:
                                 st.markdown("")  # Espaço
 
-                            # Checkbox de confirmação para excluir
-                            confirmar_exclusao = st.checkbox("⚠️ Confirmar exclusão do pedido", key=f"confirm_del_all_{pedido['ID_Pedido']}")
-                            excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary", disabled=not confirmar_exclusao)
+                            # Botão de exclusão
+                            excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary")
 
                             if salvar:
                                 # Atualiza o pedido
@@ -2337,7 +2355,20 @@ elif menu == "Gerenciar Tudo":
                                 st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
                                 st.rerun()
 
-                            if excluir and confirmar_exclusao:
+                            if excluir:
+                                # Define flag para mostrar confirmação FORA do form
+                                st.session_state[f"confirmar_exclusao_all_{pedido['ID_Pedido']}"] = True
+                                st.rerun()
+
+                    # Confirmação de exclusão - FORA do form
+                    if st.session_state.get(f"confirmar_exclusao_all_{pedido['ID_Pedido']}", False):
+                        st.warning(f"⚠️ **ATENÇÃO:** Você tem certeza que deseja excluir o pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
+                        st.markdown("**Esta ação não pode ser desfeita!**")
+
+                        col_conf_del_all1, col_conf_del_all2 = st.columns(2)
+
+                        with col_conf_del_all1:
+                            if st.button("✅ SIM, EXCLUIR", key=f"confirmar_sim_all_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                                 id_para_excluir = int(pedido['ID_Pedido'])
                                 df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_para_excluir].reset_index(drop=True)
                                 if salvar_pedidos(df_atualizado):
@@ -2345,7 +2376,7 @@ elif menu == "Gerenciar Tudo":
                                     keys_to_delete = [
                                         f"editando_all_{id_para_excluir}",
                                         f"visualizar_all_{id_para_excluir}",
-                                        f"confirm_del_all_{id_para_excluir}",  # ← CRÍTICO: Limpa o checkbox!
+                                        f"confirmar_exclusao_all_{id_para_excluir}",
                                         f"form_edit_all_{id_para_excluir}"
                                     ]
                                     for key in keys_to_delete:
@@ -2363,6 +2394,15 @@ elif menu == "Gerenciar Tudo":
                                     st.rerun()
                                 else:
                                     st.error("❌ Erro ao excluir o pedido.")
+                                    # Remove flag de confirmação
+                                    del st.session_state[f"confirmar_exclusao_all_{id_para_excluir}"]
+                                    st.rerun()
+
+                        with col_conf_del_all2:
+                            if st.button("❌ CANCELAR", key=f"confirmar_nao_all_{pedido['ID_Pedido']}", use_container_width=True):
+                                # Remove flag de confirmação
+                                del st.session_state[f"confirmar_exclusao_all_{pedido['ID_Pedido']}"]
+                                st.rerun()
 
                 # Incrementa contador para zebra stripes
                 linha_num += 1
