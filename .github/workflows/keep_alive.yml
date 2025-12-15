@@ -1,0 +1,28 @@
+name: Keep Alive - Cantinho do Caruru
+
+on:
+  schedule:
+    # Roda a cada 14 minutos (Streamlit hiberna após 15min de inatividade)
+    - cron: "*/14 * * * *"
+  workflow_dispatch: # Permite executar manualmente no GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          echo "🦐 Pingando o Cantinho do Caruru para mantê-lo acordado..."
+          # Substitua pela URL real do seu app Streamlit
+          curl -I https://seu-app-cantinho-do-caruru.streamlit.app/
+          echo "✅ Ping enviado com sucesso!"
+
+      - name: Verificar Status
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://seu-app-cantinho-do-caruru.streamlit.app/)
+          echo "📊 Status HTTP: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
+            echo "✅ App está respondendo corretamente!"
+          else
+            echo "⚠️ App retornou status $HTTP_CODE"
+          fi
