@@ -13,16 +13,16 @@ jobs:
       - name: Ping Streamlit App
         run: |
           echo "🦐 Pingando o Cantinho do Caruru para mantê-lo acordado..."
-          # Substitua pela URL real do seu app Streamlit
-          curl -I https://seu-app-cantinho-do-caruru.streamlit.app/
+          curl -I https://radbrse-caruru-app-coa4y5.streamlit.app/
           echo "✅ Ping enviado com sucesso!"
 
       - name: Verificar Status
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://seu-app-cantinho-do-caruru.streamlit.app/)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://radbrse-caruru-app-coa4y5.streamlit.app/)
           echo "📊 Status HTTP: $HTTP_CODE"
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
             echo "✅ App está respondendo corretamente!"
           else
             echo "⚠️ App retornou status $HTTP_CODE"
+            exit 1
           fi
