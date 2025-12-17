@@ -935,8 +935,30 @@ def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
 # BANCO DE DADOS COM LOCKING E CACHE
 # ==============================================================================
 def carregar_clientes():
-    """Carrega banco de clientes com file locking."""
+    """Carrega banco de clientes com file locking e auto-recovery do Google Sheets."""
     colunas = ["Nome", "Contato", "Observacoes"]
+
+    # ===========================================================================
+    # AUTO-RECOVERY: Se arquivo não existe, tenta recuperar do Google Sheets
+    # ===========================================================================
+    if not os.path.exists(ARQUIVO_CLIENTES):
+        if GSPREAD_AVAILABLE and "gcp_service_account" in st.secrets:
+            try:
+                logger.warning("⚠️ Arquivo de clientes não encontrado localmente. Tentando Auto-Recovery do Google Sheets...")
+                client = conectar_google_sheets()
+                if client:
+                    df_cloud, msg = carregar_do_sheets(client, "Clientes")
+                    if df_cloud is not None and not df_cloud.empty:
+                        # Salva usando a função oficial (com file locking e validações)
+                        salvar_clientes(df_cloud)
+                        logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets com sucesso!")
+                    else:
+                        logger.info("ℹ️ AUTO-RECOVERY: Aba 'Clientes' vazia ou não existe no Sheets. Criando DataFrame vazio.")
+            except Exception as e:
+                logger.error(f"❌ Falha no Auto-Recovery de Clientes: {e}")
+        else:
+            logger.info("ℹ️ Google Sheets não configurado. Criando DataFrame vazio de clientes.")
+    # ===========================================================================
 
     if not os.path.exists(ARQUIVO_CLIENTES):
         logger.info("Arquivo de clientes não existe, criando novo DataFrame")
@@ -964,8 +986,30 @@ def carregar_clientes():
         return pd.DataFrame(columns=colunas)
 
 def carregar_pedidos():
-    """Carrega banco de pedidos com validação completa e file locking."""
+    """Carrega banco de pedidos com validação completa, file locking e auto-recovery do Google Sheets."""
     colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+
+    # ===========================================================================
+    # AUTO-RECOVERY: Se arquivo não existe, tenta recuperar do Google Sheets
+    # ===========================================================================
+    if not os.path.exists(ARQUIVO_PEDIDOS):
+        if GSPREAD_AVAILABLE and "gcp_service_account" in st.secrets:
+            try:
+                logger.warning("⚠️ Arquivo de pedidos não encontrado localmente. Tentando Auto-Recovery do Google Sheets...")
+                client = conectar_google_sheets()
+                if client:
+                    df_cloud, msg = carregar_do_sheets(client, "Pedidos")
+                    if df_cloud is not None and not df_cloud.empty:
+                        # Salva usando a função oficial (com file locking, backup e validações)
+                        salvar_pedidos(df_cloud)
+                        logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets com sucesso!")
+                    else:
+                        logger.info("ℹ️ AUTO-RECOVERY: Aba 'Pedidos' vazia ou não existe no Sheets. Criando DataFrame vazio.")
+            except Exception as e:
+                logger.error(f"❌ Falha no Auto-Recovery de Pedidos: {e}")
+        else:
+            logger.info("ℹ️ Google Sheets não configurado. Criando DataFrame vazio de pedidos.")
+    # ===========================================================================
 
     if not os.path.exists(ARQUIVO_PEDIDOS):
         logger.info("Arquivo de pedidos não existe, criando novo DataFrame")
