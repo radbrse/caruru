@@ -1,6 +1,6 @@
 """
 Sistema de Gestão de Pedidos - Cantinho do Caruru
-Versão 19.0 - Com Google Sheets
+Versão 20.1 - Com Sincronização Automática e Preço Base Configurável
 
 MELHORIAS IMPLEMENTADAS:
 ========================
@@ -12,6 +12,8 @@ MELHORIAS IMPLEMENTADAS:
 6. ID Generation Segura: Geração robusta de IDs com fallback baseado em timestamp
 7. Tratamento de Erros: Logging com exc_info=True para stack traces completos
 8. Operações Otimizadas: Menos I/O desnecessário, validações consolidadas
+9. Sincronização Automática: Dados sincronizam automaticamente com Google Sheets (SEMPRE ATIVADO)
+10. Preço Base Configurável: Interface para alterar preço base dos produtos via aba Manutenção
 
 SEGURANÇA:
 ==========
@@ -102,11 +104,12 @@ ARQUIVO_LOG = "system_errors.log"
 ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
 ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
 ARQUIVO_HISTORICO = "historico_alteracoes.csv"
+ARQUIVO_CONFIG = "config.json"
 CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
-PRECO_BASE = 70.0
-VERSAO = "19.0"
+PRECO_BASE = 70.0  # Valor padrão inicial (pode ser alterado via interface)
+VERSAO = "20.1"
 MAX_BACKUP_FILES = 5  # Número máximo de arquivos .bak a manter
 CACHE_TIMEOUT = 60  # Tempo de cache em segundos
 
@@ -116,6 +119,71 @@ logger.setLevel(logging.INFO)
 handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
 handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
 logger.addHandler(handler)
+
+# ==============================================================================
+# FUNÇÕES DE CONFIGURAÇÃO PERSISTENTE
+# ==============================================================================
+def carregar_config():
+    """Carrega configurações do arquivo JSON. Retorna configurações padrão se não existir."""
+    config_padrao = {
+        'preco_base': 70.0
+    }
+
+    try:
+        if os.path.exists(ARQUIVO_CONFIG):
+            with open(ARQUIVO_CONFIG, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                logger.info("Configurações carregadas do arquivo")
+                return config
+        else:
+            # Cria arquivo de config com valores padrão
+            salvar_config(config_padrao)
+            logger.info("Arquivo de configuração criado com valores padrão")
+            return config_padrao
+    except Exception as e:
+        logger.error(f"Erro ao carregar config: {e}")
+        return config_padrao
+
+def salvar_config(config):
+    """Salva configurações no arquivo JSON."""
+    try:
+        with open(ARQUIVO_CONFIG, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        logger.info(f"Configurações salvas: {config}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar config: {e}")
+        return False
+
+def obter_preco_base():
+    """Obtém o preço base atual das configurações."""
+    if 'config' not in st.session_state:
+        st.session_state.config = carregar_config()
+    return st.session_state.config.get('preco_base', 70.0)
+
+def atualizar_preco_base(novo_preco):
+    """Atualiza o preço base nas configurações."""
+    try:
+        novo_preco = float(novo_preco)
+        if novo_preco <= 0:
+            return False, "❌ Preço deve ser maior que zero"
+
+        if 'config' not in st.session_state:
+            st.session_state.config = carregar_config()
+
+        st.session_state.config['preco_base'] = novo_preco
+
+        if salvar_config(st.session_state.config):
+            logger.info(f"Preço base atualizado: R$ {novo_preco:.2f}")
+            return True, f"✅ Preço base atualizado para R$ {novo_preco:.2f}"
+        else:
+            return False, "❌ Erro ao salvar configuração"
+
+    except ValueError:
+        return False, "❌ Valor inválido para preço"
+    except Exception as e:
+        logger.error(f"Erro ao atualizar preço base: {e}")
+        return False, f"❌ Erro: {e}"
 
 # ==============================================================================
 # FUNÇÕES DE UTILITÁRIOS E FILE LOCKING
@@ -557,6 +625,47 @@ def verificar_status_sheets():
     except Exception as e:
         return False, f"❌ Erro: {str(e)[:100]}"
 
+def sincronizar_automaticamente(operacao="geral"):
+    """
+    Sincroniza automaticamente com Google Sheets após operações CRUD.
+
+    Funciona de forma silenciosa (não trava a interface).
+    Se falhar, apenas registra no log mas não interrompe o fluxo.
+
+    Args:
+        operacao: Tipo de operação realizada ('criar', 'editar', 'excluir', 'geral')
+    """
+    # Verifica se sincronização automática está habilitada
+    if not st.session_state.get('sync_automatico_habilitado', False):
+        return
+
+    # Verifica se Google Sheets está disponível
+    if not GSPREAD_AVAILABLE:
+        return
+
+    if "gcp_service_account" not in st.secrets:
+        return
+
+    try:
+        # Tenta conectar e enviar (modo silencioso)
+        client = conectar_google_sheets()
+        if not client:
+            logger.warning("Sync automático: não foi possível conectar ao Sheets")
+            return
+
+        # Envia dados para Sheets
+        df_pedidos = st.session_state.pedidos
+        sucesso, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
+
+        if sucesso:
+            logger.info(f"Sync automático ({operacao}): {msg}")
+        else:
+            logger.warning(f"Sync automático ({operacao}) falhou: {msg}")
+
+    except Exception as e:
+        # Falha silenciosa - apenas registra no log
+        logger.warning(f"Sync automático ({operacao}) com erro: {e}")
+
 # ==============================================================================
 # FUNÇÕES DE VALIDAÇÃO ROBUSTAS
 # ==============================================================================
@@ -760,11 +869,12 @@ def calcular_total(caruru, bobo, desconto):
         if msg_d:
             logger.warning(f"Validação desconto: {msg_d}")
 
-        subtotal = (c + b) * PRECO_BASE
+        preco_atual = obter_preco_base()
+        subtotal = (c + b) * preco_atual
         total = subtotal * (1 - d / 100)
 
         resultado = round(total, 2)
-        logger.info(f"Total calculado: R$ {resultado} (Caruru: {c}, Bobó: {b}, Desconto: {d}%)")
+        logger.info(f"Total calculado: R$ {resultado} (Caruru: {c}, Bobó: {b}, Desconto: {d}%, Preço: R$ {preco_atual})")
         return resultado
 
     except Exception as e:
@@ -1102,6 +1212,9 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     st.session_state.pedidos = carregar_pedidos()
     registrar_alteracao("CRIAR", nid, "pedido_completo", None, f"{cliente} - R${val}")
 
+    # Sincronização automática com Google Sheets (se habilitada)
+    sincronizar_automaticamente(operacao="criar")
+
     return nid, [], avisos
 
 def atualizar_pedido(id_pedido, campos_atualizar):
@@ -1152,8 +1265,12 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         salvar_pedidos(df)
         # Recarrega do arquivo para garantir sincronização entre abas
         st.session_state.pedidos = carregar_pedidos()
+
+        # Sincronização automática com Google Sheets (se habilitada)
+        sincronizar_automaticamente(operacao="editar")
+
         return True, f"✅ Pedido #{id_pedido} atualizado."
-    
+
     except Exception as e:
         logger.error(f"Erro atualizar pedido: {e}")
         return False, f"❌ Erro ao atualizar: {e}"
@@ -1173,9 +1290,12 @@ def excluir_pedido(id_pedido, motivo=""):
         # Remove do DataFrame
         st.session_state.pedidos = df[~mask].reset_index(drop=True)
         salvar_pedidos(st.session_state.pedidos)
-        
+
         registrar_alteracao("EXCLUIR", id_pedido, "pedido_completo", f"{cliente}", motivo or "Sem motivo")
-        
+
+        # Sincronização automática com Google Sheets (se habilitada)
+        sincronizar_automaticamente(operacao="excluir")
+
         return True, f"✅ Pedido #{id_pedido} ({cliente}) excluído."
     
     except Exception as e:
@@ -1602,6 +1722,9 @@ if 'clientes' not in st.session_state:
     st.session_state.clientes = carregar_clientes()
 if 'chave_contato_automatico' not in st.session_state:
     st.session_state['chave_contato_automatico'] = ""
+if 'sync_automatico_habilitado' not in st.session_state:
+    # Sincronização automática com Google Sheets (padrão: SEMPRE ATIVADO)
+    st.session_state['sync_automatico_habilitado'] = True
 
 # ==============================================================================
 # SIDEBAR
@@ -1634,6 +1757,31 @@ with st.sidebar:
         st.caption(f"📅 Hoje: {len(df_hoje)} pedidos")
         st.caption(f"⏳ Pendentes: {len(pend)}")
     
+    st.divider()
+
+    # Configuração de Sincronização Automática
+    with st.expander("☁️ Sync Google Sheets"):
+        status_sheets, msg_sheets = verificar_status_sheets()
+
+        if status_sheets:
+            st.success("✅ Sheets conectado")
+
+            sync_habilitado = st.toggle(
+                "🔄 Sincronização Automática",
+                value=st.session_state.get('sync_automatico_habilitado', False),
+                help="Sincroniza automaticamente com Google Sheets após criar/editar/excluir pedidos"
+            )
+
+            st.session_state['sync_automatico_habilitado'] = sync_habilitado
+
+            if sync_habilitado:
+                st.info("🟢 Sync ativo - Dados são enviados automaticamente ao Sheets")
+            else:
+                st.caption("⚪ Sync desativado - Use os botões manuais na aba Manutenção")
+        else:
+            st.warning("⚠️ Sheets não configurado")
+            st.caption("Configure na aba 🛠️ Manutenção")
+
     st.divider()
     st.caption(f"Versão {VERSAO}")
 
@@ -3408,9 +3556,50 @@ elif menu == "🛠️ Manutenção":
         st.write(f"- Versão: {VERSAO}")
         st.write(f"- Pedidos cadastrados: {len(st.session_state.pedidos)}")
         st.write(f"- Clientes cadastrados: {len(st.session_state.clientes)}")
-        st.write(f"- Preço base: R$ {PRECO_BASE:.2f}")
         st.write(f"- Chave PIX: {CHAVE_PIX}")
-        
+
+        st.divider()
+
+        # Seção de alteração de preço base
+        st.write("### 💰 Preço Base dos Produtos")
+
+        preco_atual = obter_preco_base()
+        st.info(f"**Preço base atual:** R$ {preco_atual:.2f}")
+
+        st.markdown("""
+        💡 **Dica:** Altere o preço base quando necessário. Todos os pedidos novos usarão o novo preço.
+        Pedidos já criados manterão o valor calculado no momento da criação.
+        """)
+
+        col_preco1, col_preco2 = st.columns([3, 1])
+
+        with col_preco1:
+            novo_preco = st.number_input(
+                "Novo preço base (R$)",
+                min_value=0.01,
+                max_value=1000.0,
+                value=preco_atual,
+                step=5.0,
+                format="%.2f",
+                key="input_novo_preco"
+            )
+
+        with col_preco2:
+            st.write("")  # Espaçamento
+            st.write("")  # Espaçamento
+            if st.button("💾 Salvar Preço", use_container_width=True, type="primary"):
+                if abs(novo_preco - preco_atual) < 0.01:
+                    st.warning("⚠️ O preço não foi alterado")
+                else:
+                    sucesso, mensagem = atualizar_preco_base(novo_preco)
+                    if sucesso:
+                        st.success(mensagem)
+                        st.toast(f"💰 Preço atualizado para R$ {novo_preco:.2f}", icon="💰")
+                        time_module.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(mensagem)
+
         st.divider()
         
         st.write("**Arquivos:**")
