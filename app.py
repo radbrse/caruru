@@ -1769,7 +1769,7 @@ with st.sidebar:
     import streamlit.components.v1 as components
     components.html(
         """
-        <div style="text-align: center; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 15px;">
+        <div style="text-align: center; padding: 10px; background: linear-gradient(135deg, #ff9a56 0%, #ff6b35 100%); border-radius: 10px; margin-bottom: 15px;">
             <p id="clock" style="font-size: 24px; font-weight: bold; color: white; margin: 0; font-family: 'Courier New', monospace;"></p>
             <p id="date" style="font-size: 12px; color: #f0f0f0; margin: 5px 0 0 0;"></p>
         </div>
