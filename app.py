@@ -653,14 +653,22 @@ def sincronizar_automaticamente(operacao="geral"):
             logger.warning("Sync automático: não foi possível conectar ao Sheets")
             return
 
-        # Envia dados para Sheets
+        # Envia PEDIDOS para Sheets
         df_pedidos = st.session_state.pedidos
-        sucesso, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
+        sucesso_pedidos, msg_pedidos = salvar_no_sheets(client, "Pedidos", df_pedidos)
 
-        if sucesso:
-            logger.info(f"Sync automático ({operacao}): {msg}")
+        # Envia CLIENTES para Sheets
+        df_clientes = st.session_state.clientes
+        sucesso_clientes, msg_clientes = salvar_no_sheets(client, "Clientes", df_clientes)
+
+        if sucesso_pedidos and sucesso_clientes:
+            logger.info(f"Sync automático ({operacao}): Pedidos e Clientes sincronizados")
+        elif sucesso_pedidos:
+            logger.warning(f"Sync automático ({operacao}): Pedidos OK, Clientes falhou - {msg_clientes}")
+        elif sucesso_clientes:
+            logger.warning(f"Sync automático ({operacao}): Clientes OK, Pedidos falhou - {msg_pedidos}")
         else:
-            logger.warning(f"Sync automático ({operacao}) falhou: {msg}")
+            logger.warning(f"Sync automático ({operacao}): Ambos falharam")
 
     except Exception as e:
         # Falha silenciosa - apenas registra no log
@@ -2970,6 +2978,10 @@ elif menu == "👥 Cadastrar Clientes":
                         salvar_clientes(st.session_state.clientes)
                         # Recarrega do arquivo para garantir sincronização
                         st.session_state.clientes = carregar_clientes()
+
+                        # Sincronização automática com Google Sheets (se habilitada)
+                        sincronizar_automaticamente(operacao="cadastrar_cliente")
+
                         st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
                         st.rerun()
     
@@ -3006,6 +3018,10 @@ elif menu == "👥 Cadastrar Clientes":
                 salvar_clientes(edited)
                 # Recarrega clientes do arquivo
                 st.session_state.clientes = carregar_clientes()
+
+                # Sincronização automática com Google Sheets (se habilitada)
+                sincronizar_automaticamente(operacao="editar_cliente")
+
                 st.toast("💾 Salvo!")
                 st.rerun()
 
@@ -3029,6 +3045,10 @@ elif menu == "👥 Cadastrar Clientes":
                     df_c = pd.read_csv(up_c)
                     salvar_clientes(df_c)
                     st.session_state.clientes = carregar_clientes()
+
+                    # Sincronização automática com Google Sheets (se habilitada)
+                    sincronizar_automaticamente(operacao="importar_clientes")
+
                     st.toast("Clientes importados!", icon="✅")
                     st.rerun()
                 except Exception as e:
@@ -3052,6 +3072,10 @@ elif menu == "👥 Cadastrar Clientes":
                 salvar_clientes(st.session_state.clientes)
                 # Recarrega do arquivo para garantir sincronização
                 st.session_state.clientes = carregar_clientes()
+
+                # Sincronização automática com Google Sheets (se habilitada)
+                sincronizar_automaticamente(operacao="excluir_cliente")
+
                 st.toast(f"Cliente '{d}' excluído!", icon="🗑️")
                 st.rerun()
         else:
