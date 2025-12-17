@@ -1235,7 +1235,15 @@ def atualizar_pedido(id_pedido, campos_atualizar):
             return False, f"❌ Pedido #{id_pedido} não encontrado."
         
         idx = df[mask].index[0]
-        
+
+        # Se está mudando para "Entregue", atualiza horário para hora atual da marcação
+        if 'Status' in campos_atualizar and campos_atualizar['Status'] == "✅ Entregue":
+            status_anterior = df.at[idx, 'Status']
+            if status_anterior != "✅ Entregue":
+                # Está marcando como entregue agora - atualiza hora
+                campos_atualizar['Hora'] = agora_brasil().time()
+                logger.info(f"Pedido #{id_pedido} marcado como entregue - hora atualizada para {campos_atualizar['Hora']}")
+
         for campo, valor in campos_atualizar.items():
             valor_antigo = df.at[idx, campo]
             
@@ -1757,6 +1765,37 @@ if 'sync_automatico_habilitado' not in st.session_state:
 # SIDEBAR
 # ==============================================================================
 with st.sidebar:
+    # Relógio em tempo real
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <div style="text-align: center; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 15px;">
+            <p id="clock" style="font-size: 24px; font-weight: bold; color: white; margin: 0; font-family: 'Courier New', monospace;"></p>
+            <p id="date" style="font-size: 12px; color: #f0f0f0; margin: 5px 0 0 0;"></p>
+        </div>
+        <script>
+            function updateClock() {
+                const now = new Date();
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                document.getElementById('clock').textContent = hours + ':' + minutes + ':' + seconds;
+
+                const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                const dayName = days[now.getDay()];
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = months[now.getMonth()];
+                const year = now.getFullYear();
+                document.getElementById('date').textContent = dayName + ', ' + day + ' ' + month + ' ' + year;
+            }
+            updateClock();
+            setInterval(updateClock, 1000);
+        </script>
+        """,
+        height=90
+    )
+
     if os.path.exists("logo.png"):
         st.image("logo.png", width=250)
     else:
@@ -1810,6 +1849,24 @@ with st.sidebar:
             st.caption("Configure na aba 🛠️ Manutenção")
 
     st.divider()
+
+    # Botão de acesso rápido ao Google Sheets
+    if status_sheets:
+        try:
+            client = conectar_google_sheets()
+            if client:
+                spreadsheet = obter_ou_criar_planilha(client)
+                if spreadsheet:
+                    sheets_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet.id}"
+                    st.link_button(
+                        "📊 Abrir Google Sheets",
+                        sheets_url,
+                        use_container_width=True,
+                        type="secondary"
+                    )
+        except:
+            pass
+
     st.caption(f"Versão {VERSAO}")
 
 # ==============================================================================
