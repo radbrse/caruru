@@ -1500,7 +1500,26 @@ def gerar_recibo_pdf(dados):
         if dados.get('Observacoes'):
             y -= 15
             p.setFont("Helvetica-Oblique", 9)
-            p.drawString(30, y, f"Obs: {dados.get('Observacoes')[:80]}")
+
+            # Quebra automática do texto de observações
+            obs_texto = f"Obs: {dados.get('Observacoes')}"
+            obs_lines = []
+            obs_words = obs_texto.split()
+            obs_line = ""
+
+            for word in obs_words:
+                test_line = f"{obs_line} {word}".strip()
+                if p.stringWidth(test_line, "Helvetica-Oblique", 9) < width:
+                    obs_line = test_line
+                else:
+                    obs_lines.append(obs_line)
+                    obs_line = word
+            if obs_line:
+                obs_lines.append(obs_line)
+
+            for obs_l in obs_lines:
+                p.drawString(30, y, obs_l)
+                y -= 12
 
         y_ass = 150
         p.setLineWidth(1)
