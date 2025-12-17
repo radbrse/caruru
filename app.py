@@ -1,6 +1,6 @@
 """
 Sistema de Gestão de Pedidos - Cantinho do Caruru
-Versão 19.0 - Com Google Sheets
+Versão 20.0 - Com Sincronização Automática Google Sheets
 
 MELHORIAS IMPLEMENTADAS:
 ========================
@@ -12,6 +12,7 @@ MELHORIAS IMPLEMENTADAS:
 6. ID Generation Segura: Geração robusta de IDs com fallback baseado em timestamp
 7. Tratamento de Erros: Logging com exc_info=True para stack traces completos
 8. Operações Otimizadas: Menos I/O desnecessário, validações consolidadas
+9. Sincronização Automática: Dados sincronizam automaticamente com Google Sheets em tempo real
 
 SEGURANÇA:
 ==========
@@ -106,7 +107,7 @@ CHAVE_PIX = "79999296722"
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0
-VERSAO = "19.0"
+VERSAO = "20.0"
 MAX_BACKUP_FILES = 5  # Número máximo de arquivos .bak a manter
 CACHE_TIMEOUT = 60  # Tempo de cache em segundos
 
@@ -556,6 +557,47 @@ def verificar_status_sheets():
         return False, "❌ Erro ao conectar"
     except Exception as e:
         return False, f"❌ Erro: {str(e)[:100]}"
+
+def sincronizar_automaticamente(operacao="geral"):
+    """
+    Sincroniza automaticamente com Google Sheets após operações CRUD.
+
+    Funciona de forma silenciosa (não trava a interface).
+    Se falhar, apenas registra no log mas não interrompe o fluxo.
+
+    Args:
+        operacao: Tipo de operação realizada ('criar', 'editar', 'excluir', 'geral')
+    """
+    # Verifica se sincronização automática está habilitada
+    if not st.session_state.get('sync_automatico_habilitado', False):
+        return
+
+    # Verifica se Google Sheets está disponível
+    if not GSPREAD_AVAILABLE:
+        return
+
+    if "gcp_service_account" not in st.secrets:
+        return
+
+    try:
+        # Tenta conectar e enviar (modo silencioso)
+        client = conectar_google_sheets()
+        if not client:
+            logger.warning("Sync automático: não foi possível conectar ao Sheets")
+            return
+
+        # Envia dados para Sheets
+        df_pedidos = st.session_state.pedidos
+        sucesso, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
+
+        if sucesso:
+            logger.info(f"Sync automático ({operacao}): {msg}")
+        else:
+            logger.warning(f"Sync automático ({operacao}) falhou: {msg}")
+
+    except Exception as e:
+        # Falha silenciosa - apenas registra no log
+        logger.warning(f"Sync automático ({operacao}) com erro: {e}")
 
 # ==============================================================================
 # FUNÇÕES DE VALIDAÇÃO ROBUSTAS
@@ -1069,6 +1111,9 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     st.session_state.pedidos = carregar_pedidos()
     registrar_alteracao("CRIAR", nid, "pedido_completo", None, f"{cliente} - R${val}")
 
+    # Sincronização automática com Google Sheets (se habilitada)
+    sincronizar_automaticamente(operacao="criar")
+
     return nid, [], avisos
 
 def atualizar_pedido(id_pedido, campos_atualizar):
@@ -1119,8 +1164,12 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         salvar_pedidos(df)
         # Recarrega do arquivo para garantir sincronização entre abas
         st.session_state.pedidos = carregar_pedidos()
+
+        # Sincronização automática com Google Sheets (se habilitada)
+        sincronizar_automaticamente(operacao="editar")
+
         return True, f"✅ Pedido #{id_pedido} atualizado."
-    
+
     except Exception as e:
         logger.error(f"Erro atualizar pedido: {e}")
         return False, f"❌ Erro ao atualizar: {e}"
@@ -1140,9 +1189,12 @@ def excluir_pedido(id_pedido, motivo=""):
         # Remove do DataFrame
         st.session_state.pedidos = df[~mask].reset_index(drop=True)
         salvar_pedidos(st.session_state.pedidos)
-        
+
         registrar_alteracao("EXCLUIR", id_pedido, "pedido_completo", f"{cliente}", motivo or "Sem motivo")
-        
+
+        # Sincronização automática com Google Sheets (se habilitada)
+        sincronizar_automaticamente(operacao="excluir")
+
         return True, f"✅ Pedido #{id_pedido} ({cliente}) excluído."
     
     except Exception as e:
@@ -1569,6 +1621,9 @@ if 'clientes' not in st.session_state:
     st.session_state.clientes = carregar_clientes()
 if 'chave_contato_automatico' not in st.session_state:
     st.session_state['chave_contato_automatico'] = ""
+if 'sync_automatico_habilitado' not in st.session_state:
+    # Sincronização automática com Google Sheets (padrão: desabilitado)
+    st.session_state['sync_automatico_habilitado'] = False
 
 # ==============================================================================
 # SIDEBAR
@@ -1601,6 +1656,31 @@ with st.sidebar:
         st.caption(f"📅 Hoje: {len(df_hoje)} pedidos")
         st.caption(f"⏳ Pendentes: {len(pend)}")
     
+    st.divider()
+
+    # Configuração de Sincronização Automática
+    with st.expander("☁️ Sync Google Sheets"):
+        status_sheets, msg_sheets = verificar_status_sheets()
+
+        if status_sheets:
+            st.success("✅ Sheets conectado")
+
+            sync_habilitado = st.toggle(
+                "🔄 Sincronização Automática",
+                value=st.session_state.get('sync_automatico_habilitado', False),
+                help="Sincroniza automaticamente com Google Sheets após criar/editar/excluir pedidos"
+            )
+
+            st.session_state['sync_automatico_habilitado'] = sync_habilitado
+
+            if sync_habilitado:
+                st.info("🟢 Sync ativo - Dados são enviados automaticamente ao Sheets")
+            else:
+                st.caption("⚪ Sync desativado - Use os botões manuais na aba Manutenção")
+        else:
+            st.warning("⚠️ Sheets não configurado")
+            st.caption("Configure na aba 🛠️ Manutenção")
+
     st.divider()
     st.caption(f"Versão {VERSAO}")
 
