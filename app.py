@@ -409,10 +409,14 @@ def importar_csv_externo(arquivo_upload, destino):
 # ==============================================================================
 # INTEGRAÇÃO GOOGLE SHEETS
 # ==============================================================================
+@st.cache_resource
 def conectar_google_sheets():
     """
     Conecta ao Google Sheets usando credenciais do Streamlit Secrets.
     Retorna o cliente gspread conectado ou None se falhar.
+
+    IMPORTANTE: Usa @st.cache_resource para reutilizar o mesmo cliente
+    e evitar criar múltiplas conexões HTTP (causa "too many open files").
     """
     if not GSPREAD_AVAILABLE:
         logger.error("gspread não disponível")
@@ -3250,7 +3254,8 @@ elif menu == "🛠️ Manutenção":
             if log.strip():
                 st.text_area("", log, height=300)
                 if st.button("🗑️ Limpar Logs"):
-                    open(ARQUIVO_LOG, 'w').close()
+                    with open(ARQUIVO_LOG, 'w') as f:
+                        pass  # Apenas limpa o arquivo
                     st.success("✅ Logs limpos!")
                     st.rerun()
             else:
