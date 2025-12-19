@@ -114,11 +114,21 @@ MAX_BACKUP_FILES = 5  # Número máximo de arquivos .bak a manter
 CACHE_TIMEOUT = 60  # Tempo de cache em segundos
 
 # Configuração de logging com rotation (5MB por arquivo, mantém 3 backups)
+# No Streamlit Cloud, usa StreamHandler se não conseguir criar arquivo
 logger = logging.getLogger("cantinho")
 logger.setLevel(logging.INFO)
-handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
-handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
-logger.addHandler(handler)
+
+try:
+    # Tenta criar handler de arquivo (funciona localmente)
+    handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
+    handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+    logger.addHandler(handler)
+except (OSError, PermissionError):
+    # Fallback para console no Streamlit Cloud (filesystem read-only)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+    logger.addHandler(handler)
+    logger.info("Usando StreamHandler (ambiente read-only detectado)")
 
 # ==============================================================================
 # FUNÇÕES DE CONFIGURAÇÃO PERSISTENTE
