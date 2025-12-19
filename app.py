@@ -116,9 +116,15 @@ CACHE_TIMEOUT = 60  # Tempo de cache em segundos
 # Configuração de logging com rotation (5MB por arquivo, mantém 3 backups)
 logger = logging.getLogger("cantinho")
 logger.setLevel(logging.INFO)
-handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
-handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
-logger.addHandler(handler)
+
+# --- CORREÇÃO: Singleton Pattern para Logs ---
+# Só adiciona o handler se a lista de handlers estiver vazia.
+# Isso impede que o Streamlit crie um novo arquivo aberto a cada rerun.
+if not logger.handlers:
+    handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
+    handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+    logger.addHandler(handler)
+# ---------------------------------------------
 
 # ==============================================================================
 # FUNÇÕES DE CONFIGURAÇÃO PERSISTENTE
