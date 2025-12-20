@@ -2086,32 +2086,35 @@ if menu == "📅 Pedidos do Dia":
                     # Modo de edição
                     if st.session_state.get(f"editando_{pedido['ID_Pedido']}", False):
                         with st.expander("✏️ Editar Pedido", expanded=True):
+                            # CORREÇÃO: Busca pedido específico pelo ID para evitar usar dados de outra iteração
+                            pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].iloc[0]
+
                             with st.form(f"form_edit_{pedido['ID_Pedido']}"):
                                 # Linha 1: Status, Pagamento, Desconto
                                 edit_col1, edit_col2, edit_col3 = st.columns(3)
                                 with edit_col1:
                                     novo_status = st.selectbox("📊 Status", OPCOES_STATUS,
-                                                              index=OPCOES_STATUS.index(pedido['Status']) if pedido['Status'] in OPCOES_STATUS else 0,
+                                                              index=OPCOES_STATUS.index(pedido_atual['Status']) if pedido_atual['Status'] in OPCOES_STATUS else 0,
                                                               key=f"status_{pedido['ID_Pedido']}")
                                 with edit_col2:
                                     novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO,
-                                                                 index=OPCOES_PAGAMENTO.index(pedido['Pagamento']) if pedido['Pagamento'] in OPCOES_PAGAMENTO else 1,
+                                                                 index=OPCOES_PAGAMENTO.index(pedido_atual['Pagamento']) if pedido_atual['Pagamento'] in OPCOES_PAGAMENTO else 1,
                                                                  key=f"pag_{pedido['ID_Pedido']}")
                                 with edit_col3:
-                                    novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']),
+                                    novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']),
                                                                    key=f"desc_{pedido['ID_Pedido']}")
 
                                 # Linha 2: Caruru, Bobó
                                 edit_col4, edit_col5 = st.columns(2)
                                 with edit_col4:
-                                    novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']),
+                                    novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']),
                                                                  key=f"car_{pedido['ID_Pedido']}")
                                 with edit_col5:
-                                    novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']),
+                                    novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']),
                                                                key=f"bob_{pedido['ID_Pedido']}")
 
                                 # Linha 3: Observações (largura total)
-                                novas_obs = st.text_area("📝 Observações", value=pedido['Observacoes'], height=150,
+                                novas_obs = st.text_area("📝 Observações", value=pedido_atual['Observacoes'], height=150,
                                                         key=f"obs_{pedido['ID_Pedido']}")
 
                                 col_save, col_cancel, col_delete = st.columns([2, 2, 1])
@@ -2588,6 +2591,9 @@ elif menu == "Gerenciar Tudo":
                 # Expander para edição
                 if st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False):
                     with st.expander("✏️ Editar Pedido", expanded=True):
+                        # CORREÇÃO: Busca pedido específico pelo ID para evitar usar dados de outra iteração
+                        pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].iloc[0]
+
                         with st.form(f"form_edit_all_{pedido['ID_Pedido']}"):
                             st.markdown("### 📝 Dados do Pedido")
 
@@ -2596,38 +2602,38 @@ elif menu == "Gerenciar Tudo":
                             with col_e1:
                                 clientes_lista = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
                                 try:
-                                    idx_cliente = clientes_lista.index(pedido['Cliente']) if pedido['Cliente'] in clientes_lista else 0
+                                    idx_cliente = clientes_lista.index(pedido_atual['Cliente']) if pedido_atual['Cliente'] in clientes_lista else 0
                                 except:
                                     idx_cliente = 0
                                 novo_cliente = st.selectbox("👤 Cliente", clientes_lista, index=idx_cliente)
                             with col_e2:
-                                novo_contato = st.text_input("📱 Contato", value=str(pedido['Contato']))
+                                novo_contato = st.text_input("📱 Contato", value=str(pedido_atual['Contato']))
 
                             # Data e hora
                             col_e3, col_e4 = st.columns(2)
                             with col_e3:
-                                nova_data = st.date_input("📅 Data Entrega", value=pedido['Data'], format="DD/MM/YYYY")
+                                nova_data = st.date_input("📅 Data Entrega", value=pedido_atual['Data'], format="DD/MM/YYYY")
                             with col_e4:
-                                nova_hora = st.time_input("⏰ Hora Retirada", value=pedido['Hora'])
+                                nova_hora = st.time_input("⏰ Hora Retirada", value=pedido_atual['Hora'])
 
                             # Quantidades
                             col_e5, col_e6, col_e7 = st.columns(3)
                             with col_e5:
-                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido['Caruru']))
+                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']))
                             with col_e6:
-                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido['Bobo']))
+                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']))
                             with col_e7:
-                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido['Desconto']))
+                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']))
 
                             # Pagamento e status
                             col_e8, col_e9 = st.columns(2)
                             with col_e8:
-                                novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, index=OPCOES_PAGAMENTO.index(pedido['Pagamento']) if pedido['Pagamento'] in OPCOES_PAGAMENTO else 0)
+                                novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, index=OPCOES_PAGAMENTO.index(pedido_atual['Pagamento']) if pedido_atual['Pagamento'] in OPCOES_PAGAMENTO else 0)
                             with col_e9:
-                                novo_status = st.selectbox("📊 Status", OPCOES_STATUS, index=OPCOES_STATUS.index(pedido['Status']) if pedido['Status'] in OPCOES_STATUS else 0)
+                                novo_status = st.selectbox("📊 Status", OPCOES_STATUS, index=OPCOES_STATUS.index(pedido_atual['Status']) if pedido_atual['Status'] in OPCOES_STATUS else 0)
 
                             # Observações com mais espaço
-                            novas_obs = st.text_area("📝 Observações", value=str(pedido['Observacoes']) if pd.notna(pedido['Observacoes']) else "", height=150)
+                            novas_obs = st.text_area("📝 Observações", value=str(pedido_atual['Observacoes']) if pd.notna(pedido_atual['Observacoes']) else "", height=150)
 
                             # Botões
                             col_e10, col_e11, col_e12 = st.columns([2, 2, 1])
