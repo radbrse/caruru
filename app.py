@@ -2051,7 +2051,14 @@ if menu == "📅 Pedidos do Dia":
                             st.rerun()
                     with col10:
                         if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_{pedido['ID_Pedido']}", False)
+                            # Fecha todos os outros pedidos em edição antes de abrir este
+                            id_atual = pedido['ID_Pedido']
+                            keys_to_close = [k for k in st.session_state.keys() if k.startswith("editando_") and k != f"editando_{id_atual}"]
+                            for key in keys_to_close:
+                                st.session_state[key] = False
+
+                            # Abre/fecha o pedido atual
+                            st.session_state[f"editando_{id_atual}"] = not st.session_state.get(f"editando_{id_atual}", False)
                             st.rerun()
 
                     # Visualização detalhada
@@ -2555,7 +2562,14 @@ elif menu == "Gerenciar Tudo":
                             st.rerun()
                     with col9:
                         if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False)
+                            # Fecha todos os outros pedidos em edição antes de abrir este
+                            id_atual = pedido['ID_Pedido']
+                            keys_to_close = [k for k in st.session_state.keys() if k.startswith("editando_all_") and k != f"editando_all_{id_atual}"]
+                            for key in keys_to_close:
+                                st.session_state[key] = False
+
+                            # Abre/fecha o pedido atual
+                            st.session_state[f"editando_all_{id_atual}"] = not st.session_state.get(f"editando_all_{id_atual}", False)
                             st.rerun()
 
                 # Expander para visualização
