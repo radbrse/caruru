@@ -2051,14 +2051,14 @@ if menu == "📅 Pedidos do Dia":
                             st.rerun()
                     with col10:
                         if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            # Fecha todos os outros pedidos em edição antes de abrir este
-                            id_atual = pedido['ID_Pedido']
-                            keys_to_close = [k for k in st.session_state.keys() if k.startswith("editando_") and k != f"editando_{id_atual}"]
-                            for key in keys_to_close:
-                                st.session_state[key] = False
-
-                            # Abre/fecha o pedido atual
-                            st.session_state[f"editando_{id_atual}"] = not st.session_state.get(f"editando_{id_atual}", False)
+                            # NOVA ABORDAGEM: Usar uma única variável com o ID do pedido em edição (aba Dia)
+                            id_clicado = int(pedido['ID_Pedido'])
+                            if st.session_state.get('pedido_em_edicao_dia_id') == id_clicado:
+                                # Se já está editando este pedido, fecha
+                                st.session_state['pedido_em_edicao_dia_id'] = None
+                            else:
+                                # Abre este pedido para edição
+                                st.session_state['pedido_em_edicao_dia_id'] = id_clicado
                             st.rerun()
 
                     # Visualização detalhada
@@ -2090,13 +2090,14 @@ if menu == "📅 Pedidos do Dia":
                                 st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = False
                                 st.rerun()
 
-                    # Modo de edição
-                    if st.session_state.get(f"editando_{pedido['ID_Pedido']}", False):
+                    # Modo de edição - NOVA ABORDAGEM com ID único
+                    if st.session_state.get('pedido_em_edicao_dia_id') == int(pedido['ID_Pedido']):
                         with st.expander("✏️ Editar Pedido", expanded=True):
-                            # CORREÇÃO: Busca pedido específico pelo ID para evitar usar dados de outra iteração
-                            pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].iloc[0]
+                            # Busca o pedido específico pelo ID armazenado (não pela variável do loop)
+                            id_em_edicao_dia = st.session_state['pedido_em_edicao_dia_id']
+                            pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao_dia].iloc[0]
 
-                            with st.form(f"form_edit_{pedido['ID_Pedido']}"):
+                            with st.form(f"form_edit_{id_em_edicao_dia}"):
                                 # Linha 1: Status, Pagamento, Desconto
                                 edit_col1, edit_col2, edit_col3 = st.columns(3)
                                 with edit_col1:
@@ -2144,21 +2145,21 @@ if menu == "📅 Pedidos do Dia":
                                             "Desconto": novo_desconto,
                                             "Observacoes": novas_obs
                                         }
-                                        sucesso, msg = atualizar_pedido(int(pedido['ID_Pedido']), campos)
+                                        sucesso, msg = atualizar_pedido(id_em_edicao_dia, campos)
                                         if sucesso:
-                                            st.toast(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado!", icon="✅")
-                                            st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                            st.toast(f"✅ Pedido #{id_em_edicao_dia} atualizado!", icon="✅")
+                                            st.session_state['pedido_em_edicao_dia_id'] = None  # Fecha edição
                                             st.rerun()
                                         else:
                                             st.error(msg)
 
                                 if cancelar:
-                                    st.session_state[f"editando_{pedido['ID_Pedido']}"] = False
+                                    st.session_state['pedido_em_edicao_dia_id'] = None  # Fecha edição
                                     st.rerun()
 
                                 if excluir:
                                     # Define flag para mostrar confirmação FORA do form
-                                    st.session_state[f"confirmar_exclusao_{pedido['ID_Pedido']}"] = True
+                                    st.session_state[f"confirmar_exclusao_{id_em_edicao_dia}"] = True
                                     st.rerun()
 
                         # Confirmação de exclusão - FORA do form
@@ -2562,14 +2563,14 @@ elif menu == "Gerenciar Tudo":
                             st.rerun()
                     with col9:
                         if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            # Fecha todos os outros pedidos em edição antes de abrir este
-                            id_atual = pedido['ID_Pedido']
-                            keys_to_close = [k for k in st.session_state.keys() if k.startswith("editando_all_") and k != f"editando_all_{id_atual}"]
-                            for key in keys_to_close:
-                                st.session_state[key] = False
-
-                            # Abre/fecha o pedido atual
-                            st.session_state[f"editando_all_{id_atual}"] = not st.session_state.get(f"editando_all_{id_atual}", False)
+                            # NOVA ABORDAGEM: Usar uma única variável com o ID do pedido em edição
+                            id_clicado = int(pedido['ID_Pedido'])
+                            if st.session_state.get('pedido_em_edicao_id') == id_clicado:
+                                # Se já está editando este pedido, fecha
+                                st.session_state['pedido_em_edicao_id'] = None
+                            else:
+                                # Abre este pedido para edição
+                                st.session_state['pedido_em_edicao_id'] = id_clicado
                             st.rerun()
 
                 # Expander para visualização
@@ -2602,13 +2603,14 @@ elif menu == "Gerenciar Tudo":
                             st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = False
                             st.rerun()
 
-                # Expander para edição
-                if st.session_state.get(f"editando_all_{pedido['ID_Pedido']}", False):
+                # Expander para edição - NOVA ABORDAGEM com ID único
+                if st.session_state.get('pedido_em_edicao_id') == int(pedido['ID_Pedido']):
                     with st.expander("✏️ Editar Pedido", expanded=True):
-                        # CORREÇÃO: Busca pedido específico pelo ID para evitar usar dados de outra iteração
-                        pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].iloc[0]
+                        # Busca o pedido específico pelo ID armazenado (não pela variável do loop)
+                        id_em_edicao = st.session_state['pedido_em_edicao_id']
+                        pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
 
-                        with st.form(f"form_edit_all_{pedido['ID_Pedido']}"):
+                        with st.form(f"form_edit_all_{id_em_edicao}"):
                             st.markdown("### 📝 Dados do Pedido")
 
                             # Cliente e contato
@@ -2662,10 +2664,10 @@ elif menu == "Gerenciar Tudo":
                             excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary")
 
                             if salvar:
-                                # Atualiza o pedido
+                                # Atualiza o pedido usando o ID correto
                                 novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
                                 df_atualizado = st.session_state.pedidos.copy()
-                                mask = df_atualizado['ID_Pedido'] == pedido['ID_Pedido']
+                                mask = df_atualizado['ID_Pedido'] == id_em_edicao
 
                                 df_atualizado.loc[mask, 'Cliente'] = novo_cliente
                                 df_atualizado.loc[mask, 'Contato'] = novo_contato
@@ -2682,21 +2684,21 @@ elif menu == "Gerenciar Tudo":
                                 if salvar_pedidos(df_atualizado):
                                     # Recarrega do arquivo para garantir sincronização entre abas
                                     st.session_state.pedidos = carregar_pedidos()
-                                    st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
-                                    st.toast(f"✅ Pedido #{int(pedido['ID_Pedido'])} atualizado!", icon="✅")
-                                    logger.info(f"Pedido {pedido['ID_Pedido']} editado via Gerenciar Tudo")
+                                    st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
+                                    st.toast(f"✅ Pedido #{id_em_edicao} atualizado!", icon="✅")
+                                    logger.info(f"Pedido {id_em_edicao} editado via Gerenciar Tudo")
                                     time_module.sleep(0.5)
                                     st.rerun()
                                 else:
                                     st.error("❌ Erro ao salvar as alterações.")
 
                             if cancelar:
-                                st.session_state[f"editando_all_{pedido['ID_Pedido']}"] = False
+                                st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
                                 st.rerun()
 
                             if excluir:
                                 # Define flag para mostrar confirmação FORA do form
-                                st.session_state[f"confirmar_exclusao_all_{pedido['ID_Pedido']}"] = True
+                                st.session_state[f"confirmar_exclusao_all_{id_em_edicao}"] = True
                                 st.rerun()
 
                     # Confirmação de exclusão - FORA do form
