@@ -966,6 +966,8 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
                tipo_operacao pode ser: "criado", "atualizado_nome", "atualizado_contato", "sem_alteracao"
     """
     try:
+        logger.info(f"🔄 INICIANDO sincronizar_dados_cliente - Nome: '{nome_cliente}', Contato: '{contato}', Nome_Antigo: '{nome_cliente_antigo}'")
+
         # Validações básicas
         if not nome_cliente or not nome_cliente.strip():
             logger.warning("sincronizar_dados_cliente: nome_cliente vazio")
@@ -974,26 +976,37 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
         nome_cliente = nome_cliente.strip()
         contato_limpo = limpar_telefone(contato) if contato else ""
 
+        logger.info(f"📋 Após limpeza - Nome: '{nome_cliente}', Contato_Limpo: '{contato_limpo}'")
+
         # Carrega clientes
         df_clientes = st.session_state.clientes.copy()
+        logger.info(f"📊 Clientes carregados: {len(df_clientes)} registros")
+
         alterado = False
         tipo_operacao = "sem_alteracao"
         mensagem = ""
 
         # Busca cliente por CONTATO (chave primária)
         if contato_limpo:
+            logger.info(f"🔍 Buscando cliente por contato: '{contato_limpo}'")
+
             # Normaliza contatos no DataFrame para comparação
             df_clientes['Contato_Normalizado'] = df_clientes['Contato'].apply(limpar_telefone)
             mask_contato = df_clientes['Contato_Normalizado'] == contato_limpo
+
+            contatos_encontrados = mask_contato.sum()
+            logger.info(f"📊 Contatos encontrados: {contatos_encontrados}")
 
             if mask_contato.any():
                 # Cliente com esse contato JÁ EXISTE - Atualizar dados
                 idx = df_clientes[mask_contato].index[0]
                 nome_antigo_cadastro = df_clientes.loc[idx, 'Nome']
 
+                logger.info(f"✅ Cliente encontrado - Nome atual no cadastro: '{nome_antigo_cadastro}', Nome novo: '{nome_cliente}'")
+
                 # Verifica se o NOME mudou
                 if nome_antigo_cadastro != nome_cliente:
-                    logger.info(f"📝 Atualizando nome do cliente: '{nome_antigo_cadastro}' → '{nome_cliente}' (Contato: {contato_limpo})")
+                    logger.info(f"📝 ATUALIZANDO nome do cliente: '{nome_antigo_cadastro}' → '{nome_cliente}' (Contato: {contato_limpo})")
                     df_clientes.loc[idx, 'Nome'] = nome_cliente
 
                     # Registra no histórico
@@ -1083,25 +1096,31 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
 
         # Salva se houve alteração
         if alterado:
+            logger.info(f"💾 SALVANDO alterações no banco de clientes...")
+
             if salvar_clientes(df_clientes):
+                logger.info(f"✅ Banco de clientes salvo com sucesso!")
+
                 # Recarrega do arquivo para garantir sincronização
                 st.session_state.clientes = carregar_clientes()
-                logger.info(f"✅ Sincronização de cliente concluída: {mensagem}")
+                logger.info(f"🔄 Session state de clientes recarregado. Total: {len(st.session_state.clientes)} clientes")
+
+                logger.info(f"✅✅✅ Sincronização de cliente CONCLUÍDA COM SUCESSO: {mensagem}")
 
                 # Sincroniza com Google Sheets automaticamente
                 sincronizar_automaticamente(operacao="atualizar_cliente")
 
                 return True, mensagem, tipo_operacao
             else:
-                logger.error("❌ Erro ao salvar dados de cliente")
+                logger.error("❌ ERRO ao salvar dados de cliente no arquivo")
                 return False, "Erro ao salvar dados do cliente", "erro"
         else:
             # Nenhuma alteração necessária
-            logger.debug(f"ℹ️ Cliente '{nome_cliente}' já está atualizado")
+            logger.info(f"ℹ️ Cliente '{nome_cliente}' já está atualizado - Nenhuma alteração necessária")
             return True, "Cliente já está atualizado", "sem_alteracao"
 
     except Exception as e:
-        logger.error(f"❌ Erro em sincronizar_dados_cliente: {e}", exc_info=True)
+        logger.error(f"❌❌❌ ERRO CRÍTICO em sincronizar_dados_cliente: {e}", exc_info=True)
         return False, f"Erro ao sincronizar dados: {str(e)}", "erro"
 
 # ==============================================================================
@@ -2918,14 +2937,23 @@ elif menu == "Gerenciar Tudo":
 
                                     # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
                                     # Se nome ou contato mudaram, sincroniza com banco de clientes
-                                    if novo_cliente != cliente_antigo or novo_contato != contato_antigo:
+                                    cliente_mudou = str(novo_cliente).strip() != str(cliente_antigo).strip()
+                                    contato_mudou = str(novo_contato).strip() != str(contato_antigo).strip()
+
+                                    if cliente_mudou or contato_mudou:
+                                        logger.info(f"🔍 Detectada mudança - Cliente: {cliente_mudou} ('{cliente_antigo}' → '{novo_cliente}'), Contato: {contato_mudou} ('{contato_antigo}' → '{novo_contato}')")
+
                                         sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
                                             nome_cliente=novo_cliente,
                                             contato=novo_contato,
-                                            nome_cliente_antigo=cliente_antigo if novo_cliente != cliente_antigo else None,
+                                            nome_cliente_antigo=cliente_antigo if cliente_mudou else None,
                                             observacoes=""
                                         )
+
+                                        logger.info(f"📊 Resultado sincronização - Sucesso: {sucesso_sync}, Tipo: {tipo_op}, Msg: {msg_sync}")
+
                                         if sucesso_sync and tipo_op != "sem_alteracao":
+                                            st.toast(f"🔄 {msg_sync}", icon="🔄")
                                             logger.info(f"🔄 Sincronização automática: {msg_sync}")
 
                                     st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
