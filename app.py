@@ -941,6 +941,169 @@ def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
 
     return atualizados, len(mapa_contatos)
 
+def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, observacoes=""):
+    """
+    Sincroniza dados de cliente entre pedidos e cadastro de clientes.
+
+    Lógica:
+    1. Usa o CONTATO como chave primária (mais confiável que nome)
+    2. Se contato já existe no cadastro:
+       - Atualiza o nome se mudou
+       - Atualiza observações se fornecidas
+    3. Se contato é novo:
+       - Cria novo cliente no cadastro
+    4. Registra todas as alterações no histórico
+    5. Sincroniza automaticamente com Google Sheets
+
+    Args:
+        nome_cliente: Nome atual do cliente
+        contato: Telefone/contato do cliente (usado como chave primária)
+        nome_cliente_antigo: Nome anterior (opcional, para detectar renomeações)
+        observacoes: Observações sobre o cliente (opcional)
+
+    Returns:
+        tuple: (sucesso: bool, mensagem: str, tipo_operacao: str)
+               tipo_operacao pode ser: "criado", "atualizado_nome", "atualizado_contato", "sem_alteracao"
+    """
+    try:
+        # Validações básicas
+        if not nome_cliente or not nome_cliente.strip():
+            logger.warning("sincronizar_dados_cliente: nome_cliente vazio")
+            return False, "Nome do cliente não pode ser vazio", "erro"
+
+        nome_cliente = nome_cliente.strip()
+        contato_limpo = limpar_telefone(contato) if contato else ""
+
+        # Carrega clientes
+        df_clientes = st.session_state.clientes.copy()
+        alterado = False
+        tipo_operacao = "sem_alteracao"
+        mensagem = ""
+
+        # Busca cliente por CONTATO (chave primária)
+        if contato_limpo:
+            # Normaliza contatos no DataFrame para comparação
+            df_clientes['Contato_Normalizado'] = df_clientes['Contato'].apply(limpar_telefone)
+            mask_contato = df_clientes['Contato_Normalizado'] == contato_limpo
+
+            if mask_contato.any():
+                # Cliente com esse contato JÁ EXISTE - Atualizar dados
+                idx = df_clientes[mask_contato].index[0]
+                nome_antigo_cadastro = df_clientes.loc[idx, 'Nome']
+
+                # Verifica se o NOME mudou
+                if nome_antigo_cadastro != nome_cliente:
+                    logger.info(f"📝 Atualizando nome do cliente: '{nome_antigo_cadastro}' → '{nome_cliente}' (Contato: {contato_limpo})")
+                    df_clientes.loc[idx, 'Nome'] = nome_cliente
+
+                    # Registra no histórico
+                    registrar_alteracao(
+                        tipo="ATUALIZAR_CLIENTE",
+                        id_pedido=0,  # Não vinculado a pedido específico
+                        campo="Nome",
+                        valor_antigo=nome_antigo_cadastro,
+                        valor_novo=nome_cliente
+                    )
+
+                    alterado = True
+                    tipo_operacao = "atualizado_nome"
+                    mensagem = f"Nome atualizado: '{nome_antigo_cadastro}' → '{nome_cliente}'"
+
+                # Atualiza observações se fornecidas
+                if observacoes and observacoes.strip():
+                    obs_antigas = df_clientes.loc[idx, 'Observacoes']
+                    if str(obs_antigas) != str(observacoes):
+                        df_clientes.loc[idx, 'Observacoes'] = observacoes
+                        alterado = True
+                        if tipo_operacao == "sem_alteracao":
+                            tipo_operacao = "atualizado_observacoes"
+
+                # Remove coluna auxiliar
+                df_clientes = df_clientes.drop(columns=['Contato_Normalizado'])
+            else:
+                # Cliente com esse contato NÃO EXISTE - Criar novo
+                logger.info(f"✨ Criando novo cliente: '{nome_cliente}' (Contato: {contato_limpo})")
+
+                novo_cliente = {
+                    'Nome': nome_cliente,
+                    'Contato': contato_limpo,
+                    'Observacoes': observacoes if observacoes else ""
+                }
+
+                df_clientes = pd.concat([df_clientes, pd.DataFrame([novo_cliente])], ignore_index=True)
+
+                # Remove coluna auxiliar se existir
+                if 'Contato_Normalizado' in df_clientes.columns:
+                    df_clientes = df_clientes.drop(columns=['Contato_Normalizado'])
+
+                # Registra no histórico
+                registrar_alteracao(
+                    tipo="CRIAR_CLIENTE",
+                    id_pedido=0,
+                    campo="Cliente_Completo",
+                    valor_antigo="",
+                    valor_novo=f"{nome_cliente} - {contato_limpo}"
+                )
+
+                alterado = True
+                tipo_operacao = "criado"
+                mensagem = f"Novo cliente criado: '{nome_cliente}'"
+        else:
+            # Sem contato - busca por NOME para atualizar
+            mask_nome = df_clientes['Nome'].str.strip() == nome_cliente
+
+            if mask_nome.any():
+                # Cliente com esse nome existe, mas sem contato
+                tipo_operacao = "sem_alteracao"
+                mensagem = "Cliente já existe (busca por nome, sem contato fornecido)"
+            else:
+                # Cliente não existe e não tem contato - criar com contato vazio
+                logger.info(f"✨ Criando novo cliente sem contato: '{nome_cliente}'")
+
+                novo_cliente = {
+                    'Nome': nome_cliente,
+                    'Contato': "",
+                    'Observacoes': observacoes if observacoes else ""
+                }
+
+                df_clientes = pd.concat([df_clientes, pd.DataFrame([novo_cliente])], ignore_index=True)
+
+                # Registra no histórico
+                registrar_alteracao(
+                    tipo="CRIAR_CLIENTE",
+                    id_pedido=0,
+                    campo="Cliente_Completo",
+                    valor_antigo="",
+                    valor_novo=f"{nome_cliente} - (sem contato)"
+                )
+
+                alterado = True
+                tipo_operacao = "criado"
+                mensagem = f"Novo cliente criado: '{nome_cliente}' (sem contato)"
+
+        # Salva se houve alteração
+        if alterado:
+            if salvar_clientes(df_clientes):
+                # Recarrega do arquivo para garantir sincronização
+                st.session_state.clientes = carregar_clientes()
+                logger.info(f"✅ Sincronização de cliente concluída: {mensagem}")
+
+                # Sincroniza com Google Sheets automaticamente
+                sincronizar_automaticamente(operacao="atualizar_cliente")
+
+                return True, mensagem, tipo_operacao
+            else:
+                logger.error("❌ Erro ao salvar dados de cliente")
+                return False, "Erro ao salvar dados do cliente", "erro"
+        else:
+            # Nenhuma alteração necessária
+            logger.debug(f"ℹ️ Cliente '{nome_cliente}' já está atualizado")
+            return True, "Cliente já está atualizado", "sem_alteracao"
+
+    except Exception as e:
+        logger.error(f"❌ Erro em sincronizar_dados_cliente: {e}", exc_info=True)
+        return False, f"Erro ao sincronizar dados: {str(e)}", "erro"
+
 # ==============================================================================
 # BANCO DE DADOS COM LOCKING E CACHE
 # ==============================================================================
@@ -1274,6 +1437,16 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     st.session_state.pedidos = carregar_pedidos()
     registrar_alteracao("CRIAR", nid, "pedido_completo", None, f"{cliente} - R${val}")
 
+    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
+    # Ao criar novo pedido, sincroniza dados do cliente com cadastro
+    sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
+        nome_cliente=cliente.strip(),
+        contato=tel,
+        observacoes=""
+    )
+    if sucesso_sync and tipo_op in ["criado", "atualizado_nome"]:
+        logger.info(f"🔄 Sincronização ao criar pedido: {msg_sync}")
+
     # Sincronização automática com Google Sheets (se habilitada)
     sincronizar_automaticamente(operacao="criar")
 
@@ -1335,6 +1508,19 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         salvar_pedidos(df)
         # Recarrega do arquivo para garantir sincronização entre abas
         st.session_state.pedidos = carregar_pedidos()
+
+        # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
+        # Se nome ou contato foram alterados, sincroniza com cadastro de clientes
+        if 'Cliente' in campos_atualizar or 'Contato' in campos_atualizar:
+            nome_cliente_atual = df.at[idx, 'Cliente']
+            contato_atual = df.at[idx, 'Contato']
+            sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
+                nome_cliente=nome_cliente_atual,
+                contato=contato_atual,
+                observacoes=""
+            )
+            if sucesso_sync and tipo_op != "sem_alteracao":
+                logger.info(f"🔄 Sincronização ao atualizar pedido #{id_pedido}: {msg_sync}")
 
         # Sincronização automática com Google Sheets (se habilitada)
         sincronizar_automaticamente(operacao="editar")
@@ -2704,6 +2890,11 @@ elif menu == "Gerenciar Tudo":
                             excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary")
 
                             if salvar:
+                                # Captura dados antigos ANTES de atualizar (para sincronização)
+                                pedido_antigo = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
+                                cliente_antigo = pedido_antigo['Cliente']
+                                contato_antigo = pedido_antigo['Contato']
+
                                 # Atualiza o pedido usando o ID correto
                                 novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
                                 df_atualizado = st.session_state.pedidos.copy()
@@ -2724,6 +2915,19 @@ elif menu == "Gerenciar Tudo":
                                 if salvar_pedidos(df_atualizado):
                                     # Recarrega do arquivo para garantir sincronização entre abas
                                     st.session_state.pedidos = carregar_pedidos()
+
+                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
+                                    # Se nome ou contato mudaram, sincroniza com banco de clientes
+                                    if novo_cliente != cliente_antigo or novo_contato != contato_antigo:
+                                        sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
+                                            nome_cliente=novo_cliente,
+                                            contato=novo_contato,
+                                            nome_cliente_antigo=cliente_antigo if novo_cliente != cliente_antigo else None,
+                                            observacoes=""
+                                        )
+                                        if sucesso_sync and tipo_op != "sem_alteracao":
+                                            logger.info(f"🔄 Sincronização automática: {msg_sync}")
+
                                     st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
                                     st.toast(f"✅ Pedido #{id_em_edicao} atualizado!", icon="✅")
                                     logger.info(f"Pedido {id_em_edicao} editado via Gerenciar Tudo")
