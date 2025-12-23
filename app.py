@@ -1639,7 +1639,8 @@ def gerar_recibo_pdf(dados):
         y -= 25
         p.setFont("Helvetica", 10)
         
-        preco_formatado = f"{PRECO_BASE:.2f}".replace(".", ",")
+        preco_atual = obter_preco_base()
+        preco_formatado = f"{preco_atual:.2f}".replace(".", ",")
         if float(dados.get('Caruru', 0)) > 0:
             p.drawString(40, y, "Caruru Tradicional")
             p.drawString(350, y, f"{int(float(dados.get('Caruru')))}")
@@ -2619,7 +2620,8 @@ elif menu == "Novo Pedido":
             dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
         
         # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
-        st.caption(f"💵 Preço unitário: R$ {PRECO_BASE:.2f} | Cálculo: (Caruru + Bobó) × R$ {PRECO_BASE:.2f} - Desconto%")
+        preco_atual = obter_preco_base()
+        st.caption(f"💵 Preço unitário: R$ {preco_atual:.2f} | Cálculo: (Caruru + Bobó) × R$ {preco_atual:.2f} - Desconto%")
         
         obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
         
