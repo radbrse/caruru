@@ -2697,14 +2697,20 @@ elif menu == "Gerenciar Tudo":
 
         # Filtros e Ordenação
         with st.expander("🔍 Filtros e Ordenação", expanded=False):
-            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+            col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
             with col_f1:
                 f_status = st.multiselect("Status", OPCOES_STATUS, default=OPCOES_STATUS)
             with col_f2:
                 f_pagto = st.multiselect("Pagamento", OPCOES_PAGAMENTO, default=OPCOES_PAGAMENTO)
             with col_f3:
-                f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês"])
+                f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês", "Data Específica"])
             with col_f4:
+                # Filtro de data específica (só aparece se selecionado)
+                if f_periodo == "Data Específica":
+                    f_data_especifica = st.date_input("📅 Selecione a Data", value=hoje_brasil(), format="DD/MM/YYYY")
+                else:
+                    f_data_especifica = None
+            with col_f5:
                 f_ordem = st.selectbox("Ordenar por", [
                     "📅 Data (mais recente)",
                     "📅 Data (mais antiga)",
@@ -2736,6 +2742,8 @@ elif menu == "Gerenciar Tudo":
         elif f_periodo == "Este Mês":
             inicio_mes = hoje_brasil().replace(day=1)
             df_view = df_view[df_view['Data'] >= inicio_mes]
+        elif f_periodo == "Data Específica" and f_data_especifica:
+            df_view = df_view[df_view['Data'] == f_data_especifica]
 
         # Aplica ordenação escolhida
         try:
@@ -2766,7 +2774,20 @@ elif menu == "Gerenciar Tudo":
         # Métricas com totais de caruru e bobó
         total_caruru = df_view['Caruru'].sum()
         total_bobo = df_view['Bobo'].sum()
-        st.markdown(f"**{len(df_view)}** pedidos encontrados | **Total:** {formatar_valor_br(df_view['Valor'].sum())} | **🥘 Caruru:** {int(total_caruru)} | **🦐 Bobó:** {int(total_bobo)}")
+        total_valor = df_view['Valor'].sum()
+
+        # Exibe métricas em destaque
+        st.divider()
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            st.metric("📦 Pedidos", len(df_view))
+        with col_m2:
+            st.metric("🥘 Caruru", f"{int(total_caruru)} kg")
+        with col_m3:
+            st.metric("🦐 Bobó", f"{int(total_bobo)} kg")
+        with col_m4:
+            st.metric("💰 Total", formatar_valor_br(total_valor))
+        st.divider()
 
         # Lista de pedidos com visualização e edição inline
         if df_view.empty:
