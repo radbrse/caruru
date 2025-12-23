@@ -645,22 +645,41 @@ def sincronizar_automaticamente(operacao="geral"):
     Args:
         operacao: Tipo de operação realizada ('criar', 'editar', 'excluir', 'geral')
     """
+    from datetime import datetime
+
+    # Incrementa contador de tentativas
+    st.session_state['sync_stats']['total_tentativas'] += 1
+
     # Verifica se sincronização automática está habilitada
     if not st.session_state.get('sync_automatico_habilitado', False):
+        st.session_state['sync_stats']['ultimo_status'] = '⚪ DESABILITADO'
+        st.session_state['sync_stats']['ultimo_erro'] = 'Sincronização automática desabilitada pelo usuário'
+        logger.info("🔴 Sync automático: DESABILITADO pelo usuário")
         return
 
     # Verifica se Google Sheets está disponível
     if not GSPREAD_AVAILABLE:
+        st.session_state['sync_stats']['ultimo_status'] = '❌ GSPREAD NÃO DISPONÍVEL'
+        st.session_state['sync_stats']['ultimo_erro'] = 'Biblioteca gspread não está instalada'
+        st.session_state['sync_stats']['falhas'] += 1
+        logger.error("🔴 Sync automático: gspread não disponível")
         return
 
     if "gcp_service_account" not in st.secrets:
+        st.session_state['sync_stats']['ultimo_status'] = '❌ SEM CREDENCIAIS'
+        st.session_state['sync_stats']['ultimo_erro'] = 'Credenciais do Google Sheets não configuradas'
+        st.session_state['sync_stats']['falhas'] += 1
+        logger.error("🔴 Sync automático: credenciais não configuradas")
         return
 
     try:
         # Tenta conectar e enviar (modo silencioso)
         client = conectar_google_sheets()
         if not client:
-            logger.warning("Sync automático: não foi possível conectar ao Sheets")
+            st.session_state['sync_stats']['ultimo_status'] = '❌ FALHA CONEXÃO'
+            st.session_state['sync_stats']['ultimo_erro'] = 'Não foi possível conectar ao Google Sheets'
+            st.session_state['sync_stats']['falhas'] += 1
+            logger.warning("🔴 Sync automático: não foi possível conectar ao Sheets")
             return
 
         # Envia PEDIDOS para Sheets
@@ -671,18 +690,37 @@ def sincronizar_automaticamente(operacao="geral"):
         df_clientes = st.session_state.clientes
         sucesso_clientes, msg_clientes = salvar_no_sheets(client, "Clientes", df_clientes)
 
+        # Atualiza estatísticas baseado no resultado
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        st.session_state['sync_stats']['ultima_sync'] = agora
+
         if sucesso_pedidos and sucesso_clientes:
-            logger.info(f"Sync automático ({operacao}): Pedidos e Clientes sincronizados")
+            st.session_state['sync_stats']['sucessos'] += 1
+            st.session_state['sync_stats']['ultimo_status'] = '✅ SUCESSO'
+            st.session_state['sync_stats']['ultimo_erro'] = None
+            logger.info(f"🟢 Sync automático ({operacao}): Pedidos e Clientes sincronizados ✅")
         elif sucesso_pedidos:
-            logger.warning(f"Sync automático ({operacao}): Pedidos OK, Clientes falhou - {msg_clientes}")
+            st.session_state['sync_stats']['falhas'] += 1
+            st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Pedidos)'
+            st.session_state['sync_stats']['ultimo_erro'] = f'Clientes falhou: {msg_clientes}'
+            logger.warning(f"🟡 Sync automático ({operacao}): Pedidos OK, Clientes falhou - {msg_clientes}")
         elif sucesso_clientes:
-            logger.warning(f"Sync automático ({operacao}): Clientes OK, Pedidos falhou - {msg_pedidos}")
+            st.session_state['sync_stats']['falhas'] += 1
+            st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Clientes)'
+            st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos falhou: {msg_pedidos}'
+            logger.warning(f"🟡 Sync automático ({operacao}): Clientes OK, Pedidos falhou - {msg_pedidos}")
         else:
-            logger.warning(f"Sync automático ({operacao}): Ambos falharam")
+            st.session_state['sync_stats']['falhas'] += 1
+            st.session_state['sync_stats']['ultimo_status'] = '❌ AMBOS FALHARAM'
+            st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos: {msg_pedidos} | Clientes: {msg_clientes}'
+            logger.warning(f"🔴 Sync automático ({operacao}): Ambos falharam")
 
     except Exception as e:
-        # Falha silenciosa - apenas registra no log
-        logger.warning(f"Sync automático ({operacao}) com erro: {e}")
+        # Falha silenciosa - registra no log e nas estatísticas
+        st.session_state['sync_stats']['falhas'] += 1
+        st.session_state['sync_stats']['ultimo_status'] = '❌ EXCEÇÃO'
+        st.session_state['sync_stats']['ultimo_erro'] = str(e)
+        logger.warning(f"🔴 Sync automático ({operacao}) com erro: {e}")
 
 # ==============================================================================
 # FUNÇÕES DE VALIDAÇÃO ROBUSTAS
@@ -2124,6 +2162,17 @@ if 'sync_automatico_habilitado' not in st.session_state:
     # Sincronização automática com Google Sheets (padrão: SEMPRE ATIVADO)
     st.session_state['sync_automatico_habilitado'] = True
 
+# Inicializa contadores de diagnóstico de sincronização
+if 'sync_stats' not in st.session_state:
+    st.session_state['sync_stats'] = {
+        'total_tentativas': 0,
+        'sucessos': 0,
+        'falhas': 0,
+        'ultima_sync': None,
+        'ultimo_status': None,
+        'ultimo_erro': None
+    }
+
 # ==============================================================================
 # SIDEBAR
 # ==============================================================================
@@ -2207,6 +2256,46 @@ with st.sidebar:
                 st.info("🟢 Sync ativo - Dados são enviados automaticamente ao Sheets")
             else:
                 st.caption("⚪ Sync desativado - Use os botões manuais na aba Manutenção")
+
+            # 📊 PAINEL DE DIAGNÓSTICO DE SINCRONIZAÇÃO
+            st.divider()
+            st.caption("📊 **Diagnóstico de Sincronização**")
+
+            stats = st.session_state.get('sync_stats', {})
+
+            # Métricas em colunas
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Tentativas", stats.get('total_tentativas', 0), delta=None)
+            with col2:
+                st.metric("✅ Sucessos", stats.get('sucessos', 0), delta=None)
+            with col3:
+                st.metric("❌ Falhas", stats.get('falhas', 0), delta=None)
+
+            # Status da última sincronização
+            ultimo_status = stats.get('ultimo_status')
+            if ultimo_status:
+                if '✅' in ultimo_status:
+                    st.success(f"**Último Status:** {ultimo_status}")
+                elif '⚠️' in ultimo_status:
+                    st.warning(f"**Último Status:** {ultimo_status}")
+                elif '⚪' in ultimo_status:
+                    st.info(f"**Último Status:** {ultimo_status}")
+                else:
+                    st.error(f"**Último Status:** {ultimo_status}")
+
+                # Mostra timestamp da última sync
+                ultima_sync = stats.get('ultima_sync')
+                if ultima_sync:
+                    st.caption(f"🕐 Última sync: {ultima_sync}")
+
+                # Mostra erro se houver
+                ultimo_erro = stats.get('ultimo_erro')
+                if ultimo_erro:
+                    with st.expander("🔍 Detalhes do Erro"):
+                        st.code(ultimo_erro, language=None)
+            else:
+                st.info("**Status:** Nenhuma sincronização realizada ainda")
         else:
             st.warning("⚠️ Sheets não configurado")
             st.caption("Configure na aba 🛠️ Manutenção")
