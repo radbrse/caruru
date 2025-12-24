@@ -3430,9 +3430,14 @@ elif menu == "🖨️ Relatórios & Recibos":
         else:
             df_rel = df
             nome = "Relatorio_Geral.pdf"
-        
-        st.write(f"📊 **{len(df_rel)}** pedidos | **Total:** {formatar_valor_br(df_rel['Valor'].sum())}")
-        
+
+        # Calcula totais
+        total_caruru = int(df_rel['Caruru'].sum()) if not df_rel.empty else 0
+        total_bobo = int(df_rel['Bobo'].sum()) if not df_rel.empty else 0
+        total_valor = df_rel['Valor'].sum() if not df_rel.empty else 0
+
+        st.write(f"📊 **{len(df_rel)}** pedidos | 🥘 **{total_caruru}** kg Caruru | 🦐 **{total_bobo}** kg Bobó | 💰 **Total:** {formatar_valor_br(total_valor)}")
+
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório PDF", use_container_width=True, type="primary"):
                 pdf = gerar_relatorio_pdf(df_rel, nome.replace(".pdf", ""))
