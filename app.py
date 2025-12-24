@@ -1858,7 +1858,7 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         desenhar_cabecalho(p, titulo_relatorio)
         
         p.setFont("Helvetica-Bold", 9)
-        cols = [30, 55, 100, 200, 240, 280, 330, 400, 480]
+        cols = [20, 45, 85, 235, 270, 310, 370, 440, 515]
         hdrs = ["ID", "Data", "Cliente", "Car", "Bob", "Valor", "Status", "Pagto", "Hora"]
         for x, h in zip(cols, hdrs):
             p.drawString(x, y, h)
@@ -1883,33 +1883,33 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
             h_s = row['Hora'].strftime('%H:%M') if isinstance(row['Hora'], time) else str(row['Hora'])[:5] if row['Hora'] else ""
             st_cl = str(row['Status']).replace("🔴", "").replace("✅", "").replace("🟡", "").replace("🚫", "").strip()[:12]
             
-            p.drawString(30, y, str(row.get('ID_Pedido', '')))
-            p.drawString(55, y, d_s)
-            p.drawString(100, y, str(row.get('Cliente', ''))[:15])
-            p.drawString(200, y, str(int(row.get('Caruru', 0))))
-            p.drawString(240, y, str(int(row.get('Bobo', 0))))
+            p.drawString(20, y, str(row.get('ID_Pedido', '')))
+            p.drawString(45, y, d_s)
+            p.drawString(85, y, str(row.get('Cliente', ''))[:24])
+            p.drawString(235, y, str(int(row.get('Caruru', 0))))
+            p.drawString(270, y, str(int(row.get('Bobo', 0))))
             valor_formatado = f"{row.get('Valor', 0):.2f}".replace(".", ",")
-            p.drawString(280, y, valor_formatado)
-            p.drawString(330, y, st_cl)
-            p.drawString(400, y, str(row.get('Pagamento', ''))[:10])
-            p.drawString(480, y, h_s)
+            p.drawString(310, y, valor_formatado)
+            p.drawString(370, y, st_cl)
+            p.drawString(440, y, str(row.get('Pagamento', ''))[:10])
+            p.drawString(515, y, h_s)
 
             total += row.get('Valor', 0)
             total_caruru += row.get('Caruru', 0)
             total_bobo += row.get('Bobo', 0)
             y -= 12
         
-        p.line(30, y, 565, y)
+        p.line(20, y, 570, y)
         p.setFont("Helvetica-Bold", 11)
         total_formatado = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total_formatado}")
+        p.drawString(310, y - 20, f"TOTAL GERAL: R$ {total_formatado}")
         p.setFont("Helvetica-Bold", 9)
-        p.drawString(30, y - 20, f"Pedidos: {len(df_filtrado)}")
-        p.drawString(30, y - 35, f"Caruru: {int(total_caruru)} kg")
-        p.drawString(30, y - 50, f"Bobó: {int(total_bobo)} kg")
-        
+        p.drawString(20, y - 20, f"Pedidos: {len(df_filtrado)}")
+        p.drawString(20, y - 35, f"Caruru: {int(total_caruru)} kg")
+        p.drawString(20, y - 50, f"Bobó: {int(total_bobo)} kg")
+
         p.setFont("Helvetica-Oblique", 8)
-        p.drawString(30, 30, f"Gerado em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
+        p.drawString(20, 30, f"Gerado em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
         
         p.showPage()
         p.save()
