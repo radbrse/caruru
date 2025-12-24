@@ -1628,7 +1628,7 @@ def desenhar_cabecalho(p, titulo):
     """Desenha cabeçalho padrão no PDF."""
     if os.path.exists("logo.png"):
         try:
-            p.drawImage("logo.png", 30, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
+            p.drawImage("logo.png", 20, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
         except:
             pass
     p.setFont("Helvetica-Bold", 16)
@@ -1636,9 +1636,9 @@ def desenhar_cabecalho(p, titulo):
     p.setFont("Helvetica", 10)
     p.drawString(150, 760, "Comprovante / Relatório")
     p.setFont("Helvetica-Bold", 14)
-    p.drawRightString(565, 765, titulo)
+    p.drawRightString(570, 765, titulo)
     p.setLineWidth(1)
-    p.line(30, 740, 565, 740)
+    p.line(20, 740, 570, 740)
 
 def gerar_recibo_pdf(dados):
     """Gera recibo individual em PDF."""
