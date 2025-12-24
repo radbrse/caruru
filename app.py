@@ -645,8 +645,6 @@ def sincronizar_automaticamente(operacao="geral"):
     Args:
         operacao: Tipo de operação realizada ('criar', 'editar', 'excluir', 'geral')
     """
-    from datetime import datetime
-
     # Incrementa contador de tentativas
     st.session_state['sync_stats']['total_tentativas'] += 1
 
@@ -690,8 +688,8 @@ def sincronizar_automaticamente(operacao="geral"):
         df_clientes = st.session_state.clientes
         sucesso_clientes, msg_clientes = salvar_no_sheets(client, "Clientes", df_clientes)
 
-        # Atualiza estatísticas baseado no resultado
-        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        # Atualiza estatísticas baseado no resultado (horário de Brasília)
+        agora = agora_brasil().strftime("%d/%m/%Y %H:%M:%S")
         st.session_state['sync_stats']['ultima_sync'] = agora
 
         if sucesso_pedidos and sucesso_clientes:
