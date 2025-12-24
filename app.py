@@ -530,16 +530,23 @@ def salvar_no_sheets(client, nome_aba, df):
         worksheet.update(range_atualizar, dados_completos)
 
         # 🧹 LIMPA DADOS FANTASMA: Remove linhas antigas excedentes
-        # Se o dataset encolheu (ex: 50→40 pedidos), limpa as 10 linhas antigas
-        linhas_antigas = worksheet.row_count
-        if linhas_antigas > num_linhas:
-            # Constrói range de limpeza corretamente usando rowcol_to_a1
-            # Suporta qualquer número de colunas (AA, AB, etc)
-            inicio_limpar = rowcol_to_a1(num_linhas + 1, 1)  # Ex: "A51"
-            fim_limpar = rowcol_to_a1(linhas_antigas, num_colunas)  # Ex: "L100" ou "AA100"
-            range_limpar = f'{inicio_limpar}:{fim_limpar}'
-            worksheet.batch_clear([range_limpar])
-            logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas (dados fantasma) - Range: {range_limpar}")
+        # IMPORTANTE: Protegido com try/except para não marcar sync como erro
+        # se a limpeza falhar (dados principais já foram salvos com sucesso)
+        try:
+            # Se o dataset encolheu (ex: 50→40 pedidos), limpa as 10 linhas antigas
+            linhas_antigas = worksheet.row_count
+            if linhas_antigas > num_linhas:
+                # Constrói range de limpeza corretamente usando rowcol_to_a1
+                # Suporta qualquer número de colunas (AA, AB, etc)
+                inicio_limpar = rowcol_to_a1(num_linhas + 1, 1)  # Ex: "A51"
+                fim_limpar = rowcol_to_a1(linhas_antigas, num_colunas)  # Ex: "L100" ou "AA100"
+                range_limpar = f'{inicio_limpar}:{fim_limpar}'
+                worksheet.batch_clear([range_limpar])
+                logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas (dados fantasma) - Range: {range_limpar}")
+        except Exception as e_limpar:
+            # Limpeza falhou, mas update já ocorreu = sync bem-sucedida
+            # Log como warning, não como erro
+            logger.warning(f"⚠️ Dados salvos OK, mas limpeza de linhas antigas falhou: {e_limpar}")
 
         logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
         return True, f"✅ {len(df)} registros salvos no Google Sheets"
