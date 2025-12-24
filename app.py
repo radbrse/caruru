@@ -1865,7 +1865,9 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
         y -= 20
         p.setFont("Helvetica", 8)
         total = 0
-        
+        total_caruru = 0
+        total_bobo = 0
+
         for _, row in df_filtrado.iterrows():
             if y < 60:
                 p.showPage()
@@ -1891,16 +1893,20 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
             p.drawString(330, y, st_cl)
             p.drawString(400, y, str(row.get('Pagamento', ''))[:10])
             p.drawString(480, y, h_s)
-            
+
             total += row.get('Valor', 0)
+            total_caruru += row.get('Caruru', 0)
+            total_bobo += row.get('Bobo', 0)
             y -= 12
         
         p.line(30, y, 565, y)
         p.setFont("Helvetica-Bold", 11)
         total_formatado = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         p.drawString(280, y - 20, f"TOTAL GERAL: R$ {total_formatado}")
-        p.setFont("Helvetica", 9)
-        p.drawString(30, y - 20, f"Total de pedidos: {len(df_filtrado)}")
+        p.setFont("Helvetica-Bold", 9)
+        p.drawString(30, y - 20, f"Pedidos: {len(df_filtrado)}")
+        p.drawString(30, y - 35, f"Caruru: {int(total_caruru)} kg")
+        p.drawString(30, y - 50, f"Bobó: {int(total_bobo)} kg")
         
         p.setFont("Helvetica-Oblique", 8)
         p.drawString(30, 30, f"Gerado em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
