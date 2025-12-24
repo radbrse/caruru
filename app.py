@@ -3047,6 +3047,11 @@ elif menu == "Gerenciar Tudo":
                                     # Recarrega do arquivo para garantir sincronização entre abas
                                     st.session_state.pedidos = carregar_pedidos()
 
+                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE SHEETS
+                                    # IMPORTANTE: Sincroniza SEMPRE que houver edição, independente do campo alterado
+                                    sincronizar_automaticamente(operacao="editar")
+                                    logger.info(f"🔄 Sincronização automática disparada após edição do pedido #{id_em_edicao}")
+
                                     # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
                                     # Se nome ou contato mudaram, sincroniza com banco de clientes
                                     cliente_mudou = str(novo_cliente).strip() != str(cliente_antigo).strip()
@@ -3113,6 +3118,10 @@ elif menu == "Gerenciar Tudo":
 
                                     # Recarrega dados do arquivo
                                     st.session_state.pedidos = carregar_pedidos()
+
+                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE SHEETS
+                                    sincronizar_automaticamente(operacao="excluir")
+                                    logger.info(f"🔄 Sincronização automática disparada após exclusão do pedido #{id_para_excluir}")
 
                                     st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
                                     logger.info(f"✅ Pedido {id_para_excluir} excluído via Gerenciar Tudo - Total restante: {len(st.session_state.pedidos)}")
