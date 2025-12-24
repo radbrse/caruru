@@ -3446,7 +3446,9 @@ elif menu == "🖨️ Relatórios & Recibos":
 
         if not df_rel.empty:
             if st.button("📊 Gerar Relatório PDF", use_container_width=True, type="primary"):
-                pdf = gerar_relatorio_pdf(df_rel, nome.replace(".pdf", ""))
+                # Ordena por Data e Hora antes de gerar o PDF
+                df_rel_ordenado = df_rel.sort_values(['Data', 'Hora'], ascending=[True, True])
+                pdf = gerar_relatorio_pdf(df_rel_ordenado, nome.replace(".pdf", ""))
                 if pdf:
                     st.download_button("⬇️ Baixar Relatório", pdf, nome, "application/pdf")
                 else:
