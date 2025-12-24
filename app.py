@@ -519,11 +519,24 @@ def salvar_no_sheets(client, nome_aba, df):
         # Calcula range exato necessário
         num_linhas = len(dados_completos)
         num_colunas = len(df_str.columns)
-        range_atualizar = f'A1:{chr(65 + num_colunas - 1)}{num_linhas}'
+
+        # Usa rowcol_to_a1 para suportar >26 colunas (AA, AB, etc)
+        from gspread.utils import rowcol_to_a1
+        ultima_celula = rowcol_to_a1(num_linhas, num_colunas)
+        range_atualizar = f'A1:{ultima_celula}'
 
         # Update atômico - sobrescreve dados antigos SEM limpar antes
         # Se falhar, dados antigos permanecem intactos
         worksheet.update(range_atualizar, dados_completos)
+
+        # 🧹 LIMPA DADOS FANTASMA: Remove linhas antigas excedentes
+        # Se o dataset encolheu (ex: 50→40 pedidos), limpa as 10 linhas antigas
+        linhas_antigas = worksheet.row_count
+        if linhas_antigas > num_linhas:
+            # Limpa apenas as linhas excedentes (dados fantasma)
+            range_limpar = f'A{num_linhas + 1}:{ultima_celula.split(":")[1][0]}{linhas_antigas}'
+            worksheet.batch_clear([range_limpar])
+            logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas (dados fantasma)")
 
         logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
         return True, f"✅ {len(df)} registros salvos no Google Sheets"
@@ -1189,8 +1202,10 @@ def carregar_clientes():
                     df_cloud, msg = carregar_do_sheets(client, "Clientes")
                     if df_cloud is not None and not df_cloud.empty:
                         # Salva usando a função oficial (com file locking e validações)
-                        salvar_clientes(df_cloud)
-                        logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets com sucesso!")
+                        if salvar_clientes(df_cloud):
+                            logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets com sucesso!")
+                        else:
+                            logger.error("❌ AUTO-RECOVERY: Falha ao salvar clientes recuperados do Sheets")
                     else:
                         logger.info("ℹ️ AUTO-RECOVERY: Aba 'Clientes' vazia ou não existe no Sheets. Criando DataFrame vazio.")
             except Exception as e:
@@ -1240,8 +1255,10 @@ def carregar_pedidos():
                     df_cloud, msg = carregar_do_sheets(client, "Pedidos")
                     if df_cloud is not None and not df_cloud.empty:
                         # Salva usando a função oficial (com file locking, backup e validações)
-                        salvar_pedidos(df_cloud)
-                        logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets com sucesso!")
+                        if salvar_pedidos(df_cloud):
+                            logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets com sucesso!")
+                        else:
+                            logger.error("❌ AUTO-RECOVERY: Falha ao salvar pedidos recuperados do Sheets")
                     else:
                         logger.info("ℹ️ AUTO-RECOVERY: Aba 'Pedidos' vazia ou não existe no Sheets. Criando DataFrame vazio.")
             except Exception as e:
