@@ -1487,7 +1487,13 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     
     df_novo = pd.DataFrame([novo])
     st.session_state.pedidos = pd.concat([df_p, df_novo], ignore_index=True)
-    salvar_pedidos(st.session_state.pedidos)
+
+    # Tenta salvar no disco
+    if not salvar_pedidos(st.session_state.pedidos):
+        # Se falhar, reverte para estado anterior e retorna erro
+        st.session_state.pedidos = df_p
+        return None, ["❌ ERRO: Não foi possível salvar o pedido. Tente novamente."], []
+
     # Recarrega do arquivo para garantir sincronização entre abas
     st.session_state.pedidos = carregar_pedidos()
     registrar_alteracao("CRIAR", nid, "pedido_completo", None, f"{cliente} - R${val}")
@@ -1560,7 +1566,10 @@ def atualizar_pedido(id_pedido, campos_atualizar):
                 df.at[idx, 'Desconto']
             )
 
-        salvar_pedidos(df)
+        # Tenta salvar no disco
+        if not salvar_pedidos(df):
+            return False, f"❌ ERRO: Não foi possível salvar as alterações. Tente novamente."
+
         # Recarrega do arquivo para garantir sincronização entre abas
         st.session_state.pedidos = carregar_pedidos()
 
@@ -1597,10 +1606,16 @@ def excluir_pedido(id_pedido, motivo=""):
         
         pedido = df[mask].iloc[0]
         cliente = pedido.get('Cliente', 'Desconhecido')
-        
+
         # Remove do DataFrame
-        st.session_state.pedidos = df[~mask].reset_index(drop=True)
-        salvar_pedidos(st.session_state.pedidos)
+        df_atualizado = df[~mask].reset_index(drop=True)
+
+        # Tenta salvar no disco
+        if not salvar_pedidos(df_atualizado):
+            return False, f"❌ ERRO: Não foi possível excluir o pedido. Tente novamente."
+
+        # Recarrega do arquivo para garantir consistência
+        st.session_state.pedidos = carregar_pedidos()
 
         registrar_alteracao("EXCLUIR", id_pedido, "pedido_completo", f"{cliente}", motivo or "Sem motivo")
 
@@ -3545,15 +3560,19 @@ elif menu == "👥 Cadastrar Clientes":
                             "Observacoes": o.strip()
                         }])
                         st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
-                        salvar_clientes(st.session_state.clientes)
-                        # Recarrega do arquivo para garantir sincronização
-                        st.session_state.clientes = carregar_clientes()
 
-                        # Sincronização automática com Google Sheets (se habilitada)
-                        sincronizar_automaticamente(operacao="cadastrar_cliente")
+                        # Tenta salvar no disco
+                        if not salvar_clientes(st.session_state.clientes):
+                            st.error("❌ ERRO: Não foi possível cadastrar o cliente. Tente novamente.")
+                        else:
+                            # Recarrega do arquivo para garantir sincronização
+                            st.session_state.clientes = carregar_clientes()
 
-                        st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
-                        st.rerun()
+                            # Sincronização automática com Google Sheets (se habilitada)
+                            sincronizar_automaticamente(operacao="cadastrar_cliente")
+
+                            st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
+                            st.rerun()
     
     with t2:
         st.subheader("Lista de Clientes")
@@ -3587,24 +3606,30 @@ elif menu == "👥 Cadastrar Clientes":
 
                             if qtd_pedidos > 0:
                                 st.session_state.pedidos.loc[mask_pedidos, 'Contato'] = contato_novo
-                                salvar_pedidos(st.session_state.pedidos)
-                                st.info(f"📱 Telefone de '{nome_cliente}' atualizado em {qtd_pedidos} pedido(s)")
+                                if not salvar_pedidos(st.session_state.pedidos):
+                                    st.error("❌ ERRO: Não foi possível atualizar telefones nos pedidos.")
+                                else:
+                                    st.info(f"📱 Telefone de '{nome_cliente}' atualizado em {qtd_pedidos} pedido(s)")
 
                 st.session_state.clientes = edited_limpo
-                salvar_clientes(edited_limpo)
-                # Recarrega clientes do arquivo
-                st.session_state.clientes = carregar_clientes()
 
-                # Sincroniza todos os pedidos com a base de clientes
-                atualizados, total_clientes = sincronizar_contatos_pedidos()
-                if atualizados:
-                    st.success(f"🔄 Telefones sincronizados em {atualizados} pedido(s) com base em {total_clientes} cliente(s)")
+                # Tenta salvar clientes
+                if not salvar_clientes(edited_limpo):
+                    st.error("❌ ERRO: Não foi possível salvar as alterações nos clientes. Tente novamente.")
+                else:
+                    # Recarrega clientes do arquivo
+                    st.session_state.clientes = carregar_clientes()
 
-                # Sincronização automática com Google Sheets (se habilitada)
-                sincronizar_automaticamente(operacao="editar_cliente")
+                    # Sincroniza todos os pedidos com a base de clientes
+                    atualizados, total_clientes = sincronizar_contatos_pedidos()
+                    if atualizados:
+                        st.success(f"🔄 Telefones sincronizados em {atualizados} pedido(s) com base em {total_clientes} cliente(s)")
 
-                st.toast("💾 Salvo!")
-                st.rerun()
+                    # Sincronização automática com Google Sheets (se habilitada)
+                    sincronizar_automaticamente(operacao="editar_cliente")
+
+                    st.toast("💾 Salvo!")
+                    st.rerun()
 
             st.divider()
             c1, c2 = st.columns(2)
@@ -3634,14 +3659,18 @@ elif menu == "👥 Cadastrar Clientes":
             if up_c and st.button("⚠️ Importar"):
                 try:
                     df_c = pd.read_csv(up_c)
-                    salvar_clientes(df_c)
-                    st.session_state.clientes = carregar_clientes()
 
-                    # Sincronização automática com Google Sheets (se habilitada)
-                    sincronizar_automaticamente(operacao="importar_clientes")
+                    # Tenta salvar no disco
+                    if not salvar_clientes(df_c):
+                        st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
+                    else:
+                        st.session_state.clientes = carregar_clientes()
 
-                    st.toast("Clientes importados!", icon="✅")
-                    st.rerun()
+                        # Sincronização automática com Google Sheets (se habilitada)
+                        sincronizar_automaticamente(operacao="importar_clientes")
+
+                        st.toast("Clientes importados!", icon="✅")
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
     
@@ -3659,16 +3688,20 @@ elif menu == "👥 Cadastrar Clientes":
             confirma = st.checkbox(f"✅ Confirmo a exclusão de '{d}'")
             
             if st.button("🗑️ Excluir Cliente", type="primary", disabled=not confirma, use_container_width=True):
-                st.session_state.clientes = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
-                salvar_clientes(st.session_state.clientes)
-                # Recarrega do arquivo para garantir sincronização
-                st.session_state.clientes = carregar_clientes()
+                df_atualizado = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
 
-                # Sincronização automática com Google Sheets (se habilitada)
-                sincronizar_automaticamente(operacao="excluir_cliente")
+                # Tenta salvar no disco
+                if not salvar_clientes(df_atualizado):
+                    st.error("❌ ERRO: Não foi possível excluir o cliente. Tente novamente.")
+                else:
+                    # Recarrega do arquivo para garantir sincronização
+                    st.session_state.clientes = carregar_clientes()
 
-                st.toast(f"Cliente '{d}' excluído!", icon="🗑️")
-                st.rerun()
+                    # Sincronização automática com Google Sheets (se habilitada)
+                    sincronizar_automaticamente(operacao="excluir_cliente")
+
+                    st.toast(f"Cliente '{d}' excluído!", icon="🗑️")
+                    st.rerun()
         else:
             st.info("Nenhum cliente cadastrado.")
 
@@ -4055,10 +4088,12 @@ elif menu == "🛠️ Manutenção":
                                     st.info(msg)
 
                                     if st.button("✅ Confirmar e Aplicar"):
-                                        salvar_pedidos(df)
-                                        st.session_state.pedidos = carregar_pedidos()
-                                        st.success("✅ Pedidos restaurados!")
-                                        st.rerun()
+                                        if not salvar_pedidos(df):
+                                            st.error("❌ ERRO: Não foi possível restaurar pedidos. Tente novamente.")
+                                        else:
+                                            st.session_state.pedidos = carregar_pedidos()
+                                            st.success("✅ Pedidos restaurados!")
+                                            st.rerun()
 
                             elif tipo_download == "Clientes":
                                 df, msg = carregar_do_sheets(client, "Clientes")
@@ -4067,10 +4102,12 @@ elif menu == "🛠️ Manutenção":
                                     st.info(msg)
 
                                     if st.button("✅ Confirmar e Aplicar", key="aplicar_clientes"):
-                                        salvar_clientes(df)
-                                        st.session_state.clientes = carregar_clientes()
-                                        st.success("✅ Clientes restaurados!")
-                                        st.rerun()
+                                        if not salvar_clientes(df):
+                                            st.error("❌ ERRO: Não foi possível restaurar clientes. Tente novamente.")
+                                        else:
+                                            st.session_state.clientes = carregar_clientes()
+                                            st.success("✅ Clientes restaurados!")
+                                            st.rerun()
                         else:
                             st.error("❌ Erro ao conectar")
                     except Exception as e:
