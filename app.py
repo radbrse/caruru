@@ -533,10 +533,13 @@ def salvar_no_sheets(client, nome_aba, df):
         # Se o dataset encolheu (ex: 50→40 pedidos), limpa as 10 linhas antigas
         linhas_antigas = worksheet.row_count
         if linhas_antigas > num_linhas:
-            # Limpa apenas as linhas excedentes (dados fantasma)
-            range_limpar = f'A{num_linhas + 1}:{ultima_celula.split(":")[1][0]}{linhas_antigas}'
+            # Constrói range de limpeza corretamente usando rowcol_to_a1
+            # Suporta qualquer número de colunas (AA, AB, etc)
+            inicio_limpar = rowcol_to_a1(num_linhas + 1, 1)  # Ex: "A51"
+            fim_limpar = rowcol_to_a1(linhas_antigas, num_colunas)  # Ex: "L100" ou "AA100"
+            range_limpar = f'{inicio_limpar}:{fim_limpar}'
             worksheet.batch_clear([range_limpar])
-            logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas (dados fantasma)")
+            logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas (dados fantasma) - Range: {range_limpar}")
 
         logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
         return True, f"✅ {len(df)} registros salvos no Google Sheets"
