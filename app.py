@@ -503,9 +503,6 @@ def salvar_no_sheets(client, nome_aba, df):
         except gspread.exceptions.WorksheetNotFound:
             worksheet = spreadsheet.add_worksheet(nome_aba, rows=len(df)+100, cols=len(df.columns))
 
-        # Limpa conteúdo anterior
-        worksheet.clear()
-
         # Prepara dados (converte tudo para string para evitar problemas)
         df_str = df.copy()
         for col in df_str.columns:
@@ -515,8 +512,18 @@ def salvar_no_sheets(client, nome_aba, df):
         if 'Contato' in df_str.columns:
             df_str['Contato'] = df_str['Contato'].str.replace(".0", "", regex=False)
 
-        # Atualiza planilha
-        worksheet.update([df_str.columns.values.tolist()] + df_str.values.tolist())
+        # Prepara dados com cabeçalho
+        dados_completos = [df_str.columns.values.tolist()] + df_str.values.tolist()
+
+        # Atualiza planilha de forma atômica (sem clear antes!)
+        # Calcula range exato necessário
+        num_linhas = len(dados_completos)
+        num_colunas = len(df_str.columns)
+        range_atualizar = f'A1:{chr(65 + num_colunas - 1)}{num_linhas}'
+
+        # Update atômico - sobrescreve dados antigos SEM limpar antes
+        # Se falhar, dados antigos permanecem intactos
+        worksheet.update(range_atualizar, dados_completos)
 
         logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
         return True, f"✅ {len(df)} registros salvos no Google Sheets"
@@ -598,14 +605,16 @@ def sincronizar_com_sheets(modo="enviar"):
             # Recebe Pedidos
             df_pedidos, msg = carregar_do_sheets(client, "Pedidos")
             if df_pedidos is not None and not df_pedidos.empty:
-                salvar_pedidos(df_pedidos)
+                if not salvar_pedidos(df_pedidos):
+                    return False, "❌ Erro ao salvar pedidos baixados do Sheets"
                 st.session_state.pedidos = carregar_pedidos()
                 resultados.append(f"Pedidos: {msg}")
 
             # Recebe Clientes
             df_clientes, msg = carregar_do_sheets(client, "Clientes")
             if df_clientes is not None and not df_clientes.empty:
-                salvar_clientes(df_clientes)
+                if not salvar_clientes(df_clientes):
+                    return False, "❌ Erro ao salvar clientes baixados do Sheets"
                 st.session_state.clientes = carregar_clientes()
                 resultados.append(f"Clientes: {msg}")
 
@@ -972,7 +981,9 @@ def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
             atualizados += 1
 
     if atualizados > 0:
-        salvar_pedidos(pedidos)
+        if not salvar_pedidos(pedidos):
+            logger.error("❌ Erro ao salvar pedidos durante sincronização de contatos")
+            return 0, len(mapa_contatos)  # Retorna 0 atualizados se save falhou
         st.session_state.pedidos = carregar_pedidos()
 
     return atualizados, len(mapa_contatos)
@@ -3214,10 +3225,12 @@ elif menu == "Gerenciar Tudo":
         if up and st.button("⚠️ Restaurar Pedidos"):
             try:
                 df_n = pd.read_csv(up)
-                salvar_pedidos(df_n)
-                st.session_state.pedidos = carregar_pedidos()
-                st.toast("Backup restaurado!", icon="✅")
-                st.rerun()
+                if not salvar_pedidos(df_n):
+                    st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
+                else:
+                    st.session_state.pedidos = carregar_pedidos()
+                    st.toast("Backup restaurado!", icon="✅")
+                    st.rerun()
             except Exception as e:
                 st.error(f"Erro: {e}")
 
@@ -3299,11 +3312,15 @@ elif menu == "📜 Histórico":
                             df_atual = st.session_state.pedidos
                             # Remove todos os pedidos entregues
                             df_atual = df_atual[df_atual['Status'] != "✅ Entregue"]
-                            salvar_pedidos(df_atual)
-                            st.session_state.pedidos = carregar_pedidos()
-                            st.session_state['confirmar_limpar_historico'] = False
-                            st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
-                            st.rerun()
+
+                            if not salvar_pedidos(df_atual):
+                                st.error("❌ ERRO: Não foi possível limpar o histórico. Tente novamente.")
+                                st.session_state['confirmar_limpar_historico'] = False
+                            else:
+                                st.session_state.pedidos = carregar_pedidos()
+                                st.session_state['confirmar_limpar_historico'] = False
+                                st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
+                                st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erro ao limpar histórico: {e}")
                 with col_limpar2:
@@ -3386,11 +3403,15 @@ elif menu == "📜 Histórico":
                         try:
                             df_atual = st.session_state.pedidos
                             df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
-                            salvar_pedidos(df_atual)
-                            st.session_state.pedidos = carregar_pedidos()
-                            st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
-                            st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
-                            st.rerun()
+
+                            if not salvar_pedidos(df_atual):
+                                st.error("❌ ERRO: Não foi possível reverter o pedido. Tente novamente.")
+                                st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
+                            else:
+                                st.session_state.pedidos = carregar_pedidos()
+                                st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
+                                st.toast(f"↩️ Pedido #{int(pedido['ID_Pedido'])} revertido para Pendente!", icon="↩️")
+                                st.rerun()
                         except Exception as e:
                             st.error(f"❌ Erro ao reverter: {e}")
                 with col_conf2:
