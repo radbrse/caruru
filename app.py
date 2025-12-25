@@ -2392,8 +2392,9 @@ if menu == "📅 Pedidos do Dia":
         # Aplica ordenação escolhida
         try:
             if ordem_dia == "⏰ Hora (crescente)":
+                # Ordena por hora (crescente) e depois por nome (alfabético A-Z)
                 df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(23, 59))
-                df_dia = df_dia.sort_values('h_sort').drop(columns=['h_sort'])
+                df_dia = df_dia.sort_values(['h_sort', 'Cliente'], ascending=[True, True]).drop(columns=['h_sort'])
             elif ordem_dia == "⏰ Hora (decrescente)":
                 df_dia['h_sort'] = df_dia['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
                 df_dia = df_dia.sort_values('h_sort', ascending=False).drop(columns=['h_sort'])
