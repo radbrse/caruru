@@ -2035,18 +2035,7 @@ def get_status_badge(status):
 
     cor_texto, cor_fundo = cores.get(status, ("#6b7280", "#f3f4f6"))
 
-    return f"""
-        <span style="
-            background-color: {cor_fundo};
-            color: {cor_texto};
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            display: inline-block;
-            border: 1px solid {cor_texto}40;
-        ">{status}</span>
-    """
+    return f'<span style="background-color: {cor_fundo}; color: {cor_texto}; padding: 4px 12px; border-radius: 12px; font-size: 0.875rem; font-weight: 600; display: inline-block; border: 1px solid {cor_texto}40;">{status}</span>'
 
 def get_pagamento_badge(pagamento):
     """Retorna badge HTML colorido para pagamento"""
@@ -2058,18 +2047,7 @@ def get_pagamento_badge(pagamento):
 
     cor_texto, cor_fundo = cores.get(pagamento, ("#6b7280", "#f3f4f6"))
 
-    return f"""
-        <span style="
-            background-color: {cor_fundo};
-            color: {cor_texto};
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            display: inline-block;
-            border: 1px solid {cor_texto}40;
-        ">{pagamento}</span>
-    """
+    return f'<span style="background-color: {cor_fundo}; color: {cor_texto}; padding: 4px 12px; border-radius: 12px; font-size: 0.875rem; font-weight: 600; display: inline-block; border: 1px solid {cor_texto}40;">{pagamento}</span>'
 
 def get_obs_icon(observacoes):
     """Retorna ícone OBS se houver observações preenchidas"""
@@ -4385,87 +4363,31 @@ elif menu == "🎨 Protótipo Cards":
                         }
                         cor_borda = cores_borda.get(pedido['Status'], "#6b7280")
 
-                        # Card HTML
-                        st.markdown(f"""
-                            <div style="
-                                border: 3px solid {cor_borda};
-                                border-radius: 16px;
-                                padding: 20px;
-                                background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                                margin-bottom: 20px;
-                                transition: transform 0.2s;
-                            ">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                    <span style="
-                                        font-size: 1.4rem;
-                                        font-weight: 800;
-                                        color: #1f77b4;
-                                    ">#{int(pedido['ID_Pedido'])}</span>
-                                    <span style="
-                                        background-color: #e0f2fe;
-                                        color: #0369a1;
-                                        padding: 4px 10px;
-                                        border-radius: 8px;
-                                        font-size: 0.75rem;
-                                        font-weight: 700;
-                                    ">{pedido['Data'].strftime('%d/%m')}</span>
-                                </div>
+                        # Formata hora
+                        hora_formatada = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
 
-                                <div style="margin-bottom: 10px;">
-                                    <div style="
-                                        font-size: 1.1rem;
-                                        font-weight: 700;
-                                        color: #111827;
-                                        margin-bottom: 8px;
-                                    ">👤 {pedido['Cliente']}</div>
-
-                                    <div style="
-                                        font-size: 0.85rem;
-                                        color: #6b7280;
-                                        margin-bottom: 8px;
-                                    ">📞 {pedido['Contato']}</div>
-                                </div>
-
-                                <div style="
-                                    background-color: #f3f4f6;
-                                    padding: 12px;
-                                    border-radius: 10px;
-                                    margin-bottom: 12px;
-                                ">
-                                    <div style="
-                                        font-size: 0.9rem;
-                                        color: #374151;
-                                        margin-bottom: 6px;
-                                    ">⏰ {pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]}</div>
-
-                                    <div style="
-                                        font-size: 1rem;
-                                        font-weight: 600;
-                                        color: #374151;
-                                    ">🥘 {int(pedido['Caruru'])}kg &nbsp;&nbsp; 🦐 {int(pedido['Bobo'])}kg</div>
-                                </div>
-
-                                <div style="
-                                    font-size: 1.5rem;
-                                    font-weight: 800;
-                                    color: #059669;
-                                    text-align: center;
-                                    margin-bottom: 12px;
-                                    padding: 8px;
-                                    background-color: #d1fae5;
-                                    border-radius: 8px;
-                                ">{formatar_valor_br(pedido['Valor'])}</div>
-
-                                <div style="margin-bottom: 10px; text-align: center;">
-                                    {get_status_badge(pedido['Status'])}
-                                </div>
-
-                                <div style="text-align: center; margin-bottom: 8px;">
-                                    {get_pagamento_badge(pedido['Pagamento'])}
-                                </div>
+                        # Constrói o HTML do card
+                        card_html = f"""
+                        <div style="border: 3px solid {cor_borda}; border-radius: 16px; padding: 20px; background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%); box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <span style="font-size: 1.4rem; font-weight: 800; color: #1f77b4;">#{int(pedido['ID_Pedido'])}</span>
+                                <span style="background-color: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: 700;">{pedido['Data'].strftime('%d/%m')}</span>
                             </div>
-                        """, unsafe_allow_html=True)
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 1.1rem; font-weight: 700; color: #111827; margin-bottom: 8px;">👤 {pedido['Cliente']}</div>
+                                <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 8px;">📞 {pedido['Contato']}</div>
+                            </div>
+                            <div style="background-color: #f3f4f6; padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                                <div style="font-size: 0.9rem; color: #374151; margin-bottom: 6px;">⏰ {hora_formatada}</div>
+                                <div style="font-size: 1rem; font-weight: 600; color: #374151;">🥘 {int(pedido['Caruru'])}kg &nbsp;&nbsp; 🦐 {int(pedido['Bobo'])}kg</div>
+                            </div>
+                            <div style="font-size: 1.5rem; font-weight: 800; color: #059669; text-align: center; margin-bottom: 12px; padding: 8px; background-color: #d1fae5; border-radius: 8px;">{formatar_valor_br(pedido['Valor'])}</div>
+                            <div style="margin-bottom: 10px; text-align: center;">{get_status_badge(pedido['Status'])}</div>
+                            <div style="text-align: center; margin-bottom: 8px;">{get_pagamento_badge(pedido['Pagamento'])}</div>
+                        </div>
+                        """
+
+                        st.markdown(card_html, unsafe_allow_html=True)
 
                         # Botões de ação
                         col_btn1, col_btn2 = st.columns(2)
