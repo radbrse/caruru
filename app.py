@@ -1440,6 +1440,41 @@ def salvar_clientes(df):
 # ==============================================================================
 # HISTÓRICO DE ALTERAÇÕES
 # ==============================================================================
+def salvar_historico(df):
+    """Salva histórico de alterações com backup automático, file locking e transação."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        logger.error("DataFrame inválido para salvar histórico")
+        return False
+
+    backup_path = None
+    try:
+        with file_lock(ARQUIVO_HISTORICO):
+            # Cria backup com timestamp antes de salvar
+            backup_path = criar_backup_com_timestamp(ARQUIVO_HISTORICO)
+
+            # Salva em arquivo temporário primeiro (atomic write)
+            temp_file = f"{ARQUIVO_HISTORICO}.tmp"
+            df.to_csv(temp_file, index=False)
+
+            # Move arquivo temporário para o definitivo (operação atômica)
+            shutil.move(temp_file, ARQUIVO_HISTORICO)
+
+            logger.info(f"Histórico salvo com sucesso: {len(df)} registros")
+            return True
+
+    except Exception as e:
+        logger.error(f"Erro ao salvar histórico: {e}", exc_info=True)
+
+        # Tenta restaurar do backup se houve erro
+        if backup_path and os.path.exists(backup_path):
+            try:
+                shutil.copy(backup_path, ARQUIVO_HISTORICO)
+                logger.info(f"Backup de histórico restaurado: {backup_path}")
+            except Exception as restore_error:
+                logger.error(f"Erro ao restaurar backup de histórico: {restore_error}", exc_info=True)
+
+        return False
+
 def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
     """Registra alterações para auditoria."""
     try:
@@ -1451,19 +1486,20 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
             "Valor_Antigo": str(valor_antigo)[:100],
             "Valor_Novo": str(valor_novo)[:100]
         }
-        
+
         if os.path.exists(ARQUIVO_HISTORICO):
             df = pd.read_csv(ARQUIVO_HISTORICO)
         else:
             df = pd.DataFrame()
-        
+
         df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
-        
+
         # Mantém apenas últimos 1000 registros
         if len(df) > 1000:
             df = df.tail(1000)
-        
-        df.to_csv(ARQUIVO_HISTORICO, index=False)
+
+        # Usa função com lock atômico
+        salvar_historico(df)
     except Exception as e:
         logger.error(f"Erro registrar alteração: {e}")
 
