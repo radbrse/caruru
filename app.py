@@ -2537,7 +2537,7 @@ if menu == "📅 Pedidos do Dia":
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3])
+                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3, 0.4])
 
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
@@ -2571,6 +2571,27 @@ if menu == "📅 Pedidos do Dia":
                                 # Abre este pedido para edição
                                 st.session_state['pedido_em_edicao_dia_id'] = id_clicado
                             st.rerun()
+                    with col11:
+                        # Botão "Marcar Entregue" - só aparece se não estiver entregue
+                        if pedido['Status'] != "✅ Entregue":
+                            if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue", use_container_width=True, type="primary"):
+                                # Atualiza status para entregue
+                                idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
+                                status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
+                                st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
+
+                                # Salva no disco
+                                if salvar_pedidos(st.session_state.pedidos):
+                                    # Registra alteração
+                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
+
+                                    # Sincroniza automaticamente
+                                    sincronizar_automaticamente('editar')
+
+                                    st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue!", icon="✅")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao salvar alteração")
 
                     # Visualização detalhada
                     if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
