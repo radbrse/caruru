@@ -2594,21 +2594,25 @@ if menu == "📅 Pedidos do Dia":
                     with col11:
                         # Botão "Marcar Entregue" - só aparece se não estiver entregue
                         if pedido['Status'] != "✅ Entregue":
-                            if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue", use_container_width=True, type="primary"):
-                                # Atualiza status para entregue
+                            if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue e Pago", use_container_width=True, type="primary"):
+                                # Atualiza status e pagamento
                                 idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
                                 status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
+                                pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
+
                                 st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
+                                st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
 
                                 # Salva no disco
                                 if salvar_pedidos(st.session_state.pedidos):
-                                    # Registra alteração
+                                    # Registra alterações no histórico
                                     registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
+                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Pagamento", pagamento_antigo, "PAGO")
 
                                     # Sincroniza automaticamente
                                     sincronizar_automaticamente('editar')
 
-                                    st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue!", icon="✅")
+                                    st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue e pago!", icon="✅")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao salvar alteração")
