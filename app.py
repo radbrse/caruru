@@ -384,6 +384,30 @@ def importar_csv_externo(arquivo_upload, destino):
         # Lê o CSV enviado
         df_novo = pd.read_csv(arquivo_upload)
 
+        # Define schemas obrigatórios por tipo
+        schemas_obrigatorios = {
+            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
+            'Clientes': ["Nome", "Contato", "Observacoes"],
+            'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
+        }
+
+        # Valida schema do CSV
+        colunas_esperadas = schemas_obrigatorios[destino]
+        colunas_recebidas = df_novo.columns.tolist()
+
+        # Verifica colunas faltantes
+        colunas_faltantes = set(colunas_esperadas) - set(colunas_recebidas)
+        if colunas_faltantes:
+            return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
+
+        # Verifica colunas extras (aviso, mas permite)
+        colunas_extras = set(colunas_recebidas) - set(colunas_esperadas)
+        if colunas_extras:
+            logger.warning(f"Colunas extras detectadas no CSV (serão ignoradas): {', '.join(sorted(colunas_extras))}")
+
+        # Reordena e filtra para manter apenas colunas esperadas
+        df_novo = df_novo[colunas_esperadas]
+
         # Cria backup do arquivo atual
         if os.path.exists(arquivo_destino):
             backup = criar_backup_com_timestamp(arquivo_destino)
@@ -1440,6 +1464,41 @@ def salvar_clientes(df):
 # ==============================================================================
 # HISTÓRICO DE ALTERAÇÕES
 # ==============================================================================
+def salvar_historico(df):
+    """Salva histórico de alterações com backup automático, file locking e transação."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        logger.error("DataFrame inválido para salvar histórico")
+        return False
+
+    backup_path = None
+    try:
+        with file_lock(ARQUIVO_HISTORICO):
+            # Cria backup com timestamp antes de salvar
+            backup_path = criar_backup_com_timestamp(ARQUIVO_HISTORICO)
+
+            # Salva em arquivo temporário primeiro (atomic write)
+            temp_file = f"{ARQUIVO_HISTORICO}.tmp"
+            df.to_csv(temp_file, index=False)
+
+            # Move arquivo temporário para o definitivo (operação atômica)
+            shutil.move(temp_file, ARQUIVO_HISTORICO)
+
+            logger.info(f"Histórico salvo com sucesso: {len(df)} registros")
+            return True
+
+    except Exception as e:
+        logger.error(f"Erro ao salvar histórico: {e}", exc_info=True)
+
+        # Tenta restaurar do backup se houve erro
+        if backup_path and os.path.exists(backup_path):
+            try:
+                shutil.copy(backup_path, ARQUIVO_HISTORICO)
+                logger.info(f"Backup de histórico restaurado: {backup_path}")
+            except Exception as restore_error:
+                logger.error(f"Erro ao restaurar backup de histórico: {restore_error}", exc_info=True)
+
+        return False
+
 def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
     """Registra alterações para auditoria."""
     try:
@@ -1451,19 +1510,20 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
             "Valor_Antigo": str(valor_antigo)[:100],
             "Valor_Novo": str(valor_novo)[:100]
         }
-        
+
         if os.path.exists(ARQUIVO_HISTORICO):
             df = pd.read_csv(ARQUIVO_HISTORICO)
         else:
             df = pd.DataFrame()
-        
+
         df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
-        
+
         # Mantém apenas últimos 1000 registros
         if len(df) > 1000:
             df = df.tail(1000)
-        
-        df.to_csv(ARQUIVO_HISTORICO, index=False)
+
+        # Usa função com lock atômico
+        salvar_historico(df)
     except Exception as e:
         logger.error(f"Erro registrar alteração: {e}")
 
@@ -2081,6 +2141,26 @@ def get_valor_destaque(valor):
         ">{formatar_valor_br(valor)}</span>
     """
 
+def get_whatsapp_link(contato, texto=""):
+    """Retorna link HTML clicável para WhatsApp"""
+    if not contato or str(contato).strip() in ["", "nan", "None"]:
+        return "Não informado"
+
+    # Remove caracteres não numéricos
+    numero_limpo = ''.join(filter(str.isdigit, str(contato)))
+
+    # Adiciona código do Brasil se necessário (55)
+    if len(numero_limpo) == 11:  # DDD + número (11 dígitos)
+        numero_limpo = f"55{numero_limpo}"
+    elif len(numero_limpo) == 10:  # DDD + número (10 dígitos - fixo)
+        numero_limpo = f"55{numero_limpo}"
+
+    # Se texto não fornecido, usa o contato formatado
+    if not texto:
+        texto = contato
+
+    return f'<a href="https://wa.me/{numero_limpo}" target="_blank" style="color: #25D366; text-decoration: none; font-weight: 600;">📱 {texto}</a>'
+
 # ==============================================================================
 # DIALOG MODAL DE CONFIRMAÇÃO DE PEDIDO
 # ==============================================================================
@@ -2128,9 +2208,9 @@ def confirmar_data_pedido():
     with col_resumo1:
         st.markdown(f"""
         **👤 Cliente:** {pedido_temp['cliente']}
-        **📱 Contato:** {pedido_temp['contato']}
         **⏰ Hora:** {pedido_temp['hora'].strftime('%H:%M')}
         """)
+        st.markdown(f"**Contato:** {get_whatsapp_link(pedido_temp['contato'])}", unsafe_allow_html=True)
 
     with col_resumo2:
         valor_total = calcular_total(pedido_temp['caruru'], pedido_temp['bobo'], pedido_temp['desconto'])
@@ -2373,9 +2453,26 @@ if menu == "📅 Pedidos do Dia":
         # Excluir pedidos entregues (aparecem apenas no Histórico)
         df_dia = df_dia[df_dia['Status'] != "✅ Entregue"]
 
+        # Busca rápida
+        col_busca, col_ord = st.columns([2, 1])
+        with col_busca:
+            busca = st.text_input(
+                "🔍 Buscar por nome ou ID",
+                placeholder="Digite o nome do cliente ou número do pedido...",
+                key="busca_pedidos_dia"
+            )
+
+        # Aplica filtro de busca se preenchido
+        if busca and busca.strip():
+            termo = busca.strip().lower()
+            # Busca por nome do cliente ou ID do pedido
+            df_dia = df_dia[
+                df_dia['Cliente'].str.lower().str.contains(termo, na=False) |
+                df_dia['ID_Pedido'].astype(str).str.contains(termo, na=False)
+            ]
+
         # Filtro de Ordenação
-        col_ord1, col_ord2 = st.columns([3, 1])
-        with col_ord2:
+        with col_ord:
             ordem_dia = st.selectbox("Ordenar por", [
                 "⏰ Hora (crescente)",
                 "⏰ Hora (decrescente)",
@@ -2460,7 +2557,7 @@ if menu == "📅 Pedidos do Dia":
                         </style>
                     """, unsafe_allow_html=True)
 
-                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3])
+                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3, 0.4])
 
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
@@ -2494,6 +2591,27 @@ if menu == "📅 Pedidos do Dia":
                                 # Abre este pedido para edição
                                 st.session_state['pedido_em_edicao_dia_id'] = id_clicado
                             st.rerun()
+                    with col11:
+                        # Botão "Marcar Entregue" - só aparece se não estiver entregue
+                        if pedido['Status'] != "✅ Entregue":
+                            if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue", use_container_width=True, type="primary"):
+                                # Atualiza status para entregue
+                                idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
+                                status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
+                                st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
+
+                                # Salva no disco
+                                if salvar_pedidos(st.session_state.pedidos):
+                                    # Registra alteração
+                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
+
+                                    # Sincroniza automaticamente
+                                    sincronizar_automaticamente('editar')
+
+                                    st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue!", icon="✅")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao salvar alteração")
 
                     # Visualização detalhada
                     if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
@@ -2503,10 +2621,10 @@ if menu == "📅 Pedidos do Dia":
                                 st.markdown(f"""
                                 **🆔 ID:** {int(pedido['ID_Pedido'])}
                                 **👤 Cliente:** {pedido['Cliente']}
-                                **📱 Contato:** {pedido['Contato']}
                                 **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
                                 **⏰ Hora:** {hora_str}
                                 """)
+                                st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             with col_det2:
                                 st.markdown(f"""
                                 **🥘 Caruru:** {int(pedido['Caruru'])}
@@ -2972,7 +3090,7 @@ elif menu == "Gerenciar Tudo":
                         col_a, col_b = st.columns(2)
                         with col_a:
                             st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
-                            st.markdown(f"**📱 Contato:** {pedido['Contato']}")
+                            st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}")
                             st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else pedido['Hora']}")
                         with col_b:
@@ -3231,12 +3349,22 @@ elif menu == "Gerenciar Tudo":
         if up and st.button("⚠️ Restaurar Pedidos"):
             try:
                 df_n = pd.read_csv(up)
-                if not salvar_pedidos(df_n):
-                    st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
+
+                # Valida schema
+                colunas_esperadas = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+                colunas_faltantes = set(colunas_esperadas) - set(df_n.columns.tolist())
+                if colunas_faltantes:
+                    st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                 else:
-                    st.session_state.pedidos = carregar_pedidos()
-                    st.toast("Backup restaurado!", icon="✅")
-                    st.rerun()
+                    # Reordena para manter apenas colunas esperadas
+                    df_n = df_n[colunas_esperadas]
+
+                    if not salvar_pedidos(df_n):
+                        st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
+                    else:
+                        st.session_state.pedidos = carregar_pedidos()
+                        st.toast("Backup restaurado!", icon="✅")
+                        st.rerun()
             except Exception as e:
                 st.error(f"Erro: {e}")
 
@@ -3384,7 +3512,7 @@ elif menu == "📜 Histórico":
                     col_a, col_b = st.columns(2)
                     with col_a:
                         st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
-                        st.markdown(f"**📱 Contato:** {pedido['Contato']}")
+                        st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                         st.markdown(f"**📅 Data:** {data_str}")
                         st.markdown(f"**⏰ Hora:** {hora_str}")
                     with col_b:
@@ -3687,11 +3815,20 @@ elif menu == "👥 Cadastrar Clientes":
                 try:
                     df_c = pd.read_csv(up_c)
 
-                    # Tenta salvar no disco
-                    if not salvar_clientes(df_c):
-                        st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
+                    # Valida schema
+                    colunas_esperadas = ["Nome", "Contato", "Observacoes"]
+                    colunas_faltantes = set(colunas_esperadas) - set(df_c.columns.tolist())
+                    if colunas_faltantes:
+                        st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                     else:
-                        st.session_state.clientes = carregar_clientes()
+                        # Reordena para manter apenas colunas esperadas
+                        df_c = df_c[colunas_esperadas]
+
+                        # Tenta salvar no disco
+                        if not salvar_clientes(df_c):
+                            st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
+                        else:
+                            st.session_state.clientes = carregar_clientes()
 
                         # Sincronização automática com Google Sheets (se habilitada)
                         sincronizar_automaticamente(operacao="importar_clientes")
