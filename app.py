@@ -2141,6 +2141,26 @@ def get_valor_destaque(valor):
         ">{formatar_valor_br(valor)}</span>
     """
 
+def get_whatsapp_link(contato, texto=""):
+    """Retorna link HTML clicável para WhatsApp"""
+    if not contato or str(contato).strip() in ["", "nan", "None"]:
+        return "Não informado"
+
+    # Remove caracteres não numéricos
+    numero_limpo = ''.join(filter(str.isdigit, str(contato)))
+
+    # Adiciona código do Brasil se necessário (55)
+    if len(numero_limpo) == 11:  # DDD + número (11 dígitos)
+        numero_limpo = f"55{numero_limpo}"
+    elif len(numero_limpo) == 10:  # DDD + número (10 dígitos - fixo)
+        numero_limpo = f"55{numero_limpo}"
+
+    # Se texto não fornecido, usa o contato formatado
+    if not texto:
+        texto = contato
+
+    return f'<a href="https://wa.me/{numero_limpo}" target="_blank" style="color: #25D366; text-decoration: none; font-weight: 600;">📱 {texto}</a>'
+
 # ==============================================================================
 # DIALOG MODAL DE CONFIRMAÇÃO DE PEDIDO
 # ==============================================================================
@@ -2188,9 +2208,9 @@ def confirmar_data_pedido():
     with col_resumo1:
         st.markdown(f"""
         **👤 Cliente:** {pedido_temp['cliente']}
-        **📱 Contato:** {pedido_temp['contato']}
         **⏰ Hora:** {pedido_temp['hora'].strftime('%H:%M')}
         """)
+        st.markdown(f"**Contato:** {get_whatsapp_link(pedido_temp['contato'])}", unsafe_allow_html=True)
 
     with col_resumo2:
         valor_total = calcular_total(pedido_temp['caruru'], pedido_temp['bobo'], pedido_temp['desconto'])
@@ -2601,10 +2621,10 @@ if menu == "📅 Pedidos do Dia":
                                 st.markdown(f"""
                                 **🆔 ID:** {int(pedido['ID_Pedido'])}
                                 **👤 Cliente:** {pedido['Cliente']}
-                                **📱 Contato:** {pedido['Contato']}
                                 **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
                                 **⏰ Hora:** {hora_str}
                                 """)
+                                st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             with col_det2:
                                 st.markdown(f"""
                                 **🥘 Caruru:** {int(pedido['Caruru'])}
@@ -3070,7 +3090,7 @@ elif menu == "Gerenciar Tudo":
                         col_a, col_b = st.columns(2)
                         with col_a:
                             st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
-                            st.markdown(f"**📱 Contato:** {pedido['Contato']}")
+                            st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}")
                             st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else pedido['Hora']}")
                         with col_b:
@@ -3492,7 +3512,7 @@ elif menu == "📜 Histórico":
                     col_a, col_b = st.columns(2)
                     with col_a:
                         st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
-                        st.markdown(f"**📱 Contato:** {pedido['Contato']}")
+                        st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                         st.markdown(f"**📅 Data:** {data_str}")
                         st.markdown(f"**⏰ Hora:** {hora_str}")
                     with col_b:
