@@ -384,6 +384,30 @@ def importar_csv_externo(arquivo_upload, destino):
         # Lê o CSV enviado
         df_novo = pd.read_csv(arquivo_upload)
 
+        # Define schemas obrigatórios por tipo
+        schemas_obrigatorios = {
+            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
+            'Clientes': ["Nome", "Contato", "Observacoes"],
+            'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
+        }
+
+        # Valida schema do CSV
+        colunas_esperadas = schemas_obrigatorios[destino]
+        colunas_recebidas = df_novo.columns.tolist()
+
+        # Verifica colunas faltantes
+        colunas_faltantes = set(colunas_esperadas) - set(colunas_recebidas)
+        if colunas_faltantes:
+            return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
+
+        # Verifica colunas extras (aviso, mas permite)
+        colunas_extras = set(colunas_recebidas) - set(colunas_esperadas)
+        if colunas_extras:
+            logger.warning(f"Colunas extras detectadas no CSV (serão ignoradas): {', '.join(sorted(colunas_extras))}")
+
+        # Reordena e filtra para manter apenas colunas esperadas
+        df_novo = df_novo[colunas_esperadas]
+
         # Cria backup do arquivo atual
         if os.path.exists(arquivo_destino):
             backup = criar_backup_com_timestamp(arquivo_destino)
@@ -3267,12 +3291,22 @@ elif menu == "Gerenciar Tudo":
         if up and st.button("⚠️ Restaurar Pedidos"):
             try:
                 df_n = pd.read_csv(up)
-                if not salvar_pedidos(df_n):
-                    st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
+
+                # Valida schema
+                colunas_esperadas = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+                colunas_faltantes = set(colunas_esperadas) - set(df_n.columns.tolist())
+                if colunas_faltantes:
+                    st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                 else:
-                    st.session_state.pedidos = carregar_pedidos()
-                    st.toast("Backup restaurado!", icon="✅")
-                    st.rerun()
+                    # Reordena para manter apenas colunas esperadas
+                    df_n = df_n[colunas_esperadas]
+
+                    if not salvar_pedidos(df_n):
+                        st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
+                    else:
+                        st.session_state.pedidos = carregar_pedidos()
+                        st.toast("Backup restaurado!", icon="✅")
+                        st.rerun()
             except Exception as e:
                 st.error(f"Erro: {e}")
 
@@ -3723,11 +3757,20 @@ elif menu == "👥 Cadastrar Clientes":
                 try:
                     df_c = pd.read_csv(up_c)
 
-                    # Tenta salvar no disco
-                    if not salvar_clientes(df_c):
-                        st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
+                    # Valida schema
+                    colunas_esperadas = ["Nome", "Contato", "Observacoes"]
+                    colunas_faltantes = set(colunas_esperadas) - set(df_c.columns.tolist())
+                    if colunas_faltantes:
+                        st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                     else:
-                        st.session_state.clientes = carregar_clientes()
+                        # Reordena para manter apenas colunas esperadas
+                        df_c = df_c[colunas_esperadas]
+
+                        # Tenta salvar no disco
+                        if not salvar_clientes(df_c):
+                            st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
+                        else:
+                            st.session_state.clientes = carregar_clientes()
 
                         # Sincronização automática com Google Sheets (se habilitada)
                         sincronizar_automaticamente(operacao="importar_clientes")
