@@ -2433,9 +2433,26 @@ if menu == "📅 Pedidos do Dia":
         # Excluir pedidos entregues (aparecem apenas no Histórico)
         df_dia = df_dia[df_dia['Status'] != "✅ Entregue"]
 
+        # Busca rápida
+        col_busca, col_ord = st.columns([2, 1])
+        with col_busca:
+            busca = st.text_input(
+                "🔍 Buscar por nome ou ID",
+                placeholder="Digite o nome do cliente ou número do pedido...",
+                key="busca_pedidos_dia"
+            )
+
+        # Aplica filtro de busca se preenchido
+        if busca and busca.strip():
+            termo = busca.strip().lower()
+            # Busca por nome do cliente ou ID do pedido
+            df_dia = df_dia[
+                df_dia['Cliente'].str.lower().str.contains(termo, na=False) |
+                df_dia['ID_Pedido'].astype(str).str.contains(termo, na=False)
+            ]
+
         # Filtro de Ordenação
-        col_ord1, col_ord2 = st.columns([3, 1])
-        with col_ord2:
+        with col_ord:
             ordem_dia = st.selectbox("Ordenar por", [
                 "⏰ Hora (crescente)",
                 "⏰ Hora (decrescente)",
