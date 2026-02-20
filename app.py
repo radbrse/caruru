@@ -2438,7 +2438,161 @@ with st.sidebar:
 
 # ==============================================================================
 # PÁGINAS
-# ==============================================================================
+# ==============================================================================@st.fragment
+def render_novo_pedido_fragment():
+    # Botão para limpar o formulário
+    col_titulo, col_limpar = st.columns([4, 1])
+    with col_limpar:
+        if st.button("🔄 Limpar", help="Limpar todos os campos do formulário"):
+            # Remove todas as keys relacionadas ao formulário
+            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo']
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+
+    # Verifica se deve resetar o cliente (após salvar pedido)
+    if st.session_state.get('resetar_cliente_novo', False):
+        # Deleta as keys do selectbox para forçar reset
+        if 'sel_cliente_novo' in st.session_state:
+            del st.session_state['sel_cliente_novo']
+        if 'cliente_novo_index' in st.session_state:
+            del st.session_state['cliente_novo_index']
+        st.session_state.resetar_cliente_novo = False
+        logger.info("Formulário de novo pedido resetado com sucesso")
+
+    # Inicializa índice do cliente (sempre volta para 0 = "-- Selecione --")
+    if 'cliente_novo_index' not in st.session_state:
+        st.session_state.cliente_novo_index = 0
+
+    # Carrega lista de clientes
+    try:
+        clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
+    except:
+        clis = []
+
+    lista_clientes = ["-- Selecione --", "➕ Cadastrar Novo Cliente"] + clis
+
+    st.markdown("### 1️⃣ Cliente")
+
+    # Selectbox do cliente FORA do form para poder buscar o contato
+    c_sel = st.selectbox(
+        "👤 Nome do Cliente",
+        lista_clientes,
+        index=st.session_state.cliente_novo_index,
+        key="sel_cliente_novo"
+    )
+    
+    cliente_eh_novo = (c_sel == "➕ Cadastrar Novo Cliente")
+    contato_cliente = ""
+    nome_novo_cliente = ""
+
+    if cliente_eh_novo:
+        st.markdown("#### ✨ Dados do Novo Cliente")
+        col_nc1, col_nc2 = st.columns(2)
+        with col_nc1:
+            nome_novo_cliente = st.text_input("👤 Nome Completo", placeholder="Digite o nome do novo cliente", key="inline_nome")
+        with col_nc2:
+            contato_cliente = st.text_input("📱 WhatsApp", placeholder="79999999999", key="inline_contato")
+    elif c_sel and c_sel != "-- Selecione --":
+        try:
+            res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
+            if not res.empty:
+                contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
+        except:
+            contato_cliente = ""
+    else:
+        c_sel = ""  # Reseta para vazio se for "-- Selecione --"
+    
+    if not c_sel or c_sel == "-- Selecione --":
+        st.info("💡 Selecione um cliente cadastrado ou escolha '➕ Cadastrar Novo Cliente'")
+    elif not cliente_eh_novo:
+        st.success(f"📱 Contato encontrado: **{contato_cliente}**" if contato_cliente else "⚠️ Cliente sem telefone cadastrado")
+    else:
+        st.info("O novo cliente será salvo silenciosamente junto com o pedido.")
+    
+    st.markdown("### 2️⃣ Dados do Pedido")
+    
+    # Usar form com clear_on_submit para limpar automaticamente
+    with st.form("form_novo_pedido", clear_on_submit=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999", disabled=cliente_eh_novo, help="Campo preenchido acima para novos clientes")
+        with c2:
+            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY")
+            # Mostra a data por extenso para confirmação visual
+            meses = {
+                1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
+                5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+                9: "setembro", 10: "outubro", 11: "novemov", 12: "dezembro"
+            }
+            dias_semana = {
+                0: "segunda-feira", 1: "terça-feira", 2: "quarta-feira",
+                3: "quinta-feira", 4: "sexta-feira", 5: "sábado", 6: "domingo"
+            }
+            dia_semana = dias_semana[dt.weekday()]
+            data_extenso = f"{dia_semana}, {dt.day} de {meses.get(dt.month, '')} de {dt.year}"
+            st.caption(f"📆 **{data_extenso}**")
+        with c3:
+            agora = agora_brasil()
+            m = agora.minute
+            add_m = 30 - (m % 30) if m % 30 != 0 else 30
+            hora_sugerida = (agora + timedelta(minutes=add_m)).time()
+            h_ent = st.time_input("⏰ Hora Retirada", value=hora_sugerida, help="Horário que o cliente vai retirar o pedido (sugerido próx 30min)")
+        
+        st.markdown("### 3️⃣ Itens do Pedido")
+        c3_1, c4, c5 = st.columns(3)
+        with c3_1:
+            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0)
+        with c4:
+            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0)
+        with c5:
+            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
+        
+        # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
+        preco_atual = obter_preco_base()
+        st.caption(f"💵 Preço unitário: R$ {preco_atual:.2f} | Cálculo: (Caruru + Bobó) × R$ {preco_atual:.2f} - Desconto%")
+        
+        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
+        
+        c6, c7 = st.columns(2)
+        with c6:
+            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
+        with c7:
+            stt = st.selectbox("📊 Status", OPCOES_STATUS)
+        
+        # Botão de salvar
+        submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
+
+        if submitted:
+            if cliente_eh_novo:
+                cliente_final = nome_novo_cliente.strip()
+                if not cliente_final:
+                    st.error("❌ Digite o nome do novo cliente.")
+                    st.stop()
+                contato_final = contato_cliente
+                
+                # Salva os dados do novo cliente silenciosamente
+                sincronizar_dados_cliente(nome_cliente=cliente_final, contato=contato_final, observacoes="Cadastrado via Novo Pedido inline")
+                st.session_state.clientes = carregar_clientes()
+            else:
+                cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
+                contato_final = cont
+
+            # Guarda os dados do pedido em session_state para o dialog
+            st.session_state.pedido_pendente = {
+                'cliente': cliente_final,
+                'caruru': qc,
+                'bobo': qb,
+                'data': dt,
+                'hora': h_ent,
+                'status': stt,
+                'pagamento': pg,
+                'contato': contato_final,
+                'desconto': dc,
+                'observacoes': obs
+            }
+            st.rerun()
 
 # --- PEDIDOS DO DIA ---
 if menu == "📅 Pedidos do Dia":
@@ -2543,228 +2697,86 @@ if menu == "📅 Pedidos do Dia":
         st.subheader("📋 Entregas do Dia")
 
         if not df_dia.empty:
-            # Lista de pedidos compacta com bordas sutis
-            linha_num = 0
-            for idx, pedido in df_dia.iterrows():
-                with st.container():
-                    st.markdown(f"""
-                        <style>
-                        div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            padding: 0px;
-                            margin: 0px;
-                            line-height: 1.2;
-                        }}
-                        </style>
-                    """, unsafe_allow_html=True)
+            # Configuração do data_editor para alta performance
+            df_edit = df_dia.copy()
+            
+            # Garantir tipos de dados consistentes
+            if 'Caruru' in df_edit: df_edit['Caruru'] = df_edit['Caruru'].fillna(0).astype(int)
+            if 'Bobo' in df_edit: df_edit['Bobo'] = df_edit['Bobo'].fillna(0).astype(int)
+            if 'Desconto' in df_edit: df_edit['Desconto'] = df_edit['Desconto'].fillna(0).astype(int)
+            if 'Valor' in df_edit: df_edit['Valor'] = df_edit['Valor'].astype(float)
+            
+            # Processar hora e data
+            df_edit['Hora_Str'] = df_edit['Hora'].apply(lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x)[:5] if pd.notna(x) else "")
+            df_edit['Data_Str'] = df_edit['Data'].apply(lambda x: x.strftime('%d/%m/%Y') if hasattr(x, 'strftime') else str(x) if pd.notna(x) else "")
 
-                    col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11 = st.columns([0.4, 1.5, 0.7, 0.7, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3, 0.4])
+            col_config = {
+                "ID_Pedido": st.column_config.NumberColumn("ID", disabled=True, format="%d", width="small"),
+                "Cliente": st.column_config.TextColumn("Cliente", disabled=True, width="medium"),
+                "Hora_Str": st.column_config.TextColumn("Hora", disabled=True, width="small"),
+                "Caruru": st.column_config.NumberColumn("🥘 Car", disabled=True, format="%d", width="small"),
+                "Bobo": st.column_config.NumberColumn("🦐 Bob", disabled=True, format="%d", width="small"),
+                "Valor": st.column_config.NumberColumn("Total", disabled=True, format="R$ %.2f", width="small"),
+                "Status": st.column_config.SelectboxColumn("Status", options=OPCOES_STATUS, disabled=False, required=True, width="medium"),
+                "Pagamento": st.column_config.SelectboxColumn("Pagamento", options=OPCOES_PAGAMENTO, disabled=False, required=True, width="medium"),
+                "Contato": st.column_config.TextColumn("Contato", disabled=True, width="medium"),
+                "Observacoes": st.column_config.TextColumn("Obs", disabled=True, width="large"),
+                
+                # Colunas desnecessárias na visualização listada
+                "Data": None, "Hora": None, "Desconto": None, "Data_Str": None
+            }
 
-                    with col1:
-                        st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
-                    with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
-                    with col3:
-                        hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
-                        st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
-                    with col4:
-                        st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>🥘 {int(pedido['Caruru'])} 🦐 {int(pedido['Bobo'])}</div>", unsafe_allow_html=True)
-                    with col5:
-                        st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
-                    with col6:
-                        st.markdown(get_status_badge(pedido['Status']), unsafe_allow_html=True)
-                    with col7:
-                        st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
-                    with col8:
-                        st.markdown(get_obs_icon(pedido['Observacoes']), unsafe_allow_html=True)
-                    with col9:
-                        if st.button("👁️", key=f"ver_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
-                            st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False)
-                            st.rerun()
-                    with col10:
-                        if st.button("✏️", key=f"edit_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            # NOVA ABORDAGEM: Usar uma única variável com o ID do pedido em edição (aba Dia)
-                            id_clicado = int(pedido['ID_Pedido'])
-                            if st.session_state.get('pedido_em_edicao_dia_id') == id_clicado:
-                                # Se já está editando este pedido, fecha
-                                st.session_state['pedido_em_edicao_dia_id'] = None
-                            else:
-                                # Abre este pedido para edição
-                                st.session_state['pedido_em_edicao_dia_id'] = id_clicado
-                            st.rerun()
-                    with col11:
-                        # Botão "Marcar Entregue" - só aparece se não estiver entregue
-                        if pedido['Status'] != "✅ Entregue":
-                            if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue e Pago", use_container_width=True, type="primary"):
-                                # Atualiza status e pagamento
-                                idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
-                                status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
-                                pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
+            # Renderiza st.data_editor
+            edited_df = st.data_editor(
+                df_edit,
+                column_config=col_config,
+                hide_index=True,
+                use_container_width=True,
+                key="editor_pedidos_dia"
+            )
 
-                                st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
-                                st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
+            # Detectar Mudanças efetuadas no Editor para atualizar o banco e Sheets
+            mudancas = False
+            for idx in df_edit.index:
+                id_pedido = int(df_edit.loc[idx, 'ID_Pedido'])
+                status_novo = edited_df.loc[idx, 'Status']
+                pagamento_novo = edited_df.loc[idx, 'Pagamento']
+                
+                status_antigo = df_edit.loc[idx, 'Status']
+                pagamento_antigo = df_edit.loc[idx, 'Pagamento']
+                
+                if status_novo != status_antigo or pagamento_novo != pagamento_antigo:
+                    try:
+                        idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_pedido].index[0]
+                        
+                        if status_novo != status_antigo:
+                            st.session_state.pedidos.at[idx_original, 'Status'] = status_novo
+                            registrar_alteracao("EDITAR", id_pedido, "Status", status_antigo, status_novo)
+                            
+                            # Auto-marcar pagamento/hora ao entregar
+                            if status_novo == "✅ Entregue":
+                                st.session_state.pedidos.at[idx_original, 'Hora'] = agora_brasil().time()
+                                if st.session_state.pedidos.at[idx_original, 'Pagamento'] != "PAGO":
+                                    pmt_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
+                                    st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
+                                    registrar_alteracao("EDITAR", id_pedido, "Pagamento", pmt_antigo, "PAGO")
 
-                                # Salva no disco
-                                if salvar_pedidos(st.session_state.pedidos):
-                                    # Registra alterações no histórico
-                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
-                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Pagamento", pagamento_antigo, "PAGO")
-
-                                    # Sincroniza automaticamente
-                                    sincronizar_automaticamente('editar')
-
-                                    st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue e pago!", icon="✅")
-                                    st.rerun()
-                                else:
-                                    st.error("Erro ao salvar alteração")
-
-                    # Visualização detalhada
-                    if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
-                        with st.expander("📋 Detalhes Completos", expanded=True):
-                            col_det1, col_det2 = st.columns(2)
-                            with col_det1:
-                                st.markdown(f"""
-                                **🆔 ID:** {int(pedido['ID_Pedido'])}
-                                **👤 Cliente:** {pedido['Cliente']}
-                                **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
-                                **⏰ Hora:** {hora_str}
-                                """)
-                                st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
-                            with col_det2:
-                                st.markdown(f"""
-                                **🥘 Caruru:** {int(pedido['Caruru'])}
-                                **🦐 Bobó:** {int(pedido['Bobo'])}
-                                **💸 Desconto:** {pedido['Desconto']:.0f}%
-                                **💰 Valor Total:** {formatar_valor_br(pedido['Valor'])}
-                                **📊 Status:** {pedido['Status']}
-                                **💳 Pagamento:** {pedido['Pagamento']}
-                                """)
-                            if pedido['Observacoes']:
-                                st.markdown(f"**📝 Observações:**")
-                                st.info(pedido['Observacoes'])
-
-                            if st.button("✖️ Fechar", key=f"fechar_vis_{pedido['ID_Pedido']}", use_container_width=True):
-                                st.session_state[f"visualizar_{pedido['ID_Pedido']}"] = False
-                                st.rerun()
-
-                    # Modo de edição - NOVA ABORDAGEM com ID único
-                    if st.session_state.get('pedido_em_edicao_dia_id') == int(pedido['ID_Pedido']):
-                        with st.expander("✏️ Editar Pedido", expanded=True):
-                            # Busca o pedido específico pelo ID armazenado (não pela variável do loop)
-                            id_em_edicao_dia = st.session_state['pedido_em_edicao_dia_id']
-                            pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao_dia].iloc[0]
-
-                            with st.form(f"form_edit_{id_em_edicao_dia}"):
-                                # Linha 1: Status, Pagamento, Desconto
-                                edit_col1, edit_col2, edit_col3 = st.columns(3)
-                                with edit_col1:
-                                    novo_status = st.selectbox("📊 Status", OPCOES_STATUS,
-                                                              index=OPCOES_STATUS.index(pedido_atual['Status']) if pedido_atual['Status'] in OPCOES_STATUS else 0,
-                                                              key=f"status_{pedido['ID_Pedido']}")
-                                with edit_col2:
-                                    novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO,
-                                                                 index=OPCOES_PAGAMENTO.index(pedido_atual['Pagamento']) if pedido_atual['Pagamento'] in OPCOES_PAGAMENTO else 1,
-                                                                 key=f"pag_{pedido['ID_Pedido']}")
-                                with edit_col3:
-                                    novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']),
-                                                                   key=f"desc_{pedido['ID_Pedido']}")
-
-                                # Linha 2: Caruru, Bobó
-                                edit_col4, edit_col5 = st.columns(2)
-                                with edit_col4:
-                                    novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']),
-                                                                 key=f"car_{pedido['ID_Pedido']}")
-                                with edit_col5:
-                                    novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']),
-                                                               key=f"bob_{pedido['ID_Pedido']}")
-
-                                # Linha 3: Observações (largura total)
-                                novas_obs = st.text_area("📝 Observações", value=pedido_atual['Observacoes'], height=150,
-                                                        key=f"obs_{pedido['ID_Pedido']}")
-
-                                col_save, col_cancel, col_delete = st.columns([2, 2, 1])
-                                with col_save:
-                                    salvar = st.form_submit_button("💾 Salvar", use_container_width=True, type="primary")
-                                with col_cancel:
-                                    cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
-                                with col_delete:
-                                    excluir = st.form_submit_button("🗑️", use_container_width=True)
-
-                                if salvar:
-                                    if novo_caruru == 0 and novo_bobo == 0:
-                                        st.error("❌ Pedido deve ter pelo menos 1 item")
-                                    else:
-                                        campos = {
-                                            "Status": novo_status,
-                                            "Pagamento": novo_pagamento,
-                                            "Caruru": novo_caruru,
-                                            "Bobo": novo_bobo,
-                                            "Desconto": novo_desconto,
-                                            "Observacoes": novas_obs
-                                        }
-                                        sucesso, msg = atualizar_pedido(id_em_edicao_dia, campos)
-                                        if sucesso:
-                                            st.toast(f"✅ Pedido #{id_em_edicao_dia} atualizado!", icon="✅")
-                                            st.session_state['pedido_em_edicao_dia_id'] = None  # Fecha edição
-                                            st.rerun()
-                                        else:
-                                            st.error(msg)
-
-                                if cancelar:
-                                    st.session_state['pedido_em_edicao_dia_id'] = None  # Fecha edição
-                                    st.rerun()
-
-                                if excluir:
-                                    # Define flag para mostrar confirmação FORA do form
-                                    st.session_state[f"confirmar_exclusao_{id_em_edicao_dia}"] = True
-                                    st.rerun()
-
-                        # Confirmação de exclusão - FORA do form
-                        if st.session_state.get(f"confirmar_exclusao_{pedido['ID_Pedido']}", False):
-                            st.warning(f"⚠️ **ATENÇÃO:** Você tem certeza que deseja excluir o pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
-                            st.markdown("**Esta ação não pode ser desfeita!**")
-
-                            col_conf_del1, col_conf_del2 = st.columns(2)
-
-                            with col_conf_del1:
-                                if st.button("✅ SIM, EXCLUIR", key=f"confirmar_sim_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
-                                    id_para_excluir = int(pedido['ID_Pedido'])
-                                    sucesso, msg = excluir_pedido(id_para_excluir, "Excluído via interface")
-                                    if sucesso:
-                                        # Limpa TODOS os estados relacionados ao pedido
-                                        keys_to_delete = [
-                                            f"editando_{id_para_excluir}",
-                                            f"visualizar_{id_para_excluir}",
-                                            f"confirmar_exclusao_{id_para_excluir}",
-                                            f"form_edit_{id_para_excluir}"
-                                        ]
-                                        for key in keys_to_delete:
-                                            if key in st.session_state:
-                                                del st.session_state[key]
-
-                                        # Força delay para garantir que arquivo foi salvo
-                                        time_module.sleep(0.5)
-
-                                        # Recarrega dados do arquivo
-                                        st.session_state.pedidos = carregar_pedidos()
-
-                                        st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
-                                        logger.info(f"✅ Pedido {id_para_excluir} excluído via Pedidos do Dia - Total restante: {len(st.session_state.pedidos)}")
-                                        st.rerun()
-                                    else:
-                                        st.error(msg)
-                                        logger.error(f"❌ Falha ao excluir pedido {id_para_excluir}: {msg}")
-                                        # Remove flag de confirmação
-                                        del st.session_state[f"confirmar_exclusao_{id_para_excluir}"]
-                                        st.rerun()
-
-                            with col_conf_del2:
-                                if st.button("❌ CANCELAR", key=f"confirmar_nao_{pedido['ID_Pedido']}", use_container_width=True):
-                                    # Remove flag de confirmação
-                                    del st.session_state[f"confirmar_exclusao_{pedido['ID_Pedido']}"]
-                                    st.rerun()
-
-                # Incrementa contador para zebra stripes
-                linha_num += 1
+                        elif pagamento_novo != pagamento_antigo:
+                            st.session_state.pedidos.at[idx_original, 'Pagamento'] = pagamento_novo
+                            registrar_alteracao("EDITAR", id_pedido, "Pagamento", pagamento_antigo, pagamento_novo)
+                        
+                        mudancas = True
+                    except Exception as e:
+                        logger.error(f"Erro ao processar edição de {id_pedido}: {e}")
+            
+            if mudancas:
+                if salvar_pedidos(st.session_state.pedidos):
+                    sincronizar_automaticamente('editar')
+                    st.toast("✅ Alterações salvas silenciosamente!", icon="✅")
+                    time_module.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Falha ao salvar no arquivo local.")
         else:
             st.info(f"Nenhum pedido para {dt_filter.strftime('%d/%m/%Y')}")
 
@@ -2772,134 +2784,9 @@ if menu == "📅 Pedidos do Dia":
 elif menu == "Novo Pedido":
     st.title("📝 Novo Pedido")
     
-    # Botão para limpar o formulário
-    col_titulo, col_limpar = st.columns([4, 1])
-    with col_limpar:
-        if st.button("🔄 Limpar", help="Limpar todos os campos do formulário"):
-            # Remove todas as keys relacionadas ao formulário
-            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo']
-            for key in keys_to_delete:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-
-    # Verifica se deve resetar o cliente (após salvar pedido)
-    if st.session_state.get('resetar_cliente_novo', False):
-        # Deleta as keys do selectbox para forçar reset
-        if 'sel_cliente_novo' in st.session_state:
-            del st.session_state['sel_cliente_novo']
-        if 'cliente_novo_index' in st.session_state:
-            del st.session_state['cliente_novo_index']
-        st.session_state.resetar_cliente_novo = False
-        logger.info("Formulário de novo pedido resetado com sucesso")
-
-    # Inicializa índice do cliente (sempre volta para 0 = "-- Selecione --")
-    if 'cliente_novo_index' not in st.session_state:
-        st.session_state.cliente_novo_index = 0
-
-    # Carrega lista de clientes
-    try:
-        clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
-    except:
-        clis = []
-
-    lista_clientes = ["-- Selecione --"] + clis
-
-    st.markdown("### 1️⃣ Cliente")
-
-    # Selectbox do cliente FORA do form para poder buscar o contato
-    c_sel = st.selectbox(
-        "👤 Nome do Cliente",
-        lista_clientes,
-        index=st.session_state.cliente_novo_index,
-        key="sel_cliente_novo"
-    )
+    # Chama o fragmento responsável por renderizar o form e controles, sem recarregar a tela inteira em cada clique
+    render_novo_pedido_fragment()
     
-    # Busca o contato do cliente selecionado
-    contato_cliente = ""
-    if c_sel and c_sel != "-- Selecione --":
-        try:
-            res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
-            if not res.empty:
-                contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
-        except:
-            contato_cliente = ""
-    else:
-        c_sel = ""  # Reseta para vazio se for "-- Selecione --"
-    
-    if not c_sel:
-        st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
-    else:
-        st.success(f"📱 Contato encontrado: **{contato_cliente}**" if contato_cliente else "⚠️ Cliente sem telefone cadastrado")
-    
-    st.markdown("### 2️⃣ Dados do Pedido")
-    
-    # Usar form com clear_on_submit para limpar automaticamente
-    with st.form("form_novo_pedido", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
-        with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY")
-            # Mostra a data por extenso para confirmação visual
-            meses = {
-                1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
-                5: "maio", 6: "junho", 7: "julho", 8: "agosto",
-                9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro"
-            }
-            dias_semana = {
-                0: "segunda-feira", 1: "terça-feira", 2: "quarta-feira",
-                3: "quinta-feira", 4: "sexta-feira", 5: "sábado", 6: "domingo"
-            }
-            dia_semana = dias_semana[dt.weekday()]
-            data_extenso = f"{dia_semana}, {dt.day} de {meses[dt.month]} de {dt.year}"
-            st.caption(f"📆 **{data_extenso}**")
-        with c3:
-            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido")
-        
-        st.markdown("### 3️⃣ Itens do Pedido")
-        c3, c4, c5 = st.columns(3)
-        with c3:
-            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0)
-        with c4:
-            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0)
-        with c5:
-            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
-        
-        # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
-        preco_atual = obter_preco_base()
-        st.caption(f"💵 Preço unitário: R$ {preco_atual:.2f} | Cálculo: (Caruru + Bobó) × R$ {preco_atual:.2f} - Desconto%")
-        
-        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
-        
-        c6, c7 = st.columns(2)
-        with c6:
-            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
-        with c7:
-            stt = st.selectbox("📊 Status", OPCOES_STATUS)
-        
-        # Botão de salvar
-        submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
-
-        if submitted:
-            # Usa o cliente selecionado FORA do form
-            cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
-
-            # Guarda os dados do pedido em session_state para o dialog
-            st.session_state.pedido_pendente = {
-                'cliente': cliente_final,
-                'caruru': qc,
-                'bobo': qb,
-                'data': dt,
-                'hora': h_ent,
-                'status': stt,
-                'pagamento': pg,
-                'contato': cont,
-                'desconto': dc,
-                'observacoes': obs
-            }
-            st.rerun()
-
     # Mostra toast de sucesso se pedido foi salvo
     if 'pedido_salvo_id' in st.session_state:
         st.toast(f"✅ Pedido #{st.session_state.pedido_salvo_id} criado com sucesso!", icon="✅")
@@ -3040,264 +2927,86 @@ elif menu == "Gerenciar Tudo":
         if df_view.empty:
             st.info("Nenhum pedido encontrado com os filtros aplicados.")
         else:
-            # Lista de pedidos compacta com bordas sutis
-            linha_num = 0
-            for idx, pedido in df_view.iterrows():
-                with st.container():
-                    st.markdown(f"""
-                        <style>
-                        div[data-testid="stVerticalBlock"] > div:nth-child({linha_num + 1}) {{
-                            padding: 0px;
-                            margin: 0px;
-                            line-height: 1.2;
-                        }}
-                        </style>
-                    """, unsafe_allow_html=True)
+            # Configuração do data_editor para alta performance
+            df_edit_all = df_view.copy()
+            
+            # Garantir tipos de dados consistentes
+            if 'Caruru' in df_edit_all: df_edit_all['Caruru'] = df_edit_all['Caruru'].fillna(0).astype(int)
+            if 'Bobo' in df_edit_all: df_edit_all['Bobo'] = df_edit_all['Bobo'].fillna(0).astype(int)
+            if 'Desconto' in df_edit_all: df_edit_all['Desconto'] = df_edit_all['Desconto'].fillna(0).astype(int)
+            if 'Valor' in df_edit_all: df_edit_all['Valor'] = df_edit_all['Valor'].astype(float)
+            
+            # Processar hora e data baseados já processados do BD local
+            df_edit_all['Hora_Str'] = df_edit_all['Hora'].apply(lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x)[:5] if pd.notna(x) else "")
+            df_edit_all['Data_Str'] = df_edit_all['Data'].apply(lambda x: x.strftime('%d/%m/%Y') if hasattr(x, 'strftime') else str(x) if pd.notna(x) else "")
 
-                    col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.3, 0.3])
+            col_config_all = {
+                "ID_Pedido": st.column_config.NumberColumn("ID", disabled=True, format="%d", width="small"),
+                "Cliente": st.column_config.TextColumn("Cliente", disabled=True, width="medium"),
+                "Data_Str": st.column_config.TextColumn("Data", disabled=True, width="small"),
+                "Hora_Str": st.column_config.TextColumn("Hora", disabled=True, width="small"),
+                "Caruru": st.column_config.NumberColumn("🥘 Car", disabled=True, format="%d", width="small"),
+                "Bobo": st.column_config.NumberColumn("🦐 Bob", disabled=True, format="%d", width="small"),
+                "Valor": st.column_config.NumberColumn("Total", disabled=True, format="R$ %.2f", width="small"),
+                "Status": st.column_config.SelectboxColumn("Status", options=OPCOES_STATUS, disabled=False, required=True, width="medium"),
+                "Pagamento": st.column_config.SelectboxColumn("Pagamento", options=OPCOES_PAGAMENTO, disabled=False, required=True, width="medium"),
+                "Contato": st.column_config.TextColumn("Contato", disabled=True, width="medium"),
+                "Observacoes": st.column_config.TextColumn("Obs", disabled=True, width="large"),
+                
+                # Colunas extras do data_editor
+                "Data": None, "Hora": None, "Desconto": None
+            }
 
-                    with col1:
-                        st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
-                    with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
-                    with col3:
-                        data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
-                        hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
-                    with col4:
-                        st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
-                    with col5:
-                        st.markdown(get_status_badge(pedido['Status']), unsafe_allow_html=True)
-                    with col6:
-                        st.markdown(get_pagamento_badge(pedido['Pagamento']), unsafe_allow_html=True)
-                    with col7:
-                        st.markdown(get_obs_icon(pedido['Observacoes']), unsafe_allow_html=True)
-                    with col8:
-                        if st.button("👁️", key=f"ver_all_{pedido['ID_Pedido']}", help="Visualizar", use_container_width=True):
-                            st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = not st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False)
-                            st.rerun()
-                    with col9:
-                        if st.button("✏️", key=f"edit_all_{pedido['ID_Pedido']}", help="Editar", use_container_width=True):
-                            # NOVA ABORDAGEM: Usar uma única variável com o ID do pedido em edição
-                            id_clicado = int(pedido['ID_Pedido'])
-                            if st.session_state.get('pedido_em_edicao_id') == id_clicado:
-                                # Se já está editando este pedido, fecha
-                                st.session_state['pedido_em_edicao_id'] = None
-                            else:
-                                # Abre este pedido para edição
-                                st.session_state['pedido_em_edicao_id'] = id_clicado
-                            st.rerun()
+            # Renderiza st.data_editor nativo
+            edited_df_all = st.data_editor(
+                df_edit_all,
+                column_config=col_config_all,
+                hide_index=True,
+                use_container_width=True,
+                key="editor_pedidos_todos"
+            )
 
-                # Expander para visualização
-                if st.session_state.get(f"visualizar_all_{pedido['ID_Pedido']}", False):
-                    with st.expander("📋 Detalhes Completos", expanded=True):
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
-                            st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
-                            st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}")
-                            st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else pedido['Hora']}")
-                        with col_b:
-                            st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} un.")
-                            st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
-                            st.markdown(f"**💸 Desconto:** {int(pedido['Desconto'])}%")
-                            st.markdown(f"**💵 Valor Total:** {formatar_valor_br(pedido['Valor'])}")
+            # Detectar e persistir as alterações silenciosamente
+            mudancas_all = False
+            for idx in df_edit_all.index:
+                id_pedido = int(df_edit_all.loc[idx, 'ID_Pedido'])
+                status_novo = edited_df_all.loc[idx, 'Status']
+                pagamento_novo = edited_df_all.loc[idx, 'Pagamento']
+                
+                status_antigo = df_edit_all.loc[idx, 'Status']
+                pagamento_antigo = df_edit_all.loc[idx, 'Pagamento']
+                
+                if status_novo != status_antigo or pagamento_novo != pagamento_antigo:
+                    try:
+                        idx_orig = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_pedido].index[0]
+                        if status_novo != status_antigo:
+                            st.session_state.pedidos.at[idx_orig, 'Status'] = status_novo
+                            registrar_alteracao("EDITAR", id_pedido, "Status", status_antigo, status_novo)
+                            
+                            # Auto-marcar pagamento/hora ao entregar
+                            if status_novo == "✅ Entregue":
+                                st.session_state.pedidos.at[idx_orig, 'Hora'] = agora_brasil().time()
+                                if st.session_state.pedidos.at[idx_orig, 'Pagamento'] != "PAGO":
+                                    pmt_antigo = st.session_state.pedidos.at[idx_orig, 'Pagamento']
+                                    st.session_state.pedidos.at[idx_orig, 'Pagamento'] = "PAGO"
+                                    registrar_alteracao("EDITAR", id_pedido, "Pagamento", pmt_antigo, "PAGO")
 
-                        st.markdown("---")
-                        col_c, col_d = st.columns(2)
-                        with col_c:
-                            st.markdown(f"**💳 Pagamento:** {pedido['Pagamento']}")
-                        with col_d:
-                            st.markdown(f"**📊 Status:** {pedido['Status']}")
-
-                        if pedido['Observacoes']:
-                            st.markdown("**📝 Observações:**")
-                            st.info(pedido['Observacoes'])
-
-                        if st.button("✖️ Fechar", key=f"fechar_vis_all_{pedido['ID_Pedido']}"):
-                            st.session_state[f"visualizar_all_{pedido['ID_Pedido']}"] = False
-                            st.rerun()
-
-                # Expander para edição - NOVA ABORDAGEM com ID único
-                if st.session_state.get('pedido_em_edicao_id') == int(pedido['ID_Pedido']):
-                    with st.expander("✏️ Editar Pedido", expanded=True):
-                        # Busca o pedido específico pelo ID armazenado (não pela variável do loop)
-                        id_em_edicao = st.session_state['pedido_em_edicao_id']
-                        pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
-
-                        with st.form(f"form_edit_all_{id_em_edicao}"):
-                            st.markdown("### 📝 Dados do Pedido")
-
-                            # Cliente e contato
-                            col_e1, col_e2 = st.columns(2)
-                            with col_e1:
-                                clientes_lista = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
-                                try:
-                                    idx_cliente = clientes_lista.index(pedido_atual['Cliente']) if pedido_atual['Cliente'] in clientes_lista else 0
-                                except:
-                                    idx_cliente = 0
-                                novo_cliente = st.selectbox("👤 Cliente", clientes_lista, index=idx_cliente)
-                            with col_e2:
-                                novo_contato = st.text_input("📱 Contato", value=str(pedido_atual['Contato']))
-
-                            # Data e hora
-                            col_e3, col_e4 = st.columns(2)
-                            with col_e3:
-                                nova_data = st.date_input("📅 Data Entrega", value=pedido_atual['Data'], format="DD/MM/YYYY")
-                            with col_e4:
-                                nova_hora = st.time_input("⏰ Hora Retirada", value=pedido_atual['Hora'])
-
-                            # Quantidades
-                            col_e5, col_e6, col_e7 = st.columns(3)
-                            with col_e5:
-                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']))
-                            with col_e6:
-                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']))
-                            with col_e7:
-                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']))
-
-                            # Pagamento e status
-                            col_e8, col_e9 = st.columns(2)
-                            with col_e8:
-                                novo_pagamento = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO, index=OPCOES_PAGAMENTO.index(pedido_atual['Pagamento']) if pedido_atual['Pagamento'] in OPCOES_PAGAMENTO else 0)
-                            with col_e9:
-                                novo_status = st.selectbox("📊 Status", OPCOES_STATUS, index=OPCOES_STATUS.index(pedido_atual['Status']) if pedido_atual['Status'] in OPCOES_STATUS else 0)
-
-                            # Observações com mais espaço
-                            novas_obs = st.text_area("📝 Observações", value=str(pedido_atual['Observacoes']) if pd.notna(pedido_atual['Observacoes']) else "", height=150)
-
-                            # Botões
-                            col_e10, col_e11, col_e12 = st.columns([2, 2, 1])
-                            with col_e10:
-                                salvar = st.form_submit_button("💾 Salvar Alterações", use_container_width=True, type="primary")
-                            with col_e11:
-                                cancelar = st.form_submit_button("↩️ Cancelar", use_container_width=True)
-                            with col_e12:
-                                st.markdown("")  # Espaço
-
-                            # Botão de exclusão
-                            excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary")
-
-                            if salvar:
-                                # Captura dados antigos ANTES de atualizar (para sincronização)
-                                pedido_antigo = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
-                                cliente_antigo = pedido_antigo['Cliente']
-                                contato_antigo = pedido_antigo['Contato']
-
-                                # Atualiza o pedido usando o ID correto
-                                novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
-                                df_atualizado = st.session_state.pedidos.copy()
-                                mask = df_atualizado['ID_Pedido'] == id_em_edicao
-
-                                df_atualizado.loc[mask, 'Cliente'] = novo_cliente
-                                df_atualizado.loc[mask, 'Contato'] = novo_contato
-                                df_atualizado.loc[mask, 'Data'] = nova_data
-                                df_atualizado.loc[mask, 'Hora'] = nova_hora
-                                df_atualizado.loc[mask, 'Caruru'] = novo_caruru
-                                df_atualizado.loc[mask, 'Bobo'] = novo_bobo
-                                df_atualizado.loc[mask, 'Desconto'] = novo_desconto
-                                df_atualizado.loc[mask, 'Valor'] = novo_valor
-                                df_atualizado.loc[mask, 'Pagamento'] = novo_pagamento
-                                df_atualizado.loc[mask, 'Status'] = novo_status
-                                df_atualizado.loc[mask, 'Observacoes'] = novas_obs
-
-                                if salvar_pedidos(df_atualizado):
-                                    # Recarrega do arquivo para garantir sincronização entre abas
-                                    st.session_state.pedidos = carregar_pedidos()
-
-                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE SHEETS
-                                    # IMPORTANTE: Sincroniza SEMPRE que houver edição, independente do campo alterado
-                                    sincronizar_automaticamente(operacao="editar")
-                                    logger.info(f"🔄 Sincronização automática disparada após edição do pedido #{id_em_edicao}")
-
-                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
-                                    # Se nome ou contato mudaram, sincroniza com banco de clientes
-                                    cliente_mudou = str(novo_cliente).strip() != str(cliente_antigo).strip()
-                                    contato_mudou = str(novo_contato).strip() != str(contato_antigo).strip()
-
-                                    if cliente_mudou or contato_mudou:
-                                        logger.info(f"🔍 Detectada mudança - Cliente: {cliente_mudou} ('{cliente_antigo}' → '{novo_cliente}'), Contato: {contato_mudou} ('{contato_antigo}' → '{novo_contato}')")
-
-                                        sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
-                                            nome_cliente=novo_cliente,
-                                            contato=novo_contato,
-                                            nome_cliente_antigo=cliente_antigo if cliente_mudou else None,
-                                            observacoes=""
-                                        )
-
-                                        logger.info(f"📊 Resultado sincronização - Sucesso: {sucesso_sync}, Tipo: {tipo_op}, Msg: {msg_sync}")
-
-                                        if sucesso_sync and tipo_op != "sem_alteracao":
-                                            st.toast(f"🔄 {msg_sync}", icon="🔄")
-                                            logger.info(f"🔄 Sincronização automática: {msg_sync}")
-
-                                    st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
-                                    st.toast(f"✅ Pedido #{id_em_edicao} atualizado!", icon="✅")
-                                    logger.info(f"Pedido {id_em_edicao} editado via Gerenciar Tudo")
-                                    time_module.sleep(0.5)
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Erro ao salvar as alterações.")
-
-                            if cancelar:
-                                st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
-                                st.rerun()
-
-                            if excluir:
-                                # Define flag para mostrar confirmação FORA do form
-                                st.session_state[f"confirmar_exclusao_all_{id_em_edicao}"] = True
-                                st.rerun()
-
-                    # Confirmação de exclusão - FORA do form
-                    if st.session_state.get(f"confirmar_exclusao_all_{pedido['ID_Pedido']}", False):
-                        st.warning(f"⚠️ **ATENÇÃO:** Você tem certeza que deseja excluir o pedido #{int(pedido['ID_Pedido'])} de {pedido['Cliente']}?")
-                        st.markdown("**Esta ação não pode ser desfeita!**")
-
-                        col_conf_del_all1, col_conf_del_all2 = st.columns(2)
-
-                        with col_conf_del_all1:
-                            if st.button("✅ SIM, EXCLUIR", key=f"confirmar_sim_all_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
-                                id_para_excluir = int(pedido['ID_Pedido'])
-                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_para_excluir].reset_index(drop=True)
-                                if salvar_pedidos(df_atualizado):
-                                    # Limpa TODOS os estados relacionados ao pedido
-                                    keys_to_delete = [
-                                        f"editando_all_{id_para_excluir}",
-                                        f"visualizar_all_{id_para_excluir}",
-                                        f"confirmar_exclusao_all_{id_para_excluir}",
-                                        f"form_edit_all_{id_para_excluir}"
-                                    ]
-                                    for key in keys_to_delete:
-                                        if key in st.session_state:
-                                            del st.session_state[key]
-
-                                    # Força delay para sync de arquivo
-                                    time_module.sleep(0.5)
-
-                                    # Recarrega dados do arquivo
-                                    st.session_state.pedidos = carregar_pedidos()
-
-                                    # 🔄 SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE SHEETS
-                                    sincronizar_automaticamente(operacao="excluir")
-                                    logger.info(f"🔄 Sincronização automática disparada após exclusão do pedido #{id_para_excluir}")
-
-                                    st.toast(f"🗑️ Pedido #{id_para_excluir} excluído com sucesso!", icon="✅")
-                                    logger.info(f"✅ Pedido {id_para_excluir} excluído via Gerenciar Tudo - Total restante: {len(st.session_state.pedidos)}")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Erro ao excluir o pedido.")
-                                    # Remove flag de confirmação
-                                    del st.session_state[f"confirmar_exclusao_all_{id_para_excluir}"]
-                                    st.rerun()
-
-                        with col_conf_del_all2:
-                            if st.button("❌ CANCELAR", key=f"confirmar_nao_all_{pedido['ID_Pedido']}", use_container_width=True):
-                                # Remove flag de confirmação
-                                del st.session_state[f"confirmar_exclusao_all_{pedido['ID_Pedido']}"]
-                                st.rerun()
-
-                # Incrementa contador para zebra stripes
-                linha_num += 1
+                        elif pagamento_novo != pagamento_antigo:
+                            st.session_state.pedidos.at[idx_orig, 'Pagamento'] = pagamento_novo
+                            registrar_alteracao("EDITAR", id_pedido, "Pagamento", pagamento_antigo, pagamento_novo)
+                        
+                        mudancas_all = True
+                    except Exception as e:
+                        logger.error(f"Erro ao processar edição mestre de {id_pedido}: {e}")
+            
+            if mudancas_all:
+                if salvar_pedidos(st.session_state.pedidos):
+                    sincronizar_automaticamente('editar')
+                    st.toast("✅ Atualizado banco mestre com sucesso!", icon="✅")
+                    time_module.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Falha crítica ao salvar edição mestre.")
         
         st.divider()
         
