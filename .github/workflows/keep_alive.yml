@@ -10,13 +10,25 @@ on:
 jobs:
   wake-up:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
+
       - name: Instalar Playwright (Chromium)
         run: |
           pip install playwright
           playwright install chromium --with-deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+
+      - name: Registrar binários do Playwright (cache hit)
+        run: pip install playwright
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
 
       - name: Acordar o App com sessão real
         run: |
@@ -29,15 +41,15 @@ jobs:
               browser = p.chromium.launch()
               page = browser.new_page()
 
-              print('🦐 Acessando Cantinho do Caruru...')
+              print('Acessando Cantinho do Caruru...')
               page.goto(url, wait_until='domcontentloaded', timeout=60000)
 
               # Aguarda o Streamlit carregar e estabelecer a conexão WebSocket
               page.wait_for_selector('[data-testid=\"stApp\"]', timeout=60000)
 
-              # Mantém a sessão aberta por 5 segundos para garantir o registro
-              page.wait_for_timeout(5000)
+              # Mantém a sessão aberta por 30 segundos para garantir o registro
+              page.wait_for_timeout(30000)
 
-              print('✅ App acordado! Título:', page.title())
+              print('App acordado! Titulo:', page.title())
               browser.close()
           "
