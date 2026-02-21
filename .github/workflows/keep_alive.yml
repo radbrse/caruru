@@ -2,27 +2,42 @@ name: Keep Alive - Cantinho do Caruru
 
 on:
   schedule:
-    # Roda a cada 12 horas (00:00 e 12:00 UTC)
-    - cron: "0 */12 * * *"
+    # Roda a cada 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
+    # Streamlit hiberna após 12h sem tráfego real — 6h dá folga segura
+    - cron: "0 */6 * * *"
   workflow_dispatch: # Permite executar manualmente no GitHub
 
 jobs:
-  ping:
+  wake-up:
     runs-on: ubuntu-latest
-    steps:
-      - name: Ping Streamlit App
-        run: |
-          echo "🦐 Pingando o Cantinho do Caruru para mantê-lo acordado..."
-          curl -I https://radbrse-caruru-app-coa4y5.streamlit.app/
-          echo "✅ Ping enviado com sucesso!"
+    timeout-minutes: 5
 
-      - name: Verificar Status
+    steps:
+      - name: Instalar Playwright (Chromium)
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://radbrse-caruru-app-coa4y5.streamlit.app/)
-          echo "📊 Status HTTP: $HTTP_CODE"
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
-            echo "✅ App está respondendo corretamente!"
-          else
-            echo "⚠️ App retornou status $HTTP_CODE"
-            exit 1
-          fi
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Acordar o App com sessão real
+        run: |
+          python3 -c "
+          from playwright.sync_api import sync_playwright
+
+          url = 'https://radbrse-caruru-app-coa4y5.streamlit.app/'
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+
+              print('🦐 Acessando Cantinho do Caruru...')
+              page.goto(url, wait_until='domcontentloaded', timeout=60000)
+
+              # Aguarda o Streamlit carregar e estabelecer a conexão WebSocket
+              page.wait_for_selector('[data-testid=\"stApp\"]', timeout=60000)
+
+              # Mantém a sessão aberta por 5 segundos para garantir o registro
+              page.wait_for_timeout(5000)
+
+              print('✅ App acordado! Título:', page.title())
+              browser.close()
+          "
