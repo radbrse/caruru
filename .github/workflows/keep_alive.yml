@@ -32,7 +32,7 @@ jobs:
 
       - name: Acordar o App com sessão real
         run: |
-          python3 -c "
+          python3 << 'PYEOF'
           from playwright.sync_api import sync_playwright
 
           url = 'https://radbrse-caruru-app-coa4y5.streamlit.app/'
@@ -44,12 +44,25 @@ jobs:
               print('Acessando Cantinho do Caruru...')
               page.goto(url, wait_until='domcontentloaded', timeout=60000)
 
-              # Aguarda o Streamlit carregar e estabelecer a conexão WebSocket
-              page.wait_for_selector('[data-testid=\"stApp\"]', timeout=60000)
+              # Se o app estiver hibernando, Streamlit mostra uma tela com botão para acordá-lo
+              try:
+                  wake_btn = page.wait_for_selector(
+                      'button:has-text("Yes, get this app back up")',
+                      timeout=8000
+                  )
+                  print('App hibernado detectado. Clicando para acordar...')
+                  wake_btn.click()
+              except Exception:
+                  print('App ja estava ativo (sem tela de hibernacao).')
 
-              # Mantém a sessão aberta por 30 segundos para garantir o registro
+              # Aguarda o Streamlit carregar completamente — timeout maior para cold start
+              print('Aguardando stApp ficar visivel...')
+              page.wait_for_selector('[data-testid="stApp"]', timeout=180000)
+
+              # Mantém a sessão aberta para garantir o registro como tráfego real
+              print('stApp visivel! Mantendo sessao por 30s...')
               page.wait_for_timeout(30000)
 
               print('App acordado! Titulo:', page.title())
               browser.close()
-          "
+          PYEOF
