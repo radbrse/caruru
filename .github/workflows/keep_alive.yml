@@ -13,26 +13,15 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Cache Playwright Chromium
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-v1
-
-      - name: Instalar Playwright (Chromium)
+      - name: Instalar Playwright
         run: |
           pip install playwright
           playwright install chromium --with-deps
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-
-      - name: Registrar binários do Playwright (cache hit)
-        run: pip install playwright
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
 
       - name: Acordar o App com sessão real
         run: |
           python3 << 'PYEOF'
+          import sys
           from playwright.sync_api import sync_playwright
 
           url = 'https://radbrse-caruru-app-coa4y5.streamlit.app/'
@@ -41,28 +30,53 @@ jobs:
               browser = p.chromium.launch()
               page = browser.new_page()
 
-              print('Acessando Cantinho do Caruru...')
-              page.goto(url, wait_until='domcontentloaded', timeout=60000)
-
-              # Se o app estiver hibernando, Streamlit mostra uma tela com botão para acordá-lo
               try:
-                  wake_btn = page.wait_for_selector(
+                  print('Acessando Cantinho do Caruru...')
+                  page.goto(url, wait_until='domcontentloaded', timeout=90000)
+
+                  # Se o app estiver hibernando, Streamlit mostra tela com botão para acordá-lo
+                  # Tenta vários seletores — Streamlit já mudou o texto entre versões
+                  wake_selectors = [
                       'button:has-text("Yes, get this app back up")',
-                      timeout=8000
-                  )
-                  print('App hibernado detectado. Clicando para acordar...')
-                  wake_btn.click()
-              except Exception:
-                  print('App ja estava ativo (sem tela de hibernacao).')
+                      'button:has-text("Wake up")',
+                      'button:has-text("Yes")',
+                  ]
+                  for sel in wake_selectors:
+                      try:
+                          wake_btn = page.wait_for_selector(sel, timeout=5000)
+                          print(f'App hibernado detectado (seletor: {sel}). Clicando...')
+                          wake_btn.click()
+                          break
+                      except Exception:
+                          continue
+                  else:
+                      print('Nenhum botao de hibernacao encontrado — app ja estava ativo.')
 
-              # Aguarda o Streamlit carregar completamente — timeout maior para cold start
-              print('Aguardando stApp ficar visivel...')
-              page.wait_for_selector('[data-testid="stApp"]', timeout=180000)
+                  # Aguarda o Streamlit carregar — timeout de 3 min para cold start
+                  print('Aguardando stApp ficar visivel (timeout 3 min)...')
+                  page.wait_for_selector('[data-testid="stApp"]', timeout=180000)
 
-              # Mantém a sessão aberta para garantir o registro como tráfego real
-              print('stApp visivel! Mantendo sessao por 30s...')
-              page.wait_for_timeout(30000)
+                  # Mantém sessão aberta para registrar como tráfego real
+                  print('stApp visivel! Mantendo sessao por 30s...')
+                  page.wait_for_timeout(30000)
 
-              print('App acordado! Titulo:', page.title())
-              browser.close()
+                  print(f'Sucesso! Titulo: {page.title()}')
+
+              except Exception as e:
+                  # Salva screenshot para diagnosticar falhas futuras
+                  page.screenshot(path='failure.png', full_page=True)
+                  print(f'ERRO: {e}')
+                  print('Screenshot salvo em failure.png (ver artefato do workflow)')
+                  raise
+
+              finally:
+                  browser.close()
           PYEOF
+
+      - name: Upload screenshot de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-screenshot
+          path: failure.png
+          retention-days: 7
