@@ -52,12 +52,12 @@ jobs:
                   else:
                       print('Nenhum botao de hibernacao encontrado — app ja estava ativo.')
 
-                  # Aguarda o Streamlit carregar — timeout de 3 min para cold start
-                  print('Aguardando stApp ficar visivel (timeout 3 min)...')
-                  page.wait_for_selector('[data-testid="stApp"]', timeout=180000)
+                  # Aguarda carregamento completo da rede (suficiente para registrar tráfego real)
+                  print('Aguardando carregamento...')
+                  page.wait_for_load_state('networkidle', timeout=60000)
 
                   # Mantém sessão aberta para registrar como tráfego real
-                  print('stApp visivel! Mantendo sessao por 30s...')
+                  print('Carregado! Mantendo sessao por 30s...')
                   page.wait_for_timeout(30000)
 
                   print(f'Sucesso! Titulo: {page.title()}')
