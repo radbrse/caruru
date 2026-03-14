@@ -629,24 +629,43 @@ def sincronizar_com_sheets(modo="enviar"):
         resultados = []
 
         if modo in ["enviar", "ambos"]:
+            envio_ok = True
+
             # Envia Pedidos
             df_pedidos = st.session_state.pedidos
-            sucesso, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
+            sucesso_pedidos, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
             resultados.append(f"Pedidos: {msg}")
+            if not sucesso_pedidos:
+                envio_ok = False
 
             # Envia Clientes
             df_clientes = st.session_state.clientes
-            sucesso, msg = salvar_no_sheets(client, "Clientes", df_clientes)
+            sucesso_clientes, msg = salvar_no_sheets(client, "Clientes", df_clientes)
             resultados.append(f"Clientes: {msg}")
+            if not sucesso_clientes:
+                envio_ok = False
 
-            # Registra no log de backups
-            log_backup = pd.DataFrame([{
-                'Timestamp': agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
-                'Ação': 'Backup Automático',
-                'Pedidos': len(df_pedidos),
-                'Clientes': len(df_clientes)
-            }])
-            salvar_no_sheets(client, "Backups_Log", log_backup)
+            # Se envio falhou, aborta antes de receber (evita sobrescrever dados locais)
+            if not envio_ok and modo == "ambos":
+                resultados.append("⚠️ Envio falhou — download cancelado para proteger dados locais")
+                return False, "\n".join(resultados)
+
+            # Registra no log de backups (append, não sobrescreve)
+            try:
+                log_existente, _ = carregar_do_sheets(client, "Backups_Log")
+                novo_registro = pd.DataFrame([{
+                    'Timestamp': agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
+                    'Ação': 'Backup Automático',
+                    'Pedidos': len(df_pedidos),
+                    'Clientes': len(df_clientes)
+                }])
+                if log_existente is not None and not log_existente.empty:
+                    log_completo = pd.concat([log_existente, novo_registro], ignore_index=True)
+                else:
+                    log_completo = novo_registro
+                salvar_no_sheets(client, "Backups_Log", log_completo)
+            except Exception as e_log:
+                logger.warning(f"⚠️ Erro ao registrar backup log: {e_log}")
 
         if modo in ["receber", "ambos"]:
             # Recebe Pedidos
@@ -1500,7 +1519,7 @@ def salvar_historico(df):
         return False
 
 def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
-    """Registra alterações para auditoria."""
+    """Registra alterações para auditoria. Read+append+write tudo dentro do lock."""
     try:
         registro = {
             "Timestamp": agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1511,19 +1530,27 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
             "Valor_Novo": str(valor_novo)[:100]
         }
 
-        if os.path.exists(ARQUIVO_HISTORICO):
-            df = pd.read_csv(ARQUIVO_HISTORICO)
-        else:
-            df = pd.DataFrame()
+        backup_path = None
+        with file_lock(ARQUIVO_HISTORICO):
+            # Leitura dentro do lock para evitar race condition
+            if os.path.exists(ARQUIVO_HISTORICO):
+                df = pd.read_csv(ARQUIVO_HISTORICO)
+            else:
+                df = pd.DataFrame()
 
-        df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
 
-        # Mantém apenas últimos 1000 registros
-        if len(df) > 1000:
-            df = df.tail(1000)
+            # Mantém apenas últimos 1000 registros
+            if len(df) > 1000:
+                df = df.tail(1000)
 
-        # Usa função com lock atômico
-        salvar_historico(df)
+            # Backup + atomic write dentro do lock
+            backup_path = criar_backup_com_timestamp(ARQUIVO_HISTORICO)
+            temp_file = f"{ARQUIVO_HISTORICO}.tmp"
+            df.to_csv(temp_file, index=False)
+            shutil.move(temp_file, ARQUIVO_HISTORICO)
+            logger.info(f"Alteração registrada: {tipo} - Pedido {id_pedido}")
+
     except Exception as e:
         logger.error(f"Erro registrar alteração: {e}")
 
@@ -3750,17 +3777,31 @@ elif menu == "👥 Cadastrar Clientes":
                 edited_limpo['Contato'] = edited_limpo['Contato'].fillna("").astype(str).apply(limpar_telefone)
                 edited_limpo['Observacoes'] = edited_limpo['Observacoes'].fillna("").astype(str).str.strip()
 
-                # Detecta mudanças de telefone e sincroniza com pedidos
+                # Detecta mudanças de nome e telefone e sincroniza com pedidos
                 for idx in edited_limpo.index:
-                    nome_cliente = edited_limpo.loc[idx, 'Nome']
+                    nome_novo = edited_limpo.loc[idx, 'Nome']
                     contato_novo = edited_limpo.loc[idx, 'Contato']
 
-                    # Verifica se o telefone mudou
                     if idx in clientes_antes.index:
+                        nome_antigo = str(clientes_antes.loc[idx, 'Nome']).strip()
+
+                        # Verifica se o nome mudou — propaga para pedidos existentes
+                        if nome_novo and nome_novo != nome_antigo and nome_antigo:
+                            mask_nome = st.session_state.pedidos['Cliente'] == nome_antigo
+                            qtd_rename = mask_nome.sum()
+                            if qtd_rename > 0:
+                                st.session_state.pedidos.loc[mask_nome, 'Cliente'] = nome_novo
+                                if not salvar_pedidos(st.session_state.pedidos):
+                                    st.error(f"❌ ERRO: Não foi possível renomear '{nome_antigo}' nos pedidos.")
+                                else:
+                                    registrar_alteracao("EDITAR", "CLIENTE", "Nome", nome_antigo, nome_novo)
+                                    st.info(f"✏️ Cliente '{nome_antigo}' renomeado para '{nome_novo}' em {qtd_rename} pedido(s)")
+
+                        # Verifica se o telefone mudou
                         contato_antigo = limpar_telefone(clientes_antes.loc[idx, 'Contato'])
                         if contato_novo != contato_antigo:
                             # Atualiza telefone em todos os pedidos deste cliente
-                            mask_pedidos = st.session_state.pedidos['Cliente'] == nome_cliente
+                            mask_pedidos = st.session_state.pedidos['Cliente'] == nome_novo
                             qtd_pedidos = mask_pedidos.sum()
 
                             if qtd_pedidos > 0:
@@ -3768,7 +3809,7 @@ elif menu == "👥 Cadastrar Clientes":
                                 if not salvar_pedidos(st.session_state.pedidos):
                                     st.error("❌ ERRO: Não foi possível atualizar telefones nos pedidos.")
                                 else:
-                                    st.info(f"📱 Telefone de '{nome_cliente}' atualizado em {qtd_pedidos} pedido(s)")
+                                    st.info(f"📱 Telefone de '{nome_novo}' atualizado em {qtd_pedidos} pedido(s)")
 
                 st.session_state.clientes = edited_limpo
 
@@ -3848,20 +3889,28 @@ elif menu == "👥 Cadastrar Clientes":
             lista_cli = st.session_state.clientes['Nome'].unique().tolist()
             d = st.selectbox("👤 Selecione o cliente:", lista_cli)
             
-            # Verifica se tem pedidos
+            # Verifica se tem pedidos ativos (não entregues)
             pedidos_cliente = st.session_state.pedidos[st.session_state.pedidos['Cliente'] == d]
-            if not pedidos_cliente.empty:
-                st.warning(f"⚠️ Este cliente tem {len(pedidos_cliente)} pedido(s) registrado(s).")
-            
-            confirma = st.checkbox(f"✅ Confirmo a exclusão de '{d}'")
-            
-            if st.button("🗑️ Excluir Cliente", type="primary", disabled=not confirma, use_container_width=True):
+            pedidos_ativos = pedidos_cliente[pedidos_cliente['Status'] != "✅ Entregue"] if not pedidos_cliente.empty else pd.DataFrame()
+
+            tem_pedidos_ativos = not pedidos_ativos.empty
+            if tem_pedidos_ativos:
+                st.error(f"🚫 Este cliente tem {len(pedidos_ativos)} pedido(s) ativo(s) (não entregue). Não é possível excluir.")
+                st.info("Finalize ou exclua os pedidos ativos antes de remover o cliente.")
+            elif not pedidos_cliente.empty:
+                st.warning(f"⚠️ Este cliente tem {len(pedidos_cliente)} pedido(s) já entregue(s) no histórico.")
+
+            confirma = st.checkbox(f"✅ Confirmo a exclusão de '{d}'", disabled=tem_pedidos_ativos)
+
+            if st.button("🗑️ Excluir Cliente", type="primary", disabled=(not confirma or tem_pedidos_ativos), use_container_width=True):
                 df_atualizado = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
 
                 # Tenta salvar no disco
                 if not salvar_clientes(df_atualizado):
                     st.error("❌ ERRO: Não foi possível excluir o cliente. Tente novamente.")
                 else:
+                    registrar_alteracao("EXCLUIR", "CLIENTE", "Nome", d, "")
+
                     # Recarrega do arquivo para garantir sincronização
                     st.session_state.clientes = carregar_clientes()
 
