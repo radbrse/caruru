@@ -10,7 +10,7 @@ Módulos:
   sheets.py    - Google Sheets sync
   pedidos.py   - CRUD de pedidos
   pdf.py       - Geração de PDFs
-  pages/       - Páginas da interface
+  views/       - Páginas da interface
 """
 
 import os
@@ -211,33 +211,33 @@ with st.sidebar:
 # ROTEAMENTO DE PÁGINAS
 # ==============================================================================
 if menu == "📅 Pedidos do Dia":
-    from pages.pedidos_dia import render
+    from views.pedidos_dia import render
     render()
 
 elif menu == "Novo Pedido":
-    from pages.novo_pedido import render
+    from views.novo_pedido import render
     render()
 
 elif menu == "Gerenciar Tudo":
-    from pages.gerenciar import render
+    from views.gerenciar import render
     render()
 
 elif menu == "📜 Histórico":
-    from pages.historico import render
+    from views.historico import render
     render()
 
 elif menu == "🖨️ Relatórios & Recibos":
-    from pages.relatorios import render
+    from views.relatorios import render
     render()
 
 elif menu == "📢 Promoções":
-    from pages.promocoes import render
+    from views.promocoes import render
     render()
 
 elif menu == "👥 Cadastrar Clientes":
-    from pages.clientes import render
+    from views.clientes import render
     render()
 
 elif menu == "🛠️ Manutenção":
-    from pages.manutencao import render
+    from views.manutencao import render
     render()
