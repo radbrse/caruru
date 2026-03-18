@@ -143,7 +143,8 @@ with st.sidebar:
             "📢 Promoções",
             "👥 Cadastrar Clientes",
             "🛠️ Manutenção"
-        ]
+        ],
+        key="menu_navegacao_principal"
     )
     st.divider()
 

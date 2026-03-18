@@ -14,7 +14,7 @@ def render():
     # Botão para limpar o formulário
     col_titulo, col_limpar = st.columns([4, 1])
     with col_limpar:
-        if st.button("🔄 Limpar", help="Limpar todos os campos do formulário"):
+        if st.button("🔄 Limpar", help="Limpar todos os campos do formulário", key="btn_limpar_novo_pedido"):
             # Remove todas as keys relacionadas ao formulário
             keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo']
             for key in keys_to_delete:
@@ -147,7 +147,7 @@ def render():
 
     # Abre dialog modal de confirmação se há pedido pendente
     if 'pedido_pendente' in st.session_state and st.session_state.pedido_pendente:
-        from app import confirmar_data_pedido
+        from dialogs import confirmar_data_pedido
         confirmar_data_pedido()
 
     # Mostrar valor estimado fora do form (para referência)

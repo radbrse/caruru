@@ -18,7 +18,7 @@ def render():
         if df.empty:
             st.info("Sem pedidos cadastrados.")
         else:
-            cli = st.selectbox("👤 Cliente:", sorted(df['Cliente'].unique()))
+            cli = st.selectbox("👤 Cliente:", sorted(df['Cliente'].unique()), key="rel_select_cliente")
             peds = df[df['Cliente'] == cli].sort_values("Data", ascending=False)
 
             if not peds.empty:
@@ -26,9 +26,9 @@ def render():
                     i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | {formatar_valor_br(p['Valor'])} | {p['Status']}"
                     for i, p in peds.iterrows()
                 }
-                sid = st.selectbox("📋 Selecione o pedido:", options=opc.keys(), format_func=lambda x: opc[x])
+                sid = st.selectbox("📋 Selecione o pedido:", options=opc.keys(), format_func=lambda x: opc[x], key="rel_select_pedido")
 
-                if st.button("📄 Gerar Recibo PDF", use_container_width=True, type="primary"):
+                if st.button("📄 Gerar Recibo PDF", use_container_width=True, type="primary", key="btn_gerar_recibo"):
                     pdf = gerar_recibo_pdf(peds.loc[sid].to_dict())
                     if pdf:
                         st.download_button(
@@ -41,7 +41,7 @@ def render():
                         st.error("Erro ao gerar PDF.")
 
     with t2:
-        tipo = st.radio("📅 Filtro:", ["Dia Específico", "Período", "Tudo"], horizontal=True)
+        tipo = st.radio("📅 Filtro:", ["Dia Específico", "Período", "Tudo"], horizontal=True, key="rel_tipo_filtro")
 
         if tipo == "Dia Específico":
             dt = st.date_input("Data:", hoje_brasil(), format="DD/MM/YYYY", key="rel_data")
@@ -67,7 +67,7 @@ def render():
         st.write(f"📊 **{len(df_rel)}** pedidos | 🥘 **{total_caruru}** kg Caruru | 🦐 **{total_bobo}** kg Bobó | 💰 **Total:** {formatar_valor_br(total_valor)}")
 
         if not df_rel.empty:
-            if st.button("📊 Gerar Relatório PDF", use_container_width=True, type="primary"):
+            if st.button("📊 Gerar Relatório PDF", use_container_width=True, type="primary", key="btn_gerar_relatorio"):
                 # Ordena por Data e Hora antes de gerar o PDF
                 df_rel_ordenado = df_rel.sort_values(['Data', 'Hora'], ascending=[True, True])
                 pdf = gerar_relatorio_pdf(df_rel_ordenado, nome.replace(".pdf", ""))
