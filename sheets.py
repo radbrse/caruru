@@ -294,21 +294,29 @@ def sincronizar_automaticamente(operacao="geral"):
             st.session_state['sync_stats']['ultimo_status'] = '✅ SUCESSO'
             st.session_state['sync_stats']['ultimo_erro'] = None
             logger.info(f"🟢 Sync automático ({operacao}): Pedidos e Clientes sincronizados ✅")
+            # ✅ NOTIFICAÇÃO: Backup bem-sucedido
+            st.toast("☁️ Backup automático realizado", icon="✅")
         elif sucesso_pedidos:
             st.session_state['sync_stats']['falhas'] += 1
             st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Pedidos)'
             st.session_state['sync_stats']['ultimo_erro'] = f'Clientes falhou: {msg_clientes}'
             logger.warning(f"🟡 Sync automático ({operacao}): Pedidos OK, Clientes falhou - {msg_clientes}")
+            # ⚠️ NOTIFICAÇÃO: Backup parcial
+            st.toast("⚠️ Backup parcial (só Pedidos)", icon="⚠️")
         elif sucesso_clientes:
             st.session_state['sync_stats']['falhas'] += 1
             st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Clientes)'
             st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos falhou: {msg_pedidos}'
             logger.warning(f"🟡 Sync automático ({operacao}): Clientes OK, Pedidos falhou - {msg_pedidos}")
+            # ⚠️ NOTIFICAÇÃO: Backup parcial
+            st.toast("⚠️ Backup parcial (só Clientes)", icon="⚠️")
         else:
             st.session_state['sync_stats']['falhas'] += 1
             st.session_state['sync_stats']['ultimo_status'] = '❌ AMBOS FALHARAM'
             st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos: {msg_pedidos} | Clientes: {msg_clientes}'
             logger.warning(f"🔴 Sync automático ({operacao}): Ambos falharam")
+            # ❌ NOTIFICAÇÃO: Backup falhou
+            st.toast("❌ Backup falhou - Dados não salvos!", icon="🚨")
 
     except Exception as e:
         st.session_state['sync_stats']['falhas'] += 1

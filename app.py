@@ -63,6 +63,26 @@ if 'sync_stats' not in st.session_state:
         'ultimo_erro': None
     }
 
+# 🔄 AUTO-RESTORE: Detecta CSV vazio e restaura do Google Sheets
+if 'auto_restore_tentado' not in st.session_state:
+    st.session_state['auto_restore_tentado'] = False
+
+if not st.session_state['auto_restore_tentado']:
+    if st.session_state.pedidos.empty and GSPREAD_AVAILABLE:
+        status_ok, _ = verificar_status_sheets()
+        if status_ok:
+            with st.spinner("📥 CSV vazio detectado - Restaurando do Google Sheets..."):
+                sucesso, msg = sincronizar_com_sheets(modo="receber")
+                if sucesso:
+                    st.success("✅ Dados restaurados do backup em nuvem!")
+                    st.toast("☁️ Restauração automática bem-sucedida", icon="✅")
+                    logger.info("🔄 Auto-restore: Dados restaurados do Sheets com sucesso")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Não foi possível restaurar dados do Sheets")
+                    logger.warning(f"⚠️ Auto-restore falhou: {msg}")
+        st.session_state['auto_restore_tentado'] = True
+
 # ==============================================================================
 # SIDEBAR
 # ==============================================================================
@@ -102,6 +122,14 @@ with st.sidebar:
         st.image("logo.png", width=250)
     else:
         st.title("🦐 Cantinho do Caruru")
+
+    # 🛡️ INDICADOR DE PROTEÇÃO (sempre visível)
+    st.divider()
+    if st.session_state.get('sync_automatico_habilitado', True):
+        st.success("🛡️ **DADOS PROTEGIDOS**\n\nBackup automático ativo")
+    else:
+        st.error("⚠️ **ATENÇÃO**\n\nSem proteção de backup!")
+
     st.divider()
     menu = st.radio(
         "Navegação",
@@ -131,35 +159,71 @@ with st.sidebar:
     # Configuração de Sincronização Automática
     status_sheets, msg_sheets = verificar_status_sheets()
 
-    with st.expander("☁️ Sync Google Sheets"):
+    with st.expander("☁️ Sync Google Sheets", expanded=True):
         if status_sheets:
             st.success("✅ Sheets conectado")
 
+            sync_atual = st.session_state.get('sync_automatico_habilitado', True)
+
             sync_habilitado = st.toggle(
                 "🔄 Sincronização Automática",
-                value=st.session_state.get('sync_automatico_habilitado', False),
+                value=sync_atual,
                 help="Sincroniza automaticamente com Google Sheets após criar/editar/excluir pedidos"
             )
 
-            st.session_state['sync_automatico_habilitado'] = sync_habilitado
+            # ⚠️ AVISO DE SEGURANÇA ao desligar
+            if not sync_habilitado and sync_atual:
+                st.error("⚠️ **ATENÇÃO: RISCO DE PERDA DE DADOS!**")
+                st.warning("""
+                Se você desabilitar o sync automático:
+                - ❌ Pedidos ficam APENAS no servidor (efêmero)
+                - ❌ Ao hibernar, o Streamlit **PERDE TODOS OS DADOS**
+                - ⚠️ Você precisará fazer backup MANUAL na aba Manutenção
+                """)
 
-            if sync_habilitado:
-                st.info("🟢 Sync ativo - Dados são enviados automaticamente ao Sheets")
+                confirmar_desligar = st.checkbox(
+                    "✅ Entendo o risco e quero desabilitar o sync automático",
+                    key="confirmar_desligar_sync"
+                )
+
+                if confirmar_desligar:
+                    st.session_state['sync_automatico_habilitado'] = False
+                    st.toast("⚠️ Sync automático DESABILITADO", icon="⚠️")
+                else:
+                    st.session_state['sync_automatico_habilitado'] = True
+                    st.rerun()
             else:
-                st.caption("⚪ Sync desativado - Use os botões manuais na aba Manutenção")
+                st.session_state['sync_automatico_habilitado'] = sync_habilitado
+
+            if st.session_state.get('sync_automatico_habilitado', True):
+                st.success("🟢 **PROTEGIDO** - Backup automático ativo")
+            else:
+                st.error("🔴 **SEM PROTEÇÃO** - Dados podem ser perdidos!")
 
             st.divider()
-            st.caption("📊 **Diagnóstico de Sincronização**")
+            st.markdown("### 📊 Diagnóstico de Sincronização")
 
             stats = st.session_state.get('sync_stats', {})
 
+            # Taxa de sucesso
+            total = stats.get('total_tentativas', 0)
+            sucessos = stats.get('sucessos', 0)
+            if total > 0:
+                taxa_sucesso = (sucessos / total) * 100
+                st.metric(
+                    "Taxa de Sucesso",
+                    f"{taxa_sucesso:.1f}%",
+                    delta=f"{sucessos}/{total}",
+                    delta_color="normal"
+                )
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Tentativas", stats.get('total_tentativas', 0), delta=None)
+                st.metric("Tentativas", stats.get('total_tentativas', 0))
             with col2:
-                st.metric("✅ Sucessos", stats.get('sucessos', 0), delta=None)
+                st.metric("✅ Sucessos", stats.get('sucessos', 0))
             with col3:
-                st.metric("❌ Falhas", stats.get('falhas', 0), delta=None)
+                st.metric("❌ Falhas", stats.get('falhas', 0))
 
             ultimo_status = stats.get('ultimo_status')
             if ultimo_status:
@@ -174,7 +238,7 @@ with st.sidebar:
 
                 ultima_sync = stats.get('ultima_sync')
                 if ultima_sync:
-                    st.caption(f"🕐 Última sync: {ultima_sync}")
+                    st.info(f"🕐 **Última sincronização:**\n{ultima_sync}")
 
                 ultimo_erro = stats.get('ultimo_erro')
                 if ultimo_erro:
