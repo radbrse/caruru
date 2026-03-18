@@ -31,7 +31,8 @@ from config import (
 from database import carregar_pedidos, carregar_clientes
 from sheets import (
     conectar_google_sheets, obter_ou_criar_planilha,
-    verificar_status_sheets, sincronizar_automaticamente
+    verificar_status_sheets, sincronizar_automaticamente,
+    sincronizar_com_sheets
 )
 
 # Verificar disponibilidade do gspread
