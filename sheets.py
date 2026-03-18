@@ -154,7 +154,15 @@ def carregar_do_sheets(client, nome_aba):
 # SINCRONIZAÇÃO
 # ==============================================================================
 def sincronizar_com_sheets(modo="enviar"):
-    """Sincroniza dados entre CSV local e Google Sheets."""
+    """
+    Sincroniza dados entre CSV local e Google Sheets.
+
+    Modos:
+    - "enviar": Faz backup dos dados locais para o Sheets (RECOMENDADO)
+    - "receber": Restaura dados do Sheets para o local (CUIDADO: sobrescreve!)
+
+    NOTA: Modo "ambos" foi removido por segurança. Use apenas "enviar" para backup.
+    """
     from database import salvar_pedidos, carregar_pedidos, salvar_clientes, carregar_clientes
 
     try:
@@ -164,7 +172,7 @@ def sincronizar_com_sheets(modo="enviar"):
 
         resultados = []
 
-        if modo in ["enviar", "ambos"]:
+        if modo == "enviar":
             envio_ok = True
 
             df_pedidos = st.session_state.pedidos
@@ -179,27 +187,26 @@ def sincronizar_com_sheets(modo="enviar"):
             if not sucesso_clientes:
                 envio_ok = False
 
-            if not envio_ok and modo == "ambos":
-                resultados.append("⚠️ Envio falhou — download cancelado para proteger dados locais")
+            if not envio_ok:
                 return False, "\n".join(resultados)
 
+            # ✅ CORREÇÃO: Usar append_row nativo do Sheets (append-only, sem race condition)
             try:
-                log_existente, _ = carregar_do_sheets(client, "Backups_Log")
-                novo_registro = pd.DataFrame([{
-                    'Timestamp': agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
-                    'Ação': 'Backup Automático',
-                    'Pedidos': len(df_pedidos),
-                    'Clientes': len(df_clientes)
-                }])
-                if log_existente is not None and not log_existente.empty:
-                    log_completo = pd.concat([log_existente, novo_registro], ignore_index=True)
-                else:
-                    log_completo = novo_registro
-                salvar_no_sheets(client, "Backups_Log", log_completo)
+                spreadsheet = obter_ou_criar_planilha(client)
+                if spreadsheet:
+                    worksheet = spreadsheet.worksheet("Backups_Log")
+                    nova_linha = [
+                        agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Backup Automático",
+                        len(df_pedidos),
+                        len(df_clientes)
+                    ]
+                    worksheet.append_row(nova_linha)  # ✅ Append atômico
+                    logger.info("Backup registrado no log")
             except Exception as e_log:
                 logger.warning(f"⚠️ Erro ao registrar backup log: {e_log}")
 
-        if modo in ["receber", "ambos"]:
+        elif modo == "receber":
             df_pedidos, msg = carregar_do_sheets(client, "Pedidos")
             if df_pedidos is not None and not df_pedidos.empty:
                 if not salvar_pedidos(df_pedidos):
@@ -213,6 +220,8 @@ def sincronizar_com_sheets(modo="enviar"):
                     return False, "❌ Erro ao salvar clientes baixados do Sheets"
                 st.session_state.clientes = carregar_clientes()
                 resultados.append(f"Clientes: {msg}")
+        else:
+            return False, f"❌ Modo '{modo}' inválido. Use 'enviar' ou 'receber'."
 
         return True, "\n".join(resultados)
 
