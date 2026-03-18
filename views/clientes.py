@@ -128,10 +128,10 @@ def render():
             st.divider()
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("📄 Exportar Lista PDF", use_container_width=True):
+                if st.button("📄 Exportar Lista PDF", use_container_width=True, key="btn_exportar_pdf_clientes"):
                     pdf = gerar_lista_clientes_pdf(st.session_state.clientes)
                     if pdf:
-                        st.download_button("⬇️ Baixar PDF", pdf, "Clientes.pdf", "application/pdf")
+                        st.download_button("⬇️ Baixar PDF", pdf, "Clientes.pdf", "application/pdf", key="btn_download_pdf_clientes")
             with c2:
                 csv = st.session_state.clientes.to_csv(index=False).encode('utf-8')
                 st.download_button("📊 Exportar CSV", csv, "clientes.csv", "text/csv", use_container_width=True)
@@ -141,7 +141,7 @@ def render():
         st.markdown("---")
         st.subheader("🔄 Sincronizar Telefones nos Pedidos")
         st.caption("Atualize todos os pedidos com os telefones mais recentes do cadastro de clientes.")
-        if st.button("🔄 Sincronizar agora", use_container_width=True, type="secondary"):
+        if st.button("🔄 Sincronizar agora", use_container_width=True, type="secondary", key="btn_sincronizar_contatos"):
             atualizados, total_clientes = sincronizar_contatos_pedidos()
             if atualizados:
                 st.success(f"✅ {atualizados} pedido(s) atualizado(s) com base em {total_clientes} cliente(s) cadastrado(s)")
@@ -150,7 +150,7 @@ def render():
 
         with st.expander("📤 Importar Clientes"):
             up_c = st.file_uploader("Arquivo CSV", type="csv", key="rest_cli")
-            if up_c and st.button("⚠️ Importar"):
+            if up_c and st.button("⚠️ Importar", key="btn_importar_clientes_csv"):
                 try:
                     df_c = pd.read_csv(up_c)
 
@@ -181,7 +181,7 @@ def render():
         st.subheader("Excluir Cliente")
         if not st.session_state.clientes.empty:
             lista_cli = st.session_state.clientes['Nome'].unique().tolist()
-            d = st.selectbox("👤 Selecione o cliente:", lista_cli)
+            d = st.selectbox("👤 Selecione o cliente:", lista_cli, key="cli_select_excluir")
 
             # Verifica se tem pedidos ativos (não entregues)
             pedidos_cliente = st.session_state.pedidos[st.session_state.pedidos['Cliente'] == d]
@@ -194,9 +194,9 @@ def render():
             elif not pedidos_cliente.empty:
                 st.warning(f"⚠️ Este cliente tem {len(pedidos_cliente)} pedido(s) já entregue(s) no histórico.")
 
-            confirma = st.checkbox(f"✅ Confirmo a exclusão de '{d}'", disabled=tem_pedidos_ativos)
+            confirma = st.checkbox(f"✅ Confirmo a exclusão de '{d}'", disabled=tem_pedidos_ativos, key="cli_confirma_excluir")
 
-            if st.button("🗑️ Excluir Cliente", type="primary", disabled=(not confirma or tem_pedidos_ativos), use_container_width=True):
+            if st.button("🗑️ Excluir Cliente", type="primary", disabled=(not confirma or tem_pedidos_ativos), use_container_width=True, key="btn_excluir_cliente"):
                 df_atualizado = st.session_state.clientes[st.session_state.clientes['Nome'] != d]
 
                 # Tenta salvar no disco

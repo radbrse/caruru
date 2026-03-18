@@ -48,11 +48,11 @@ def render():
             with col_f2:
                 f_pagto = st.multiselect("Pagamento", OPCOES_PAGAMENTO, default=OPCOES_PAGAMENTO)
             with col_f3:
-                f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês", "Data Específica"])
+                f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês", "Data Específica"], key="ger_periodo")
             with col_f4:
                 # Filtro de data específica (só aparece se selecionado)
                 if f_periodo == "Data Específica":
-                    f_data_especifica = st.date_input("📅 Selecione a Data", value=hoje_brasil(), format="DD/MM/YYYY")
+                    f_data_especifica = st.date_input("📅 Selecione a Data", value=hoje_brasil(), format="DD/MM/YYYY", key="ger_data_especifica")
                 else:
                     f_data_especifica = None
             with col_f5:
@@ -66,7 +66,7 @@ def render():
                     "📊 Status",
                     "🆔 ID (maior)",
                     "🆔 ID (menor)"
-                ], index=1)
+                ], index=1, key="ger_ordem")
 
         # Aplica filtros
         df_view = df.copy()
