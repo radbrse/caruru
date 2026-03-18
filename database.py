@@ -461,7 +461,12 @@ def salvar_historico(df):
         return False
 
 def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
-    """Registra alterações para auditoria. Read+append+write tudo dentro do lock."""
+    """
+    Registra alterações para auditoria. Read+append+write tudo dentro do lock.
+
+    Retorna:
+        bool: True se registrou com sucesso, False se falhou
+    """
     try:
         registro = {
             "Timestamp": agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
@@ -489,6 +494,8 @@ def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
             df.to_csv(temp_file, index=False)
             shutil.move(temp_file, ARQUIVO_HISTORICO)
             logger.info(f"Alteração registrada: {tipo} - Pedido {id_pedido}")
+            return True  # ✅ Sucesso
 
     except Exception as e:
-        logger.error(f"Erro registrar alteração: {e}")
+        logger.error(f"❌ Erro registrar alteração: {e}", exc_info=True)
+        return False  # ✅ Falha
