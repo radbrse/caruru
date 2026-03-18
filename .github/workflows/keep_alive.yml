@@ -2,27 +2,81 @@ name: Keep Alive - Cantinho do Caruru
 
 on:
   schedule:
-    # Roda a cada 12 horas (00:00 e 12:00 UTC)
-    - cron: "0 */12 * * *"
+    # Roda a cada 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
+    # Streamlit hiberna após 12h sem tráfego real — 6h dá folga segura
+    - cron: "0 */6 * * *"
   workflow_dispatch: # Permite executar manualmente no GitHub
 
 jobs:
-  ping:
+  wake-up:
     runs-on: ubuntu-latest
-    steps:
-      - name: Ping Streamlit App
-        run: |
-          echo "🦐 Pingando o Cantinho do Caruru para mantê-lo acordado..."
-          curl -I https://radbrse-caruru-app-coa4y5.streamlit.app/
-          echo "✅ Ping enviado com sucesso!"
+    timeout-minutes: 10
 
-      - name: Verificar Status
+    steps:
+      - name: Instalar Playwright
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://radbrse-caruru-app-coa4y5.streamlit.app/)
-          echo "📊 Status HTTP: $HTTP_CODE"
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
-            echo "✅ App está respondendo corretamente!"
-          else
-            echo "⚠️ App retornou status $HTTP_CODE"
-            exit 1
-          fi
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Acordar o App com sessão real
+        run: |
+          python3 << 'PYEOF'
+          import sys
+          from playwright.sync_api import sync_playwright
+
+          url = 'https://radbrse-caruru-app-coa4y5.streamlit.app/'
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+
+              try:
+                  print('Acessando Cantinho do Caruru...')
+                  page.goto(url, wait_until='domcontentloaded', timeout=90000)
+
+                  # Se o app estiver hibernando, Streamlit mostra tela com botão para acordá-lo
+                  # Tenta vários seletores — Streamlit já mudou o texto entre versões
+                  wake_selectors = [
+                      'button:has-text("Yes, get this app back up")',
+                      'button:has-text("Wake up")',
+                      'button:has-text("Yes")',
+                  ]
+                  for sel in wake_selectors:
+                      try:
+                          wake_btn = page.wait_for_selector(sel, timeout=5000)
+                          print(f'App hibernado detectado (seletor: {sel}). Clicando...')
+                          wake_btn.click()
+                          break
+                      except Exception:
+                          continue
+                  else:
+                      print('Nenhum botao de hibernacao encontrado — app ja estava ativo.')
+
+                  # Aguarda carregamento completo da rede (suficiente para registrar tráfego real)
+                  print('Aguardando carregamento...')
+                  page.wait_for_load_state('networkidle', timeout=60000)
+
+                  # Mantém sessão aberta para registrar como tráfego real
+                  print('Carregado! Mantendo sessao por 30s...')
+                  page.wait_for_timeout(30000)
+
+                  print(f'Sucesso! Titulo: {page.title()}')
+
+              except Exception as e:
+                  # Salva screenshot para diagnosticar falhas futuras
+                  page.screenshot(path='failure.png', full_page=True)
+                  print(f'ERRO: {e}')
+                  print('Screenshot salvo em failure.png (ver artefato do workflow)')
+                  raise
+
+              finally:
+                  browser.close()
+          PYEOF
+
+      - name: Upload screenshot de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-screenshot
+          path: failure.png
+          retention-days: 7
