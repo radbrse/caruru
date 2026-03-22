@@ -1,6 +1,7 @@
 """Página de Pedidos do Dia."""
 
 import streamlit as st
+import pandas as pd
 from datetime import time
 import time as time_module
 
@@ -167,12 +168,24 @@ def render():
                         with st.expander("📋 Detalhes Completos", expanded=True):
                             col_det1, col_det2 = st.columns(2)
                             with col_det1:
-                                st.markdown(f"""
-                                **🆔 ID:** {int(pedido['ID_Pedido'])}
-                                **👤 Cliente:** {pedido['Cliente']}
-                                **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
-                                **⏰ Hora:** {hora_str}
-                                """)
+                                # Mostrar hora de entrega se existir
+                                hora_entrega = pedido.get('Hora_Entrega', None)
+                                if hora_entrega and pd.notna(hora_entrega):
+                                    hora_entrega_str = hora_entrega.strftime('%H:%M') if hasattr(hora_entrega, 'strftime') else str(hora_entrega)
+                                    st.markdown(f"""
+                                    **🆔 ID:** {int(pedido['ID_Pedido'])}
+                                    **👤 Cliente:** {pedido['Cliente']}
+                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
+                                    **⏰ Agendado:** {hora_str}
+                                    **✅ Entregue às:** {hora_entrega_str}
+                                    """)
+                                else:
+                                    st.markdown(f"""
+                                    **🆔 ID:** {int(pedido['ID_Pedido'])}
+                                    **👤 Cliente:** {pedido['Cliente']}
+                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
+                                    **⏰ Hora:** {hora_str}
+                                    """)
                                 st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             with col_det2:
                                 st.markdown(f"""
