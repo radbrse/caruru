@@ -70,12 +70,12 @@ def gerar_recibo_pdf(dados):
         preco_formatado = f"{preco_atual:.2f}".replace(".", ",")
         if float(dados.get('Caruru', 0)) > 0:
             p.drawString(40, y, "Caruru Tradicional")
-            p.drawString(350, y, f"{int(float(dados.get('Caruru')))}")
+            p.drawString(350, y, f"{int(float(dados.get('Caruru')))} kg")
             p.drawString(450, y, f"R$ {preco_formatado}")
             y -= 15
         if float(dados.get('Bobo', 0)) > 0:
             p.drawString(40, y, "Bobó de Camarão")
-            p.drawString(350, y, f"{int(float(dados.get('Bobo')))}")
+            p.drawString(350, y, f"{int(float(dados.get('Bobo')))} kg")
             p.drawString(450, y, f"R$ {preco_formatado}")
             y -= 15
 
@@ -128,14 +128,14 @@ def gerar_recibo_pdf(dados):
         try:
             caruru_qtd = int(float(dados.get('Caruru', 0)))
             if caruru_qtd > 0:
-                produtos.append(f"{caruru_qtd} unidade(s) de Caruru Tradicional")
+                produtos.append(f"{caruru_qtd} kg de Caruru Tradicional")
         except (ValueError, TypeError):
             pass
 
         try:
             bobo_qtd = int(float(dados.get('Bobo', 0)))
             if bobo_qtd > 0:
-                produtos.append(f"{bobo_qtd} unidade(s) de Bobó de Camarão")
+                produtos.append(f"{bobo_qtd} kg de Bobó de Camarão")
         except (ValueError, TypeError):
             pass
 
@@ -271,8 +271,8 @@ def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
             p.drawString(20, y, str(row.get('ID_Pedido', '')))
             p.drawString(45, y, d_s)
             p.drawString(85, y, str(row.get('Cliente', ''))[:24])
-            p.drawString(235, y, str(int(row.get('Caruru', 0))))
-            p.drawString(270, y, str(int(row.get('Bobo', 0))))
+            p.drawString(235, y, f"{int(row.get('Caruru', 0))}kg")
+            p.drawString(270, y, f"{int(row.get('Bobo', 0))}kg")
             valor_formatado = f"{row.get('Valor', 0):.2f}".replace(".", ",")
             p.drawString(310, y, valor_formatado)
             p.drawString(370, y, st_cl)
