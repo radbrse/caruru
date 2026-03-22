@@ -146,12 +146,14 @@ def render():
                     with col11:
                         if pedido['Status'] != "✅ Entregue":
                             if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue e Pago", use_container_width=True, type="primary"):
+                                from config import agora_brasil
                                 idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
                                 status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
                                 pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
 
                                 st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
                                 st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
+                                st.session_state.pedidos.at[idx_original, 'Hora_Entrega'] = agora_brasil().time()
 
                                 if salvar_pedidos(st.session_state.pedidos):
                                     registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")

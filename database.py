@@ -184,9 +184,14 @@ def importar_csv_externo(arquivo_upload, destino):
         df_novo = pd.read_csv(arquivo_upload)
 
         schemas_obrigatorios = {
-            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
+            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
             'Clientes': ["Nome", "Contato", "Observacoes"],
             'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
+        }
+
+        # Hora_Entrega é opcional (retrocompatibilidade)
+        schemas_opcionais = {
+            'Pedidos': ["Hora_Entrega"]
         }
 
         colunas_esperadas = schemas_obrigatorios[destino]
@@ -196,11 +201,23 @@ def importar_csv_externo(arquivo_upload, destino):
         if colunas_faltantes:
             return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
 
-        colunas_extras = set(colunas_recebidas) - set(colunas_esperadas)
+        # Adicionar colunas opcionais se não existirem
+        if destino in schemas_opcionais:
+            for col_opcional in schemas_opcionais[destino]:
+                if col_opcional not in df_novo.columns:
+                    df_novo[col_opcional] = ""
+                    logger.info(f"Coluna opcional '{col_opcional}' adicionada automaticamente")
+
+        # Montar lista completa de colunas
+        todas_colunas = colunas_esperadas.copy()
+        if destino in schemas_opcionais:
+            todas_colunas.extend(schemas_opcionais[destino])
+
+        colunas_extras = set(colunas_recebidas) - set(todas_colunas)
         if colunas_extras:
             logger.warning(f"Colunas extras detectadas no CSV (serão ignoradas): {', '.join(sorted(colunas_extras))}")
 
-        df_novo = df_novo[colunas_esperadas]
+        df_novo = df_novo[todas_colunas]
 
         if os.path.exists(arquivo_destino):
             backup = criar_backup_com_timestamp(arquivo_destino)
@@ -299,10 +316,12 @@ def carregar_pedidos():
         with file_lock(ARQUIVO_PEDIDOS):
             df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
 
+            logger.info(f"📊 CSV carregado: {len(df)} pedidos, colunas: {list(df.columns)}")
+
             for c in colunas_padrao:
                 if c not in df.columns:
                     df[c] = None
-                    logger.warning(f"Coluna {c} não encontrada, adicionando")
+                    logger.warning(f"⚠️ Coluna '{c}' não encontrada, adicionando como None")
 
             df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
             df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
@@ -367,6 +386,9 @@ def salvar_pedidos(df):
             salvar['Hora'] = salvar['Hora'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x) if x else "12:00"
             )
+            # Hora_Entrega pode não existir em DataFrames vindos do Sheets (retrocompatibilidade)
+            if 'Hora_Entrega' not in salvar.columns:
+                salvar['Hora_Entrega'] = ""
             salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
             )
