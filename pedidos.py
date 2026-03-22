@@ -67,6 +67,7 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
         "Valor": val,
         "Data": dt,
         "Hora": hr,
+        "Hora_Entrega": None,
         "Status": status if status in OPCOES_STATUS else "🔴 Pendente",
         "Pagamento": pagamento if pagamento in OPCOES_PAGAMENTO else "NÃO PAGO",
         "Contato": tel,
@@ -110,8 +111,8 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         if 'Status' in campos_atualizar and campos_atualizar['Status'] == "✅ Entregue":
             status_anterior = df.at[idx, 'Status']
             if status_anterior != "✅ Entregue":
-                campos_atualizar['Hora'] = agora_brasil().time()
-                logger.info(f"Pedido #{id_pedido} marcado como entregue - hora atualizada para {campos_atualizar['Hora']}")
+                campos_atualizar['Hora_Entrega'] = agora_brasil().time()
+                logger.info(f"Pedido #{id_pedido} marcado como entregue - hora de entrega: {campos_atualizar['Hora_Entrega']}")
 
         for campo, valor in campos_atualizar.items():
             valor_antigo = df.at[idx, campo]

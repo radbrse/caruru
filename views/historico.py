@@ -133,7 +133,14 @@ def render():
                 with col3:
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
-                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
+
+                    # Mostrar hora de entrega se existir
+                    hora_entrega = pedido.get('Hora_Entrega', None)
+                    if hora_entrega and pd.notna(hora_entrega):
+                        hora_entrega_str = hora_entrega.strftime('%H:%M') if hasattr(hora_entrega, 'strftime') else str(hora_entrega)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}<br>✅ {hora_entrega_str}</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                 with col4:
                     st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
                 with col5:
@@ -159,7 +166,13 @@ def render():
                         st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
                         st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                         st.markdown(f"**📅 Data:** {data_str}")
-                        st.markdown(f"**⏰ Hora:** {hora_str}")
+                        st.markdown(f"**⏰ Agendado:** {hora_str}")
+
+                        # Mostrar hora de entrega se existir
+                        hora_entrega = pedido.get('Hora_Entrega', None)
+                        if hora_entrega and pd.notna(hora_entrega):
+                            hora_entrega_str = hora_entrega.strftime('%H:%M') if hasattr(hora_entrega, 'strftime') else str(hora_entrega)
+                            st.markdown(f"**✅ Entregue às:** {hora_entrega_str}")
                     with col_b:
                         st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} potes")
                         st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} potes")

@@ -184,7 +184,7 @@ def importar_csv_externo(arquivo_upload, destino):
         df_novo = pd.read_csv(arquivo_upload)
 
         schemas_obrigatorios = {
-            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
+            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
             'Clientes': ["Nome", "Contato", "Observacoes"],
             'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
         }
@@ -274,7 +274,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
-    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
 
     # AUTO-RECOVERY do Google Sheets
     if not os.path.exists(ARQUIVO_PEDIDOS):
@@ -306,6 +306,7 @@ def carregar_pedidos():
 
             df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
             df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
+            df["Hora_Entrega"] = df["Hora_Entrega"].apply(lambda x: validar_hora(x)[0] if pd.notna(x) and str(x).strip() else None)
 
             for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
@@ -365,6 +366,9 @@ def salvar_pedidos(df):
             )
             salvar['Hora'] = salvar['Hora'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x) if x else "12:00"
+            )
+            salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(
+                lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
             )
             salvar['Contato'] = salvar['Contato'].astype(str).str.replace(".0", "", regex=False)
 
