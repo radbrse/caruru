@@ -3,7 +3,8 @@ import pandas as pd
 from datetime import time
 
 from config import logger
-from database import salvar_pedidos, carregar_pedidos
+from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
+from sheets import sincronizar_automaticamente
 from utils import (
     formatar_valor_br,
     get_valor_destaque,
@@ -89,6 +90,8 @@ def render():
                     if st.button("✅ Sim, Limpar Tudo", key="confirmar_limpar_hist", type="primary", use_container_width=True):
                         try:
                             df_atual = st.session_state.pedidos
+                            qtd_removidos = len(df_atual[df_atual['Status'] == "✅ Entregue"])
+
                             # Remove todos os pedidos entregues
                             df_atual = df_atual[df_atual['Status'] != "✅ Entregue"]
 
@@ -97,10 +100,19 @@ def render():
                                 st.session_state['confirmar_limpar_historico'] = False
                             else:
                                 st.session_state.pedidos = carregar_pedidos()
+
+                                # Registra auditoria
+                                registrar_alteracao("LIMPAR_HISTORICO", 0, "Historico", f"{qtd_removidos} pedidos", "0 pedidos")
+
+                                # SINCRONIZA COM GOOGLE SHEETS - CRÍTICO para evitar que dados voltem
+                                sincronizar_automaticamente(operacao="excluir")
+                                logger.info(f"🗑️ Histórico limpo: {qtd_removidos} pedidos removidos e sincronizados com Sheets")
+
                                 st.session_state['confirmar_limpar_historico'] = False
                                 st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
                                 st.rerun()
                         except Exception as e:
+                            logger.error(f"Erro ao limpar histórico: {e}", exc_info=True)
                             st.error(f"❌ Erro ao limpar histórico: {e}")
                 with col_limpar2:
                     if st.button("❌ Cancelar", key="cancelar_limpar_hist", use_container_width=True):
