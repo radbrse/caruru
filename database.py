@@ -386,6 +386,9 @@ def salvar_pedidos(df):
             salvar['Hora'] = salvar['Hora'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x) if x else "12:00"
             )
+            # Hora_Entrega pode não existir em DataFrames vindos do Sheets (retrocompatibilidade)
+            if 'Hora_Entrega' not in salvar.columns:
+                salvar['Hora_Entrega'] = ""
             salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
             )

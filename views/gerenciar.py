@@ -299,6 +299,11 @@ def render():
                                 df_atualizado.loc[mask, 'Status'] = novo_status
                                 df_atualizado.loc[mask, 'Observacoes'] = novas_obs
 
+                                # Capturar hora de entrega se marcou como Entregue
+                                if novo_status == "✅ Entregue" and pedido_atual['Status'] != "✅ Entregue":
+                                    from config import agora_brasil
+                                    df_atualizado.loc[mask, 'Hora_Entrega'] = agora_brasil().time()
+
                                 if salvar_pedidos(df_atualizado):
                                     # Recarrega do arquivo para garantir sincronização entre abas
                                     st.session_state.pedidos = carregar_pedidos()
@@ -453,13 +458,18 @@ def render():
                 df_n = pd.read_csv(up)
 
                 # Valida schema
-                colunas_esperadas = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
-                colunas_faltantes = set(colunas_esperadas) - set(df_n.columns.tolist())
+                colunas_obrigatorias = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+                colunas_faltantes = set(colunas_obrigatorias) - set(df_n.columns.tolist())
                 if colunas_faltantes:
                     st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                 else:
-                    # Reordena para manter apenas colunas esperadas
-                    df_n = df_n[colunas_esperadas]
+                    # Adiciona Hora_Entrega se não existir (retrocompatibilidade)
+                    if 'Hora_Entrega' not in df_n.columns:
+                        df_n['Hora_Entrega'] = ""
+
+                    # Reordena para manter colunas esperadas
+                    todas_colunas = colunas_obrigatorias + ["Hora_Entrega"]
+                    df_n = df_n[[c for c in todas_colunas if c in df_n.columns]]
 
                     if not salvar_pedidos(df_n):
                         st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
