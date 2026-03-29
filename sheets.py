@@ -47,15 +47,18 @@ def conectar_google_sheets():
         logger.error(f"Erro ao conectar ao Google Sheets: {e}", exc_info=True)
         return None
 
-def obter_ou_criar_planilha(client, nome_planilha="Cantinho do Caruru - Dados"):
-    """Obtém a planilha ou cria se não existir."""
+@st.cache_resource
+def obter_ou_criar_planilha(_client, nome_planilha="Cantinho do Caruru - Dados"):
+    """Obtém a planilha ou cria se não existir.
+    O prefixo _ em _client evita que o Streamlit tente fazer hash do objeto gspread.
+    """
     try:
         try:
-            spreadsheet = client.open(nome_planilha)
+            spreadsheet = _client.open(nome_planilha)
             logger.info(f"Planilha '{nome_planilha}' encontrada")
             return spreadsheet
         except gspread.exceptions.SpreadsheetNotFound:
-            spreadsheet = client.create(nome_planilha)
+            spreadsheet = _client.create(nome_planilha)
             logger.info(f"Planilha '{nome_planilha}' criada")
 
             worksheet_pedidos = spreadsheet.sheet1

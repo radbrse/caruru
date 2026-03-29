@@ -249,6 +249,7 @@ def carregar_clientes():
     """Carrega banco de clientes com file locking e auto-recovery do Google Sheets."""
     import streamlit as st
     colunas = ["Nome", "Contato", "Observacoes"]
+    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets
     if not os.path.exists(ARQUIVO_CLIENTES):
@@ -262,6 +263,7 @@ def carregar_clientes():
                     if df_cloud is not None and not df_cloud.empty:
                         if salvar_clientes(df_cloud):
                             logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets!")
+                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
         except Exception as e:
             logger.error(f"❌ Falha no Auto-Recovery de Clientes: {e}")
 
@@ -270,19 +272,23 @@ def carregar_clientes():
         return pd.DataFrame(columns=colunas)
 
     try:
-        with file_lock(ARQUIVO_CLIENTES):
-            df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
-            df = df.fillna("")
+        if _df_recuperado is not None:
+            df = _df_recuperado.copy()
+        else:
+            with file_lock(ARQUIVO_CLIENTES):
+                df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
 
-            for c in colunas:
-                if c not in df.columns:
-                    df[c] = ""
-                    logger.warning(f"Coluna {c} não encontrada, adicionando")
+        df = df.fillna("")
 
-            df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
+        for c in colunas:
+            if c not in df.columns:
+                df[c] = ""
+                logger.warning(f"Coluna {c} não encontrada, adicionando")
 
-            logger.info(f"Clientes carregados: {len(df)} registros")
-            return df[colunas]
+        df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
+
+        logger.info(f"Clientes carregados: {len(df)} registros")
+        return df[colunas]
 
     except Exception as e:
         logger.error(f"Erro ao carregar clientes: {e}", exc_info=True)
@@ -292,6 +298,7 @@ def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
     colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets
     if not os.path.exists(ARQUIVO_PEDIDOS):
@@ -305,6 +312,7 @@ def carregar_pedidos():
                     if df_cloud is not None and not df_cloud.empty:
                         if salvar_pedidos(df_cloud):
                             logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets!")
+                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
         except Exception as e:
             logger.error(f"❌ Falha no Auto-Recovery de Pedidos: {e}")
 
@@ -313,56 +321,59 @@ def carregar_pedidos():
         return pd.DataFrame(columns=colunas_padrao)
 
     try:
-        with file_lock(ARQUIVO_PEDIDOS):
-            df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
+        if _df_recuperado is not None:
+            df = _df_recuperado.copy()
+        else:
+            with file_lock(ARQUIVO_PEDIDOS):
+                df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
 
-            logger.info(f"📊 CSV carregado: {len(df)} pedidos, colunas: {list(df.columns)}")
+        logger.info(f"📊 Dados carregados: {len(df)} pedidos, colunas: {list(df.columns)}")
 
-            for c in colunas_padrao:
-                if c not in df.columns:
-                    df[c] = None
-                    logger.warning(f"⚠️ Coluna '{c}' não encontrada, adicionando como None")
+        for c in colunas_padrao:
+            if c not in df.columns:
+                df[c] = None
+                logger.warning(f"⚠️ Coluna '{c}' não encontrada, adicionando como None")
 
-            df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
-            df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
-            df["Hora_Entrega"] = df["Hora_Entrega"].apply(lambda x: validar_hora(x)[0] if pd.notna(x) and str(x).strip() else None)
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
+        df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
+        df["Hora_Entrega"] = df["Hora_Entrega"].apply(lambda x: validar_hora(x)[0] if pd.notna(x) and str(x).strip() else None)
 
-            for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-            df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
-            if df['ID_Pedido'].duplicated().any():
-                logger.warning("IDs duplicados detectados, reindexando")
-                df['ID_Pedido'] = range(1, len(df) + 1)
-            elif not df.empty and df['ID_Pedido'].max() == 0:
-                logger.warning("IDs inválidos detectados, reindexando")
-                df['ID_Pedido'] = range(1, len(df) + 1)
+        df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
+        if df['ID_Pedido'].duplicated().any():
+            logger.warning("IDs duplicados detectados, reindexando")
+            df['ID_Pedido'] = range(1, len(df) + 1)
+        elif not df.empty and df['ID_Pedido'].max() == 0:
+            logger.warning("IDs inválidos detectados, reindexando")
+            df['ID_Pedido'] = range(1, len(df) + 1)
 
-            mapa = {
-                "Pendente": "🔴 Pendente",
-                "Em Produção": "🟡 Em Produção",
-                "Entregue": "✅ Entregue",
-                "Cancelado": "🚫 Cancelado"
-            }
-            df['Status'] = df['Status'].replace(mapa)
+        mapa = {
+            "Pendente": "🔴 Pendente",
+            "Em Produção": "🟡 Em Produção",
+            "Entregue": "✅ Entregue",
+            "Cancelado": "🚫 Cancelado"
+        }
+        df['Status'] = df['Status'].replace(mapa)
 
-            invalid_status = ~df['Status'].isin(OPCOES_STATUS)
-            if invalid_status.any():
-                logger.warning(f"{invalid_status.sum()} pedidos com status inválido, ajustando")
-                df.loc[invalid_status, 'Status'] = "🔴 Pendente"
+        invalid_status = ~df['Status'].isin(OPCOES_STATUS)
+        if invalid_status.any():
+            logger.warning(f"{invalid_status.sum()} pedidos com status inválido, ajustando")
+            df.loc[invalid_status, 'Status'] = "🔴 Pendente"
 
-            for c in ["Cliente", "Status", "Pagamento", "Observacoes"]:
-                df[c] = df[c].fillna("").astype(str)
+        for c in ["Cliente", "Status", "Pagamento", "Observacoes"]:
+            df[c] = df[c].fillna("").astype(str)
 
-            df["Contato"] = df["Contato"].fillna("").str.replace(".0", "", regex=False)
+        df["Contato"] = df["Contato"].fillna("").astype(str).str.replace(".0", "", regex=False)
 
-            invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
-            if invalid_payment.any():
-                logger.warning(f"{invalid_payment.sum()} pedidos com pagamento inválido, ajustando")
-                df.loc[invalid_payment, 'Pagamento'] = "NÃO PAGO"
+        invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
+        if invalid_payment.any():
+            logger.warning(f"{invalid_payment.sum()} pedidos com pagamento inválido, ajustando")
+            df.loc[invalid_payment, 'Pagamento'] = "NÃO PAGO"
 
-            logger.info(f"Pedidos carregados: {len(df)} registros")
-            return df[colunas_padrao]
+        logger.info(f"Pedidos carregados: {len(df)} registros")
+        return df[colunas_padrao]
 
     except Exception as e:
         logger.error(f"Erro ao carregar pedidos: {e}", exc_info=True)
