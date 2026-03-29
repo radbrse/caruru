@@ -46,28 +46,43 @@ def render():
 
     st.markdown("### 1️⃣ Cliente")
 
-    # Selectbox do cliente FORA do form para poder buscar o contato
-    c_sel = st.selectbox(
-        "👤 Nome do Cliente",
-        lista_clientes,
-        index=st.session_state.cliente_novo_index,
-        key="sel_cliente_novo"
-    )
+    col_cliente, col_novo = st.columns([4, 1])
+    with col_novo:
+        eh_novo = st.toggle("✍️ Novo", key="toggle_novo_cliente", help="Ativar para digitar um nome que não está cadastrado")
 
-    # Busca o contato do cliente selecionado
     contato_cliente = ""
-    if c_sel and c_sel != "-- Selecione --":
-        try:
-            res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
-            if not res.empty:
-                contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
-        except:
-            contato_cliente = ""
+    if eh_novo:
+        with col_cliente:
+            c_sel = st.text_input(
+                "👤 Nome do Novo Cliente",
+                placeholder="Digite o nome completo...",
+                key="input_novo_cliente"
+            ).strip()
+        if c_sel:
+            st.info("💡 Este cliente será cadastrado automaticamente ao salvar o pedido.")
     else:
-        c_sel = ""  # Reseta para vazio se for "-- Selecione --"
+        with col_cliente:
+            # Selectbox do cliente FORA do form para poder buscar o contato
+            c_sel = st.selectbox(
+                "👤 Nome do Cliente",
+                lista_clientes,
+                index=st.session_state.cliente_novo_index,
+                key="sel_cliente_novo"
+            )
+
+        # Busca o contato do cliente selecionado
+        if c_sel and c_sel != "-- Selecione --":
+            try:
+                res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
+                if not res.empty:
+                    contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
+            except:
+                contato_cliente = ""
+        else:
+            c_sel = ""  # Reseta para vazio se for "-- Selecione --"
 
     if not c_sel:
-        st.info("💡 Selecione um cliente cadastrado ou cadastre um novo em '👥 Cadastrar Clientes'")
+        st.info("💡 Selecione um cliente cadastrado ou ative '✍️ Novo' para digitar um nome novo.")
     else:
         st.success(f"📱 Contato encontrado: **{contato_cliente}**" if contato_cliente else "⚠️ Cliente sem telefone cadastrado")
 
@@ -142,7 +157,6 @@ def render():
     # Mostra toast de sucesso se pedido foi salvo
     if 'pedido_salvo_id' in st.session_state:
         st.toast(f"✅ Pedido #{st.session_state.pedido_salvo_id} criado com sucesso!", icon="✅")
-        st.balloons()
         del st.session_state.pedido_salvo_id
 
     # Abre dialog modal de confirmação se há pedido pendente
