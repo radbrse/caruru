@@ -480,20 +480,22 @@ def conectar_google_sheets():
         logger.error(f"Erro ao conectar ao Google Sheets: {e}", exc_info=True)
         return None
 
-def obter_ou_criar_planilha(client, nome_planilha="Cantinho do Caruru - Dados"):
+@st.cache_resource
+def obter_ou_criar_planilha(_client, nome_planilha="Cantinho do Caruru - Dados"):
     """
     Obtém a planilha ou cria se não existir.
     Retorna o objeto Spreadsheet.
+    O prefixo _ em _client evita que o Streamlit tente fazer hash do objeto gspread.
     """
     try:
         # Tenta abrir a planilha existente
         try:
-            spreadsheet = client.open(nome_planilha)
+            spreadsheet = _client.open(nome_planilha)
             logger.info(f"Planilha '{nome_planilha}' encontrada")
             return spreadsheet
         except gspread.exceptions.SpreadsheetNotFound:
             # Cria nova planilha
-            spreadsheet = client.create(nome_planilha)
+            spreadsheet = _client.create(nome_planilha)
             logger.info(f"Planilha '{nome_planilha}' criada")
 
             # Cria abas padrão
@@ -1223,6 +1225,7 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
 def carregar_clientes():
     """Carrega banco de clientes com file locking e auto-recovery do Google Sheets."""
     colunas = ["Nome", "Contato", "Observacoes"]
+    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # ===========================================================================
     # AUTO-RECOVERY: Se arquivo não existe, tenta recuperar do Google Sheets
@@ -1238,6 +1241,7 @@ def carregar_clientes():
                         # Salva usando a função oficial (com file locking e validações)
                         if salvar_clientes(df_cloud):
                             logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets com sucesso!")
+                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
                         else:
                             logger.error("❌ AUTO-RECOVERY: Falha ao salvar clientes recuperados do Sheets")
                     else:
@@ -1253,21 +1257,25 @@ def carregar_clientes():
         return pd.DataFrame(columns=colunas)
 
     try:
-        with file_lock(ARQUIVO_CLIENTES):
-            df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
-            df = df.fillna("")
+        if _df_recuperado is not None:
+            df = _df_recuperado.copy()
+        else:
+            with file_lock(ARQUIVO_CLIENTES):
+                df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
 
-            # Garante colunas obrigatórias
-            for c in colunas:
-                if c not in df.columns:
-                    df[c] = ""
-                    logger.warning(f"Coluna {c} não encontrada, adicionando")
+        df = df.fillna("")
 
-            # Remove ".0" de contatos antigos (corrige dados legados)
-            df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
+        # Garante colunas obrigatórias
+        for c in colunas:
+            if c not in df.columns:
+                df[c] = ""
+                logger.warning(f"Coluna {c} não encontrada, adicionando")
 
-            logger.info(f"Clientes carregados: {len(df)} registros")
-            return df[colunas]
+        # Remove ".0" de contatos antigos (corrige dados legados)
+        df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
+
+        logger.info(f"Clientes carregados: {len(df)} registros")
+        return df[colunas]
 
     except Exception as e:
         logger.error(f"Erro ao carregar clientes: {e}", exc_info=True)
@@ -1276,6 +1284,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery do Google Sheets."""
     colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # ===========================================================================
     # AUTO-RECOVERY: Se arquivo não existe, tenta recuperar do Google Sheets
@@ -1291,6 +1300,7 @@ def carregar_pedidos():
                         # Salva usando a função oficial (com file locking, backup e validações)
                         if salvar_pedidos(df_cloud):
                             logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets com sucesso!")
+                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
                         else:
                             logger.error("❌ AUTO-RECOVERY: Falha ao salvar pedidos recuperados do Sheets")
                     else:
@@ -1306,62 +1316,64 @@ def carregar_pedidos():
         return pd.DataFrame(columns=colunas_padrao)
 
     try:
-        with file_lock(ARQUIVO_PEDIDOS):
-            # Força Contato como string ao ler CSV para evitar conversão para float
-            df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
+        if _df_recuperado is not None:
+            df = _df_recuperado.copy()
+        else:
+            with file_lock(ARQUIVO_PEDIDOS):
+                # Força Contato como string ao ler CSV para evitar conversão para float
+                df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
 
-            # Garante colunas obrigatórias
-            for c in colunas_padrao:
-                if c not in df.columns:
-                    df[c] = None
-                    logger.warning(f"Coluna {c} não encontrada, adicionando")
+        # Garante colunas obrigatórias
+        for c in colunas_padrao:
+            if c not in df.columns:
+                df[c] = None
+                logger.warning(f"Coluna {c} não encontrada, adicionando")
 
-            # Conversões seguras com tratamento de erros
-            df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
-            df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
+        # Conversões seguras com tratamento de erros
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
+        df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
 
-            for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-            # Tratamento de IDs duplicados ou inválidos
-            df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
-            if df['ID_Pedido'].duplicated().any():
-                logger.warning("IDs duplicados detectados, reindexando")
-                df['ID_Pedido'] = range(1, len(df) + 1)
-            elif not df.empty and df['ID_Pedido'].max() == 0:
-                logger.warning("IDs inválidos detectados, reindexando")
-                df['ID_Pedido'] = range(1, len(df) + 1)
+        # Tratamento de IDs duplicados ou inválidos
+        df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
+        if df['ID_Pedido'].duplicated().any():
+            logger.warning("IDs duplicados detectados, reindexando")
+            df['ID_Pedido'] = range(1, len(df) + 1)
+        elif not df.empty and df['ID_Pedido'].max() == 0:
+            logger.warning("IDs inválidos detectados, reindexando")
+            df['ID_Pedido'] = range(1, len(df) + 1)
 
-            # Normaliza status antigos
-            mapa = {
-                "Pendente": "🔴 Pendente",
-                "Em Produção": "🟡 Em Produção",
-                "Entregue": "✅ Entregue",
-                "Cancelado": "🚫 Cancelado"
-            }
-            df['Status'] = df['Status'].replace(mapa)
+        # Normaliza status antigos
+        mapa = {
+            "Pendente": "🔴 Pendente",
+            "Em Produção": "🟡 Em Produção",
+            "Entregue": "✅ Entregue",
+            "Cancelado": "🚫 Cancelado"
+        }
+        df['Status'] = df['Status'].replace(mapa)
 
-            # Garante status válido
-            invalid_status = ~df['Status'].isin(OPCOES_STATUS)
-            if invalid_status.any():
-                logger.warning(f"{invalid_status.sum()} pedidos com status inválido, ajustando")
-                df.loc[invalid_status, 'Status'] = "🔴 Pendente"
+        # Garante status válido
+        invalid_status = ~df['Status'].isin(OPCOES_STATUS)
+        if invalid_status.any():
+            logger.warning(f"{invalid_status.sum()} pedidos com status inválido, ajustando")
+            df.loc[invalid_status, 'Status'] = "🔴 Pendente"
 
-            # Garante tipos de string (Contato já é string pelo dtype no read_csv)
-            for c in ["Cliente", "Status", "Pagamento", "Observacoes"]:
-                df[c] = df[c].fillna("").astype(str)
+        # Garante tipos de string
+        for c in ["Cliente", "Status", "Pagamento", "Observacoes"]:
+            df[c] = df[c].fillna("").astype(str)
 
-            # Contato já foi lido como string, só garante que não há NaN
-            df["Contato"] = df["Contato"].fillna("").str.replace(".0", "", regex=False)
+        df["Contato"] = df["Contato"].fillna("").astype(str).str.replace(".0", "", regex=False)
 
-            # Garante pagamento válido
-            invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
-            if invalid_payment.any():
-                logger.warning(f"{invalid_payment.sum()} pedidos com pagamento inválido, ajustando")
-                df.loc[invalid_payment, 'Pagamento'] = "NÃO PAGO"
+        # Garante pagamento válido
+        invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
+        if invalid_payment.any():
+            logger.warning(f"{invalid_payment.sum()} pedidos com pagamento inválido, ajustando")
+            df.loc[invalid_payment, 'Pagamento'] = "NÃO PAGO"
 
-            logger.info(f"Pedidos carregados: {len(df)} registros")
-            return df[colunas_padrao]
+        logger.info(f"Pedidos carregados: {len(df)} registros")
+        return df[colunas_padrao]
 
     except Exception as e:
         logger.error(f"Erro ao carregar pedidos: {e}", exc_info=True)
