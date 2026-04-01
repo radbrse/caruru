@@ -146,6 +146,14 @@ def render():
                     with col11:
                         if pedido['Status'] != "✅ Entregue":
                             if st.button("✅", key=f"entregue_{pedido['ID_Pedido']}", help="Marcar como Entregue e Pago", use_container_width=True, type="primary"):
+                                st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"] = True
+                                st.rerun()
+
+                    if st.session_state.get(f"confirmar_entregue_{pedido['ID_Pedido']}", False):
+                        st.info(f"✅ Confirmar entrega e pagamento do pedido de **{pedido['Cliente']}** (#{int(pedido['ID_Pedido'])})?")
+                        col_sim_ent, col_nao_ent = st.columns(2)
+                        with col_sim_ent:
+                            if st.button("✅ SIM, CONFIRMAR", key=f"sim_entregue_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                                 from config import agora_brasil
                                 idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
                                 status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
@@ -158,13 +166,16 @@ def render():
                                 if salvar_pedidos(st.session_state.pedidos):
                                     registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
                                     registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Pagamento", pagamento_antigo, "PAGO")
-
                                     sincronizar_automaticamente('editar')
-
+                                    del st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"]
                                     st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue e pago!", icon="✅")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao salvar alteração")
+                        with col_nao_ent:
+                            if st.button("❌ CANCELAR", key=f"nao_entregue_{pedido['ID_Pedido']}", use_container_width=True):
+                                del st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"]
+                                st.rerun()
 
                     if st.session_state.get(f"visualizar_{pedido['ID_Pedido']}", False):
                         with st.expander("📋 Detalhes Completos", expanded=True):
