@@ -392,10 +392,10 @@ def salvar_pedidos(df):
 
             salvar = df.copy()
             salvar['Data'] = salvar['Data'].apply(
-                lambda x: x.strftime('%Y-%m-%d') if hasattr(x, 'strftime') else x
+                lambda x: x.strftime('%Y-%m-%d') if (hasattr(x, 'strftime') and pd.notna(x)) else ""
             )
             salvar['Hora'] = salvar['Hora'].apply(
-                lambda x: x.strftime('%H:%M') if isinstance(x, time) else str(x) if x else "12:00"
+                lambda x: x.strftime('%H:%M') if isinstance(x, time) else ("12:00" if pd.isna(x) else (str(x).strip() or "12:00"))
             )
             # Hora_Entrega pode não existir em DataFrames vindos do Sheets (retrocompatibilidade)
             if 'Hora_Entrega' not in salvar.columns:
@@ -403,7 +403,7 @@ def salvar_pedidos(df):
             salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
             )
-            salvar['Contato'] = salvar['Contato'].astype(str).str.replace(".0", "", regex=False)
+            salvar['Contato'] = salvar['Contato'].fillna("").astype(str).str.replace(".0", "", regex=False)
 
             temp_file = f"{ARQUIVO_PEDIDOS}.tmp"
             salvar.to_csv(temp_file, index=False)
@@ -443,7 +443,7 @@ def salvar_clientes(df):
 
             salvar = df.copy()
             if 'Contato' in salvar.columns:
-                salvar['Contato'] = salvar['Contato'].astype(str).str.replace(".0", "", regex=False)
+                salvar['Contato'] = salvar['Contato'].fillna("").astype(str).str.replace(".0", "", regex=False)
 
             temp_file = f"{ARQUIVO_CLIENTES}.tmp"
             salvar.to_csv(temp_file, index=False)

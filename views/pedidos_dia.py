@@ -76,7 +76,9 @@ def render():
             logger.warning(f"Erro ao ordenar pedidos do dia: {e}")
             pass
 
-        c1, c2, c3, c4 = st.columns(4)
+        total_dia = len(df[df['Data'] == dt_filter])
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
 
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) &
@@ -90,10 +92,12 @@ def render():
         valor_metade = df_nao_cancelados[df_nao_cancelados['Pagamento'] == 'METADE']['Valor'].sum() * 0.5
         a_receber = valor_nao_pago + valor_metade
 
-        c1.metric("🥘 Caruru (Pend)", int(pend['Caruru'].sum()))
-        c2.metric("🦐 Bobó (Pend)", int(pend['Bobo'].sum()))
-        c3.metric("💰 Faturamento", formatar_valor_br(faturamento))
-        c4.metric("📥 A Receber", formatar_valor_br(a_receber), delta_color="inverse")
+        c1.metric("📦 Pedidos do dia", total_dia)
+        c2.metric("⏳ Falta entregar", len(pend))
+        c3.metric("🥘 Caruru (Pend)", int(pend['Caruru'].sum()))
+        c4.metric("🦐 Bobó (Pend)", int(pend['Bobo'].sum()))
+        c5.metric("💰 Faturamento", formatar_valor_br(faturamento))
+        c6.metric("📥 A Receber", formatar_valor_br(a_receber), delta_color="inverse")
 
         st.divider()
         st.subheader("📋 Entregas do Dia")
