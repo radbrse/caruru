@@ -90,9 +90,24 @@ def salvar_no_sheets(client, nome_aba, df):
         except gspread.exceptions.WorksheetNotFound:
             worksheet = spreadsheet.add_worksheet(nome_aba, rows=len(df)+100, cols=len(df.columns))
 
+        # Serializa com tratamento explícito de nan/None/NaT
+        # (astype(str) puro deixa float nan passar como float para o json.dumps do gspread)
+        _NULOS = {"nan", "None", "NaT", "none", "NAN", "<NA>"}
+
+        def _para_str(val):
+            try:
+                if pd.isna(val):
+                    return ""
+            except (TypeError, ValueError):
+                pass
+            if val is None:
+                return ""
+            s = str(val)
+            return "" if s in _NULOS else s
+
         df_str = df.copy()
         for col in df_str.columns:
-            df_str[col] = df_str[col].astype(str)
+            df_str[col] = df_str[col].apply(_para_str)
 
         if 'Contato' in df_str.columns:
             df_str['Contato'] = df_str['Contato'].str.replace(".0", "", regex=False)
