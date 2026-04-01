@@ -351,3 +351,184 @@ def gerar_lista_clientes_pdf(df_clientes):
     except Exception as e:
         logger.error(f"Erro gerar PDF clientes: {e}")
         return None
+
+
+# ==============================================================================
+# ORÇAMENTO
+# ==============================================================================
+def _quebrar_texto(p, texto, fonte, tamanho, largura):
+    """Quebra texto em linhas que caibam na largura dada."""
+    lines = []
+    words = texto.split()
+    line = ""
+    for word in words:
+        test = f"{line} {word}".strip()
+        if p.stringWidth(test, fonte, tamanho) < largura:
+            line = test
+        else:
+            if line:
+                lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+def gerar_orcamento_pdf(dados):
+    """Gera orçamento/proposta comercial em PDF."""
+    try:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        desenhar_cabecalho(p, "ORÇAMENTO")
+
+        agora = agora_brasil()
+        num_orc = agora.strftime("%Y%m%d%H%M")
+        y = 700
+
+        # Número e datas
+        p.setFont("Helvetica", 9)
+        p.setFillColor(colors.grey)
+        p.drawString(30, y, f"Nº {num_orc}")
+        p.drawString(300, y, f"Emitido em: {agora.strftime('%d/%m/%Y %H:%M')}")
+        validade = dados.get('Validade')
+        if validade:
+            val_s = validade.strftime('%d/%m/%Y') if hasattr(validade, 'strftime') else str(validade)
+            p.drawString(300, y - 14, f"Válido até: {val_s}")
+            y -= 14
+        p.setFillColor(colors.black)
+        y -= 28
+
+        # Dados do cliente
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(30, y, "DADOS DO CLIENTE")
+        y -= 18
+        p.setFont("Helvetica", 11)
+        p.drawString(30, y, f"Nome: {dados.get('Cliente', '')}")
+        contato = dados.get('Contato', '')
+        if contato:
+            p.drawString(300, y, f"WhatsApp: {contato}")
+        y -= 35
+
+        # Cabeçalho da tabela de itens
+        p.setFillColor(colors.HexColor('#2c3e50'))
+        p.rect(30, y - 5, 535, 22, fill=1, stroke=0)
+        p.setFillColor(colors.white)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(40, y, "ITEM")
+        p.drawString(310, y, "QTD")
+        p.drawString(390, y, "UNIT.")
+        p.drawString(480, y, "SUBTOTAL")
+        p.setFillColor(colors.black)
+        y -= 28
+
+        # Cálculos
+        preco_atual = obter_preco_base()
+        preco_fmt = f"R$ {preco_atual:.2f}".replace(".", ",")
+        caruru = float(dados.get('Caruru', 0))
+        bobo = float(dados.get('Bobo', 0))
+        desconto = float(dados.get('Desconto', 0))
+        subtotal_bruto = (caruru + bobo) * preco_atual
+        desconto_valor = subtotal_bruto * desconto / 100
+        total = subtotal_bruto - desconto_valor
+
+        # Linhas de itens com zebra
+        linha_par = True
+        p.setFont("Helvetica", 10)
+        if caruru > 0:
+            if linha_par:
+                p.setFillColor(colors.HexColor('#f2f3f4'))
+                p.rect(30, y - 4, 535, 17, fill=1, stroke=0)
+                p.setFillColor(colors.black)
+            sub_fmt = f"R$ {caruru * preco_atual:.2f}".replace(".", ",")
+            p.drawString(40, y, "Caruru Tradicional")
+            p.drawString(310, y, f"{int(caruru)} kg")
+            p.drawString(390, y, preco_fmt)
+            p.drawString(480, y, sub_fmt)
+            y -= 18
+            linha_par = not linha_par
+
+        if bobo > 0:
+            if linha_par:
+                p.setFillColor(colors.HexColor('#f2f3f4'))
+                p.rect(30, y - 4, 535, 17, fill=1, stroke=0)
+                p.setFillColor(colors.black)
+            sub_fmt = f"R$ {bobo * preco_atual:.2f}".replace(".", ",")
+            p.drawString(40, y, "Bobó de Camarão")
+            p.drawString(310, y, f"{int(bobo)} kg")
+            p.drawString(390, y, preco_fmt)
+            p.drawString(480, y, sub_fmt)
+            y -= 18
+
+        p.setLineWidth(1)
+        p.line(30, y - 8, 565, y - 8)
+        y -= 28
+
+        # Subtotal
+        p.setFont("Helvetica", 11)
+        p.drawString(380, y, "Subtotal:")
+        p.drawRightString(565, y, f"R$ {subtotal_bruto:.2f}".replace(".", ","))
+        y -= 18
+
+        # Desconto (se houver)
+        if desconto > 0:
+            p.setFont("Helvetica-Oblique", 10)
+            p.setFillColor(colors.red)
+            p.drawString(380, y, f"Desconto ({desconto:.0f}%):")
+            p.drawRightString(565, y, f"- R$ {desconto_valor:.2f}".replace(".", ","))
+            p.setFillColor(colors.black)
+            y -= 18
+
+        # Box de total destacado
+        y -= 8
+        p.setFillColor(colors.HexColor('#eaf4fb'))
+        p.rect(330, y - 8, 235, 26, fill=1, stroke=0)
+        p.setFillColor(colors.HexColor('#1a5276'))
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(345, y, "TOTAL:")
+        p.drawRightString(558, y, f"R$ {total:.2f}".replace(".", ","))
+        p.setFillColor(colors.black)
+        y -= 45
+
+        # Pagamento
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(30, y, "PAGAMENTO")
+        y -= 18
+        p.setFont("Helvetica", 10)
+        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
+        y -= 30
+
+        # Observações
+        obs = dados.get('Observacoes', '')
+        if obs:
+            p.setFont("Helvetica-Bold", 11)
+            p.drawString(30, y, "OBSERVAÇÕES")
+            y -= 16
+            p.setFont("Helvetica-Oblique", 9)
+            for line in _quebrar_texto(p, obs, "Helvetica-Oblique", 9, 535):
+                p.drawString(30, y, line)
+                y -= 12
+            y -= 10
+
+        # Linhas de assinatura
+        y_ass = max(y - 40, 110)
+        p.setFont("Helvetica", 9)
+        p.setFillColor(colors.grey)
+        p.drawString(30, y_ass + 20, "Para confirmar este orçamento, assine abaixo e realize o pagamento via PIX.")
+        p.setFillColor(colors.black)
+        p.setLineWidth(0.8)
+        p.line(30, y_ass, 250, y_ass)
+        p.drawCentredString(140, y_ass - 14, "Assinatura do Cliente")
+        p.line(310, y_ass, 565, y_ass)
+        p.drawCentredString(437, y_ass - 14, "Data de Aceite")
+
+        p.setFont("Helvetica-Oblique", 8)
+        p.setFillColor(colors.grey)
+        p.drawCentredString(300, 30, f"Cantinho do Caruru | Orçamento Nº {num_orc} | {agora.strftime('%d/%m/%Y %H:%M')}")
+
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        logger.error(f"Erro gerar orçamento PDF: {e}", exc_info=True)
+        return None
