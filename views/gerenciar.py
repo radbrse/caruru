@@ -15,7 +15,7 @@ from config import (
 )
 from utils import (
     formatar_valor_br, get_status_badge, get_pagamento_badge,
-    get_obs_icon, get_valor_destaque, get_whatsapp_link,
+    get_obs_icon, get_extra_badge, get_valor_destaque, get_whatsapp_link,
     calcular_total, gerar_link_whatsapp, limpar_telefone
 )
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
@@ -42,7 +42,7 @@ def render():
 
         # Filtros e Ordenação
         with st.expander("🔍 Filtros e Ordenação", expanded=False):
-            col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
+            col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns(6)
             with col_f1:
                 f_status = st.multiselect("Status", OPCOES_STATUS, default=OPCOES_STATUS)
             with col_f2:
@@ -50,12 +50,13 @@ def render():
             with col_f3:
                 f_periodo = st.selectbox("Período", ["Todos", "Hoje", "Esta Semana", "Este Mês", "Data Específica"], key="ger_periodo")
             with col_f4:
-                # Filtro de data específica (só aparece se selecionado)
                 if f_periodo == "Data Específica":
                     f_data_especifica = st.date_input("📅 Selecione a Data", value=hoje_brasil(), format="DD/MM/YYYY", key="ger_data_especifica")
                 else:
                     f_data_especifica = None
             with col_f5:
+                f_extra = st.selectbox("⚡ Tipo", ["Todos", "⚡ Extra", "📦 Convencional"], key="ger_extra")
+            with col_f6:
                 f_ordem = st.selectbox("Ordenar por", [
                     "📅 Data (mais recente)",
                     "📅 Data (mais antiga)",
@@ -74,6 +75,11 @@ def render():
         df_view = df_view[df_view['Status'] != "✅ Entregue"]
         df_view = df_view[df_view['Status'].isin(f_status)]
         df_view = df_view[df_view['Pagamento'].isin(f_pagto)]
+        if 'Extra' in df_view.columns:
+            if f_extra == "⚡ Extra":
+                df_view = df_view[df_view['Extra'] == True]
+            elif f_extra == "📦 Convencional":
+                df_view = df_view[df_view['Extra'] != True]
 
         # Filtro de busca por cliente (case insensitive)
         if busca_cliente:
@@ -157,7 +163,8 @@ def render():
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
@@ -264,6 +271,30 @@ def render():
                             # Observações com mais espaço
                             novas_obs = st.text_area("📝 Observações", value=str(pedido_atual['Observacoes']) if pd.notna(pedido_atual['Observacoes']) else "", height=150)
 
+                            # Hora de entrega e flag Extra
+                            col_he1, col_he2 = st.columns(2)
+                            with col_he1:
+                                alterar_hora_entrega = st.checkbox(
+                                    "⏱️ Alterar hora de entrega",
+                                    key=f"alt_hora_entrega_{id_em_edicao}"
+                                )
+                                if alterar_hora_entrega:
+                                    hora_ent_atual = pedido_atual.get('Hora_Entrega', None)
+                                    val_hora_ent = hora_ent_atual if isinstance(hora_ent_atual, time) else time(12, 0)
+                                    nova_hora_entrega = st.time_input(
+                                        "✅ Hora Entrega",
+                                        value=val_hora_ent,
+                                        key=f"hora_entrega_val_{id_em_edicao}"
+                                    )
+                                else:
+                                    nova_hora_entrega = None
+                            with col_he2:
+                                novo_extra = st.checkbox(
+                                    "⚡ Pedido Extra",
+                                    value=bool(pedido_atual.get('Extra', False)),
+                                    key=f"extra_edit_all_{id_em_edicao}"
+                                )
+
                             # Botões
                             col_e10, col_e11, col_e12 = st.columns([2, 2, 1])
                             with col_e10:
@@ -298,9 +329,12 @@ def render():
                                 df_atualizado.loc[mask, 'Pagamento'] = novo_pagamento
                                 df_atualizado.loc[mask, 'Status'] = novo_status
                                 df_atualizado.loc[mask, 'Observacoes'] = novas_obs
+                                df_atualizado.loc[mask, 'Extra'] = novo_extra
 
-                                # Capturar hora de entrega se marcou como Entregue
-                                if novo_status == "✅ Entregue" and pedido_atual['Status'] != "✅ Entregue":
+                                # Hora de entrega: manual (prioritário) ou auto ao marcar Entregue
+                                if alterar_hora_entrega and nova_hora_entrega is not None:
+                                    df_atualizado.loc[mask, 'Hora_Entrega'] = nova_hora_entrega
+                                elif novo_status == "✅ Entregue" and pedido_atual['Status'] != "✅ Entregue":
                                     from config import agora_brasil
                                     df_atualizado.loc[mask, 'Hora_Entrega'] = agora_brasil().time()
 
@@ -463,12 +497,14 @@ def render():
                 if colunas_faltantes:
                     st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                 else:
-                    # Adiciona Hora_Entrega se não existir (retrocompatibilidade)
+                    # Adiciona colunas opcionais se não existirem (retrocompatibilidade)
                     if 'Hora_Entrega' not in df_n.columns:
                         df_n['Hora_Entrega'] = ""
+                    if 'Extra' not in df_n.columns:
+                        df_n['Extra'] = "False"
 
                     # Reordena para manter colunas esperadas
-                    todas_colunas = colunas_obrigatorias + ["Hora_Entrega"]
+                    todas_colunas = colunas_obrigatorias + ["Hora_Entrega", "Extra"]
                     df_n = df_n[[c for c in todas_colunas if c in df_n.columns]]
 
                     if not salvar_pedidos(df_n):

@@ -189,9 +189,9 @@ def importar_csv_externo(arquivo_upload, destino):
             'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
         }
 
-        # Hora_Entrega é opcional (retrocompatibilidade)
+        # Colunas opcionais (retrocompatibilidade)
         schemas_opcionais = {
-            'Pedidos': ["Hora_Entrega"]
+            'Pedidos': ["Hora_Entrega", "Extra"]
         }
 
         colunas_esperadas = schemas_obrigatorios[destino]
@@ -202,10 +202,11 @@ def importar_csv_externo(arquivo_upload, destino):
             return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
 
         # Adicionar colunas opcionais se não existirem
+        _defaults_opcionais = {"Extra": "False"}
         if destino in schemas_opcionais:
             for col_opcional in schemas_opcionais[destino]:
                 if col_opcional not in df_novo.columns:
-                    df_novo[col_opcional] = ""
+                    df_novo[col_opcional] = _defaults_opcionais.get(col_opcional, "")
                     logger.info(f"Coluna opcional '{col_opcional}' adicionada automaticamente")
 
         # Montar lista completa de colunas
@@ -297,7 +298,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
-    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
+    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes", "Extra"]
     _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets
@@ -367,6 +368,10 @@ def carregar_pedidos():
 
         df["Contato"] = df["Contato"].fillna("").astype(str).str.replace(".0", "", regex=False)
 
+        df["Extra"] = df["Extra"].apply(
+            lambda x: str(x).strip().lower() in ('true', '1') if pd.notna(x) and str(x).strip() not in ('', 'nan') else False
+        )
+
         invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
         if invalid_payment.any():
             logger.warning(f"{invalid_payment.sum()} pedidos com pagamento inválido, ajustando")
@@ -404,6 +409,11 @@ def salvar_pedidos(df):
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
             )
             salvar['Contato'] = salvar['Contato'].fillna("").astype(str).str.replace(".0", "", regex=False)
+            if 'Extra' not in salvar.columns:
+                salvar['Extra'] = "False"
+            salvar['Extra'] = salvar['Extra'].apply(
+                lambda x: "True" if x is True or (isinstance(x, str) and x.lower() == 'true') else "False"
+            )
 
             temp_file = f"{ARQUIVO_PEDIDOS}.tmp"
             salvar.to_csv(temp_file, index=False)
