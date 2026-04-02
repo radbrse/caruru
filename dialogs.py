@@ -89,7 +89,8 @@ def confirmar_data_pedido():
                 pagamento=pedido_temp['pagamento'],
                 contato=pedido_temp['contato'],
                 desconto=pedido_temp['desconto'],
-                observacoes=pedido_temp['observacoes']
+                observacoes=pedido_temp['observacoes'],
+                extra=pedido_temp.get('extra', False)
             )
 
             if erros:

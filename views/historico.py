@@ -11,6 +11,7 @@ from utils import (
     get_status_badge,
     get_pagamento_badge,
     get_obs_icon,
+    get_extra_badge,
     get_whatsapp_link,
 )
 
@@ -26,8 +27,22 @@ def render():
     if df_entregues.empty:
         st.info("📭 Nenhum pedido entregue ainda.")
     else:
-        # Ordenação
+        # Filtro por tipo
         col_ord1, col_ord2 = st.columns([3, 1])
+        with col_ord1:
+            tipo_filtro = st.radio(
+                "📦 Tipo de Pedido",
+                ["Todos", "⚡ Extra", "📦 Convencional"],
+                horizontal=True,
+                key="filtro_tipo_historico"
+            )
+
+        if 'Extra' in df_entregues.columns:
+            if tipo_filtro == "⚡ Extra":
+                df_entregues = df_entregues[df_entregues['Extra'] == True]
+            elif tipo_filtro == "📦 Convencional":
+                df_entregues = df_entregues[df_entregues['Extra'] != True]
+
         with col_ord2:
             ordem_hist = st.selectbox("Ordenar por", [
                 "📅 Data (mais recente)",
@@ -65,7 +80,7 @@ def render():
 
         # Métricas
         st.markdown("### 📊 Resumo")
-        col_m1, col_m2, col_m3, col_m4 = st.columns([1, 1, 1, 1])
+        col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
         with col_m1:
             st.metric("📦 Total de Entregas", len(df_entregues))
         with col_m2:
@@ -75,6 +90,9 @@ def render():
             df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
             st.metric("✅ Totalmente Pagos", len(df_pagos))
         with col_m4:
+            n_extras = int(df_entregues['Extra'].sum()) if 'Extra' in df_entregues.columns else 0
+            st.metric("⚡ Pedidos Extras", n_extras)
+        with col_m5:
             if st.button("🗑️ Limpar Histórico", type="secondary", use_container_width=True):
                 st.session_state['confirmar_limpar_historico'] = True
                 st.rerun()
@@ -141,7 +159,8 @@ def render():
                 with col1:
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                 with col2:
-                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                    extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
+                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
                 with col3:
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])

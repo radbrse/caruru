@@ -23,7 +23,7 @@ from sheets import sincronizar_automaticamente
 # ==============================================================================
 # CRUD DE PEDIDOS
 # ==============================================================================
-def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes):
+def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False):
     """Cria novo pedido com validação completa."""
     erros = []
     avisos = []
@@ -72,7 +72,8 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
         "Pagamento": pagamento if pagamento in OPCOES_PAGAMENTO else "NÃO PAGO",
         "Contato": tel,
         "Desconto": dc,
-        "Observacoes": observacoes.strip() if observacoes else ""
+        "Observacoes": observacoes.strip() if observacoes else "",
+        "Extra": bool(extra)
     }
 
     df_novo = pd.DataFrame([novo])
@@ -110,7 +111,7 @@ def atualizar_pedido(id_pedido, campos_atualizar):
 
         if 'Status' in campos_atualizar and campos_atualizar['Status'] == "✅ Entregue":
             status_anterior = df.at[idx, 'Status']
-            if status_anterior != "✅ Entregue":
+            if status_anterior != "✅ Entregue" and 'Hora_Entrega' not in campos_atualizar:
                 campos_atualizar['Hora_Entrega'] = agora_brasil().time()
                 logger.info(f"Pedido #{id_pedido} marcado como entregue - hora de entrega: {campos_atualizar['Hora_Entrega']}")
 

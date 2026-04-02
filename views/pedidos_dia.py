@@ -6,7 +6,7 @@ from datetime import time
 import time as time_module
 
 from config import logger, hoje_brasil, OPCOES_STATUS, OPCOES_PAGAMENTO
-from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_valor_destaque, get_whatsapp_link, calcular_total
+from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_extra_badge, get_valor_destaque, get_whatsapp_link, calcular_total
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
 from pedidos import atualizar_pedido, excluir_pedido
 from sheets import sincronizar_automaticamente
@@ -121,7 +121,8 @@ def render():
                     with col1:
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}</div>", unsafe_allow_html=True)
+                        extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
                         st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
@@ -251,6 +252,29 @@ def render():
                                 novas_obs = st.text_area("📝 Observações", value=pedido_atual['Observacoes'], height=150,
                                                         key=f"obs_{pedido['ID_Pedido']}")
 
+                                col_he1, col_he2 = st.columns(2)
+                                with col_he1:
+                                    alterar_hora_ent = st.checkbox(
+                                        "⏱️ Alterar hora de entrega",
+                                        key=f"alt_hora_ent_{pedido['ID_Pedido']}"
+                                    )
+                                    if alterar_hora_ent:
+                                        hora_ent_atual = pedido_atual.get('Hora_Entrega', None)
+                                        val_hora_ent = hora_ent_atual if isinstance(hora_ent_atual, time) else time(12, 0)
+                                        nova_hora_ent = st.time_input(
+                                            "✅ Hora Entrega",
+                                            value=val_hora_ent,
+                                            key=f"hora_ent_{pedido['ID_Pedido']}"
+                                        )
+                                    else:
+                                        nova_hora_ent = None
+                                with col_he2:
+                                    novo_extra = st.checkbox(
+                                        "⚡ Pedido Extra",
+                                        value=bool(pedido_atual.get('Extra', False)),
+                                        key=f"extra_edit_{pedido['ID_Pedido']}"
+                                    )
+
                                 col_save, col_cancel, col_delete = st.columns([2, 2, 1])
                                 with col_save:
                                     salvar = st.form_submit_button("💾 Salvar", use_container_width=True, type="primary")
@@ -269,8 +293,11 @@ def render():
                                             "Caruru": novo_caruru,
                                             "Bobo": novo_bobo,
                                             "Desconto": novo_desconto,
-                                            "Observacoes": novas_obs
+                                            "Observacoes": novas_obs,
+                                            "Extra": novo_extra
                                         }
+                                        if alterar_hora_ent:
+                                            campos["Hora_Entrega"] = nova_hora_ent
                                         sucesso, msg = atualizar_pedido(id_em_edicao_dia, campos)
                                         if sucesso:
                                             st.toast(f"✅ Pedido #{id_em_edicao_dia} atualizado!", icon="✅")

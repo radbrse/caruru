@@ -126,11 +126,13 @@ def render():
 
         obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
 
-        c6, c7 = st.columns(2)
+        c6, c7, c8 = st.columns([2, 2, 1])
         with c6:
             pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
         with c7:
             stt = st.selectbox("📊 Status", OPCOES_STATUS)
+        with c8:
+            eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual")
 
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
@@ -150,7 +152,8 @@ def render():
                 'pagamento': pg,
                 'contato': cont,
                 'desconto': dc,
-                'observacoes': obs
+                'observacoes': obs,
+                'extra': eh_extra
             }
             st.rerun()
 
