@@ -207,15 +207,16 @@ with st.sidebar:
 
             stats = st.session_state.get('sync_stats', {})
 
-            # Taxa de sucesso
-            total = stats.get('total_tentativas', 0)
+            # Taxa de sucesso: usa apenas tentativas reais (não conta syncs desabilitados)
             sucessos = stats.get('sucessos', 0)
-            if total > 0:
-                taxa_sucesso = (sucessos / total) * 100
+            falhas = stats.get('falhas', 0)
+            efetivas = sucessos + falhas
+            if efetivas > 0:
+                taxa_sucesso = (sucessos / efetivas) * 100
                 st.metric(
                     "Taxa de Sucesso",
                     f"{taxa_sucesso:.1f}%",
-                    delta=f"{sucessos}/{total}",
+                    delta=f"{sucessos}/{efetivas}",
                     delta_color="normal"
                 )
 
@@ -223,9 +224,9 @@ with st.sidebar:
             with col1:
                 st.metric("Tentativas", stats.get('total_tentativas', 0))
             with col2:
-                st.metric("✅ Sucessos", stats.get('sucessos', 0))
+                st.metric("✅ Sucessos", sucessos)
             with col3:
-                st.metric("❌ Falhas", stats.get('falhas', 0))
+                st.metric("❌ Falhas", falhas)
 
             ultimo_status = stats.get('ultimo_status')
             if ultimo_status:
