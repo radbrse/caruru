@@ -193,7 +193,7 @@ def render():
                                     st.markdown(f"""
                                     **🆔 ID:** {int(pedido['ID_Pedido'])}
                                     **👤 Cliente:** {pedido['Cliente']}
-                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
+                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else pedido['Data']}
                                     **⏰ Agendado:** {hora_str}
                                     **✅ Entregue às:** {hora_entrega_str}
                                     """)
@@ -201,7 +201,7 @@ def render():
                                     st.markdown(f"""
                                     **🆔 ID:** {int(pedido['ID_Pedido'])}
                                     **👤 Cliente:** {pedido['Cliente']}
-                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}
+                                    **📅 Data:** {pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else pedido['Data']}
                                     **⏰ Hora:** {hora_str}
                                     """)
                                 st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)

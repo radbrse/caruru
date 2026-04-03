@@ -166,8 +166,8 @@ def render():
                         extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
                         st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
                     with col3:
-                        data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
-                        hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
+                        data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
+                        hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])
                         st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>📅 {data_str}<br>⏰ {hora_str}</div>", unsafe_allow_html=True)
                     with col4:
                         st.markdown(get_valor_destaque(pedido['Valor']), unsafe_allow_html=True)
@@ -200,8 +200,8 @@ def render():
                         with col_a:
                             st.markdown(f"**👤 Cliente:** {pedido['Cliente']}")
                             st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
-                            st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else pedido['Data']}")
-                            st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else pedido['Hora']}")
+                            st.markdown(f"**📅 Data Entrega:** {pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else pedido['Data']}")
+                            st.markdown(f"**⏰ Hora Retirada:** {pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else pedido['Hora']}")
                         with col_b:
                             st.markdown(f"**🥘 Caruru:** {int(pedido['Caruru'])} un.")
                             st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
