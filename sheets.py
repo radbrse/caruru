@@ -267,13 +267,14 @@ def verificar_status_sheets():
 
 def sincronizar_automaticamente(operacao="geral"):
     """Sincroniza automaticamente com Google Sheets após operações CRUD."""
-    st.session_state['sync_stats']['total_tentativas'] += 1
-
     if not st.session_state.get('sync_automatico_habilitado', False):
+        # Não conta como tentativa — foi desabilitado intencionalmente pelo usuário
         st.session_state['sync_stats']['ultimo_status'] = '⚪ DESABILITADO'
         st.session_state['sync_stats']['ultimo_erro'] = 'Sincronização automática desabilitada pelo usuário'
         logger.info("🔴 Sync automático: DESABILITADO pelo usuário")
         return
+
+    st.session_state['sync_stats']['total_tentativas'] += 1
 
     if not GSPREAD_AVAILABLE:
         st.session_state['sync_stats']['ultimo_status'] = '❌ GSPREAD NÃO DISPONÍVEL'

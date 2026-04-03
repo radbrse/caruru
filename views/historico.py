@@ -80,19 +80,23 @@ def render():
 
         # Métricas
         st.markdown("### 📊 Resumo")
-        col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+        col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7 = st.columns(7)
         with col_m1:
-            st.metric("📦 Total de Entregas", len(df_entregues))
+            st.metric("📦 Entregas", len(df_entregues))
         with col_m2:
+            st.metric("🥘 Caruru", int(df_entregues['Caruru'].sum()))
+        with col_m3:
+            st.metric("🦐 Bobó", int(df_entregues['Bobo'].sum()))
+        with col_m4:
             valor_total = df_entregues['Valor'].sum()
             st.metric("💰 Valor Total", formatar_valor_br(valor_total))
-        with col_m3:
-            df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
-            st.metric("✅ Totalmente Pagos", len(df_pagos))
-        with col_m4:
-            n_extras = int(df_entregues['Extra'].sum()) if 'Extra' in df_entregues.columns else 0
-            st.metric("⚡ Pedidos Extras", n_extras)
         with col_m5:
+            df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
+            st.metric("✅ Pagos", len(df_pagos))
+        with col_m6:
+            n_extras = int(df_entregues['Extra'].sum()) if 'Extra' in df_entregues.columns else 0
+            st.metric("⚡ Extras", n_extras)
+        with col_m7:
             if st.button("🗑️ Limpar Histórico", type="secondary", use_container_width=True):
                 st.session_state['confirmar_limpar_historico'] = True
                 st.rerun()
