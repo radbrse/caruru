@@ -20,7 +20,34 @@ def render():
         st.info("Sem dados cadastrados.")
     else:
         dt_filter = st.date_input("📅 Data:", hoje_brasil(), format="DD/MM/YYYY")
-        df_dia = df[df['Data'] == dt_filter].copy()
+
+        # Comparação type-safe: converte ambos os lados para string 'YYYY-MM-DD'
+        # evita falhas silenciosas quando dtype da coluna varia entre pandas versions
+        _dt_str = dt_filter.strftime('%Y-%m-%d')
+        def _data_eq(x):
+            try:
+                if pd.isna(x):
+                    return False
+            except (TypeError, ValueError):
+                pass
+            if hasattr(x, 'strftime'):
+                return x.strftime('%Y-%m-%d') == _dt_str
+            return str(x)[:10] == _dt_str
+
+        df_dia = df[df['Data'].apply(_data_eq)].copy()
+
+        # Debug diagnóstico — recolhido por default, não polui a UI
+        with st.expander("🔍 Diagnóstico de dados", expanded=False):
+            st.write(f"**Total de pedidos em sessão:** {len(df)}")
+            st.write(f"**Tipo da coluna Data:** `{df['Data'].dtype}`")
+            st.write(f"**Filtro selecionado:** `{dt_filter}` (tipo: `{type(dt_filter).__name__}`)")
+            if not df.empty:
+                st.write("**Amostra de valores na coluna Data:**")
+                for val in df['Data'].dropna().head(5):
+                    st.write(f"  - `{val}` → tipo: `{type(val).__name__}`")
+            st.write(f"**Comparação direta (==):** {int((df['Data'] == dt_filter).sum())} match(es)")
+            st.write(f"**Comparação type-safe (str):** {int(df['Data'].apply(_data_eq).sum())} match(es)")
+
         df_dia = df_dia[df_dia['Status'] != "✅ Entregue"]
 
         col_busca, col_ord = st.columns([2, 1])
@@ -76,7 +103,7 @@ def render():
             logger.warning(f"Erro ao ordenar pedidos do dia: {e}")
             pass
 
-        total_dia = len(df[df['Data'] == dt_filter])
+        total_dia = int(df['Data'].apply(_data_eq).sum())
 
         c1, c2, c3, c4, c5, c6 = st.columns(6)
 
