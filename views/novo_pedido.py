@@ -126,9 +126,12 @@ def render():
 
         obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
 
+        _PAGAMENTO_DISPLAY = ["💳 SELECIONAR", "✅ PAGO", "❌ NÃO PAGO", "🔸 METADE"]
+        _PAGAMENTO_VALOR  = {"💳 SELECIONAR": None, "✅ PAGO": "PAGO", "❌ NÃO PAGO": "NÃO PAGO", "🔸 METADE": "METADE"}
+
         c6, c7, c8 = st.columns([2, 2, 1])
         with c6:
-            pg = st.selectbox("💳 Pagamento", ["-- SELECIONAR --"] + OPCOES_PAGAMENTO)
+            pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY)
         with c7:
             stt = st.selectbox("📊 Status", OPCOES_STATUS)
         with c8:
@@ -140,8 +143,9 @@ def render():
         if submitted:
             # Usa o cliente selecionado FORA do form
             cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
+            pg = _PAGAMENTO_VALOR[pg_display]
 
-            if pg == "-- SELECIONAR --":
+            if pg is None:
                 st.error("❌ Selecione a forma de pagamento antes de salvar.")
             else:
                 st.session_state.pedido_pendente = {
