@@ -128,7 +128,7 @@ def render():
 
         c6, c7, c8 = st.columns([2, 2, 1])
         with c6:
-            pg = st.selectbox("💳 Pagamento", OPCOES_PAGAMENTO)
+            pg = st.selectbox("💳 Pagamento", ["-- SELECIONAR --"] + OPCOES_PAGAMENTO)
         with c7:
             stt = st.selectbox("📊 Status", OPCOES_STATUS)
         with c8:
@@ -141,21 +141,23 @@ def render():
             # Usa o cliente selecionado FORA do form
             cliente_final = c_sel if c_sel and c_sel != "-- Selecione --" else ""
 
-            # Guarda os dados do pedido em session_state para o dialog
-            st.session_state.pedido_pendente = {
-                'cliente': cliente_final,
-                'caruru': qc,
-                'bobo': qb,
-                'data': dt,
-                'hora': h_ent,
-                'status': stt,
-                'pagamento': pg,
-                'contato': cont,
-                'desconto': dc,
-                'observacoes': obs,
-                'extra': eh_extra
-            }
-            st.rerun()
+            if pg == "-- SELECIONAR --":
+                st.error("❌ Selecione a forma de pagamento antes de salvar.")
+            else:
+                st.session_state.pedido_pendente = {
+                    'cliente': cliente_final,
+                    'caruru': qc,
+                    'bobo': qb,
+                    'data': dt,
+                    'hora': h_ent,
+                    'status': stt,
+                    'pagamento': pg,
+                    'contato': cont,
+                    'desconto': dc,
+                    'observacoes': obs,
+                    'extra': eh_extra
+                }
+                st.rerun()
 
     # Mostra toast de sucesso se pedido foi salvo
     if 'pedido_salvo_id' in st.session_state:
