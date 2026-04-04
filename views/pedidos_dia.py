@@ -6,7 +6,7 @@ from datetime import time
 import time as time_module
 
 from config import logger, hoje_brasil, OPCOES_STATUS, OPCOES_PAGAMENTO
-from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_extra_badge, get_valor_destaque, get_whatsapp_link, calcular_total
+from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_extra_badge, get_vegano_badge, get_valor_destaque, get_whatsapp_link, calcular_total
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
 from pedidos import atualizar_pedido, excluir_pedido
 from sheets import sincronizar_automaticamente
@@ -149,7 +149,8 @@ def render():
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
                         extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
+                        vegano_tag = f" {get_vegano_badge(pedido.get('Vegano', False))}" if pedido.get('Vegano', False) else ""
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
                         st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
@@ -301,6 +302,11 @@ def render():
                                         value=bool(pedido_atual.get('Extra', False)),
                                         key=f"extra_edit_{pedido['ID_Pedido']}"
                                     )
+                                    novo_vegano = st.checkbox(
+                                        "🌿 Vegano",
+                                        value=bool(pedido_atual.get('Vegano', False)),
+                                        key=f"vegano_edit_{pedido['ID_Pedido']}"
+                                    )
 
                                 col_save, col_cancel, col_delete = st.columns([2, 2, 1])
                                 with col_save:
@@ -321,7 +327,8 @@ def render():
                                             "Bobo": novo_bobo,
                                             "Desconto": novo_desconto,
                                             "Observacoes": novas_obs,
-                                            "Extra": novo_extra
+                                            "Extra": novo_extra,
+                                            "Vegano": novo_vegano
                                         }
                                         if alterar_hora_ent:
                                             campos["Hora_Entrega"] = nova_hora_ent

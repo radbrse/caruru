@@ -268,6 +268,12 @@ def get_extra_badge(extra):
         return '<span style="background-color:#fff7ed;color:#c2410c;padding:2px 7px;border-radius:8px;font-size:0.75rem;font-weight:700;display:inline-block;border:1px solid #f97316;">⚡ Extra</span>'
     return ""
 
+def get_vegano_badge(vegano):
+    """Retorna badge HTML verde para pedido vegano."""
+    if vegano:
+        return '<span style="background-color:#f0fdf4;color:#15803d;padding:2px 7px;border-radius:8px;font-size:0.75rem;font-weight:700;display:inline-block;border:1px solid #22c55e;">🌿 Vegano</span>'
+    return ""
+
 def formatar_valor_br(valor):
     """Formata valor para padrão brasileiro."""
     valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")

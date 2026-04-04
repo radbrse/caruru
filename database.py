@@ -191,7 +191,7 @@ def importar_csv_externo(arquivo_upload, destino):
 
         # Colunas opcionais (retrocompatibilidade)
         schemas_opcionais = {
-            'Pedidos': ["Hora_Entrega", "Extra"]
+            'Pedidos': ["Hora_Entrega", "Extra", "Vegano"]
         }
 
         colunas_esperadas = schemas_obrigatorios[destino]
@@ -202,7 +202,7 @@ def importar_csv_externo(arquivo_upload, destino):
             return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
 
         # Adicionar colunas opcionais se não existirem
-        _defaults_opcionais = {"Extra": "False"}
+        _defaults_opcionais = {"Extra": "False", "Vegano": "False"}
         if destino in schemas_opcionais:
             for col_opcional in schemas_opcionais[destino]:
                 if col_opcional not in df_novo.columns:
@@ -298,7 +298,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
-    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes", "Extra"]
+    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes", "Extra", "Vegano"]
     _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets
@@ -371,6 +371,9 @@ def carregar_pedidos():
         df["Extra"] = df["Extra"].apply(
             lambda x: str(x).strip().lower() in ('true', '1') if pd.notna(x) and str(x).strip() not in ('', 'nan') else False
         )
+        df["Vegano"] = df["Vegano"].apply(
+            lambda x: str(x).strip().lower() in ('true', '1') if pd.notna(x) and str(x).strip() not in ('', 'nan') else False
+        )
 
         invalid_payment = ~df['Pagamento'].isin(OPCOES_PAGAMENTO)
         if invalid_payment.any():
@@ -412,6 +415,11 @@ def salvar_pedidos(df):
             if 'Extra' not in salvar.columns:
                 salvar['Extra'] = "False"
             salvar['Extra'] = salvar['Extra'].apply(
+                lambda x: "True" if x is True or (isinstance(x, str) and x.lower() == 'true') else "False"
+            )
+            if 'Vegano' not in salvar.columns:
+                salvar['Vegano'] = "False"
+            salvar['Vegano'] = salvar['Vegano'].apply(
                 lambda x: "True" if x is True or (isinstance(x, str) and x.lower() == 'true') else "False"
             )
 
