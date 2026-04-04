@@ -166,8 +166,8 @@ def render():
                     extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
                     st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
                 with col3:
-                    data_str = pedido['Data'].strftime('%d/%m/%Y') if hasattr(pedido['Data'], 'strftime') else str(pedido['Data'])
-                    hora_str = pedido['Hora'].strftime('%H:%M') if hasattr(pedido['Hora'], 'strftime') else str(pedido['Hora'])
+                    data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
+                    hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])
 
                     # Mostrar hora de entrega se existir
                     hora_entrega = pedido.get('Hora_Entrega', None)

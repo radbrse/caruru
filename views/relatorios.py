@@ -23,7 +23,7 @@ def render():
 
             if not peds.empty:
                 opc = {
-                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if hasattr(p['Data'], 'strftime') else p['Data']} | {formatar_valor_br(p['Valor'])} | {p['Status']}"
+                    i: f"#{p['ID_Pedido']} | {p['Data'].strftime('%d/%m/%Y') if (hasattr(p['Data'], 'strftime') and pd.notna(p['Data'])) else p['Data']} | {formatar_valor_br(p['Valor'])} | {p['Status']}"
                     for i, p in peds.iterrows()
                 }
                 sid = st.selectbox("📋 Selecione o pedido:", options=opc.keys(), format_func=lambda x: opc[x], key="rel_select_pedido")
