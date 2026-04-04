@@ -248,9 +248,11 @@ def render():
                             # Data e hora
                             col_e3, col_e4 = st.columns(2)
                             with col_e3:
-                                nova_data = st.date_input("📅 Data Entrega", value=pedido_atual['Data'], format="DD/MM/YYYY")
+                                _data_val = pedido_atual['Data'] if pd.notna(pedido_atual['Data']) else hoje_brasil()
+                                nova_data = st.date_input("📅 Data Entrega", value=_data_val, format="DD/MM/YYYY")
                             with col_e4:
-                                nova_hora = st.time_input("⏰ Hora Retirada", value=pedido_atual['Hora'])
+                                _hora_val = pedido_atual['Hora'] if isinstance(pedido_atual['Hora'], time) else time(12, 0)
+                                nova_hora = st.time_input("⏰ Hora Retirada", value=_hora_val)
 
                             # Quantidades
                             col_e5, col_e6, col_e7 = st.columns(3)
