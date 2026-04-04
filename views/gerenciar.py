@@ -15,7 +15,7 @@ from config import (
 )
 from utils import (
     formatar_valor_br, get_status_badge, get_pagamento_badge,
-    get_obs_icon, get_extra_badge, get_valor_destaque, get_whatsapp_link,
+    get_obs_icon, get_extra_badge, get_vegano_badge, get_valor_destaque, get_whatsapp_link,
     calcular_total, gerar_link_whatsapp, limpar_telefone
 )
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
@@ -42,7 +42,7 @@ def render():
 
         # Filtros e Ordenação
         with st.expander("🔍 Filtros e Ordenação", expanded=False):
-            col_f1, col_f2, col_f3, col_f4, col_f5, col_f6 = st.columns(6)
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             with col_f1:
                 f_status = st.multiselect("Status", OPCOES_STATUS, default=OPCOES_STATUS)
             with col_f2:
@@ -54,9 +54,13 @@ def render():
                     f_data_especifica = st.date_input("📅 Selecione a Data", value=hoje_brasil(), format="DD/MM/YYYY", key="ger_data_especifica")
                 else:
                     f_data_especifica = None
+
+            col_f5, col_f6, col_f7 = st.columns(3)
             with col_f5:
                 f_extra = st.selectbox("⚡ Tipo", ["Todos", "⚡ Extra", "📦 Convencional"], key="ger_extra")
             with col_f6:
+                f_vegano = st.selectbox("🌿 Vegano", ["Todos", "🌿 Vegano", "🍖 Não Vegano"], key="ger_vegano")
+            with col_f7:
                 f_ordem = st.selectbox("Ordenar por", [
                     "📅 Data (mais recente)",
                     "📅 Data (mais antiga)",
@@ -80,6 +84,12 @@ def render():
                 df_view = df_view[df_view['Extra'] == True]
             elif f_extra == "📦 Convencional":
                 df_view = df_view[df_view['Extra'] != True]
+
+        if 'Vegano' in df_view.columns:
+            if f_vegano == "🌿 Vegano":
+                df_view = df_view[df_view['Vegano'] == True]
+            elif f_vegano == "🍖 Não Vegano":
+                df_view = df_view[df_view['Vegano'] != True]
 
         # Filtro de busca por cliente (case insensitive)
         if busca_cliente:
@@ -164,7 +174,8 @@ def render():
                         st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                     with col2:
                         extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}</div>", unsafe_allow_html=True)
+                        vegano_tag = f" {get_vegano_badge(pedido.get('Vegano', False))}" if pedido.get('Vegano', False) else ""
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])
@@ -296,6 +307,11 @@ def render():
                                     value=bool(pedido_atual.get('Extra', False)),
                                     key=f"extra_edit_all_{id_em_edicao}"
                                 )
+                                novo_vegano = st.checkbox(
+                                    "🌿 Vegano",
+                                    value=bool(pedido_atual.get('Vegano', False)),
+                                    key=f"vegano_edit_all_{id_em_edicao}"
+                                )
 
                             # Botões
                             col_e10, col_e11, col_e12 = st.columns([2, 2, 1])
@@ -332,6 +348,7 @@ def render():
                                 df_atualizado.loc[mask, 'Status'] = novo_status
                                 df_atualizado.loc[mask, 'Observacoes'] = novas_obs
                                 df_atualizado.loc[mask, 'Extra'] = novo_extra
+                                df_atualizado.loc[mask, 'Vegano'] = novo_vegano
 
                                 # Hora de entrega: manual (prioritário) ou auto ao marcar Entregue
                                 if alterar_hora_entrega and nova_hora_entrega is not None:

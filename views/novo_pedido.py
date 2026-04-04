@@ -129,13 +129,15 @@ def render():
         _PAGAMENTO_DISPLAY = ["💳 SELECIONAR", "✅ PAGO", "❌ NÃO PAGO", "🔸 METADE"]
         _PAGAMENTO_VALOR  = {"💳 SELECIONAR": None, "✅ PAGO": "PAGO", "❌ NÃO PAGO": "NÃO PAGO", "🔸 METADE": "METADE"}
 
-        c6, c7, c8 = st.columns([2, 2, 1])
+        c6, c7, c8, c9 = st.columns([2, 2, 1, 1])
         with c6:
             pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY)
         with c7:
             stt = st.selectbox("📊 Status", OPCOES_STATUS)
         with c8:
             eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual")
+        with c9:
+            eh_vegano = st.checkbox("🌿 Vegano", help="Pedido sem ingredientes de origem animal")
 
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
@@ -159,7 +161,8 @@ def render():
                     'contato': cont,
                     'desconto': dc,
                     'observacoes': obs,
-                    'extra': eh_extra
+                    'extra': eh_extra,
+                    'vegano': eh_vegano
                 }
                 st.rerun()
 
