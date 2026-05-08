@@ -193,6 +193,11 @@ def render():
                                 status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
                                 pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
 
+                                # Força object dtype antes de .at[] com tipos nativos (pandas 2.x + Python 3.13)
+                                for _col in ['Status', 'Pagamento', 'Hora_Entrega']:
+                                    if _col in st.session_state.pedidos.columns:
+                                        st.session_state.pedidos[_col] = st.session_state.pedidos[_col].astype(object)
+
                                 st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
                                 st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
                                 st.session_state.pedidos.at[idx_original, 'Hora_Entrega'] = agora_brasil().time()
