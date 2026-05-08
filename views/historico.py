@@ -13,6 +13,7 @@ from utils import (
     get_obs_icon,
     get_extra_badge,
     get_vegano_badge,
+    get_delivery_badge,
     get_whatsapp_link,
 )
 
@@ -166,7 +167,8 @@ def render():
                 with col2:
                     extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
                     vegano_tag = f" {get_vegano_badge(pedido.get('Vegano', False))}" if pedido.get('Vegano', False) else ""
-                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}</div>", unsafe_allow_html=True)
+                    delivery_tag = f" {get_delivery_badge(pedido.get('Delivery', False))}" if pedido.get('Delivery', False) else ""
+                    st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}{delivery_tag}</div>", unsafe_allow_html=True)
                 with col3:
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])

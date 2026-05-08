@@ -91,7 +91,8 @@ def confirmar_data_pedido():
                 desconto=pedido_temp['desconto'],
                 observacoes=pedido_temp['observacoes'],
                 extra=pedido_temp.get('extra', False),
-                vegano=pedido_temp.get('vegano', False)
+                vegano=pedido_temp.get('vegano', False),
+                delivery=pedido_temp.get('delivery', False)
             )
 
             if erros:
