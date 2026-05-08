@@ -350,6 +350,12 @@ def render():
                                 df_atualizado = st.session_state.pedidos.copy()
                                 mask = df_atualizado['ID_Pedido'] == id_em_edicao
 
+                                # Força object dtype em colunas com tipos Python nativos
+                                # (pandas 2.x + Python 3.13 rejeita atribuição via .loc com dtype inferido)
+                                for _col in ['Data', 'Hora', 'Hora_Entrega']:
+                                    if _col in df_atualizado.columns:
+                                        df_atualizado[_col] = df_atualizado[_col].astype(object)
+
                                 df_atualizado.loc[mask, 'Cliente'] = novo_cliente
                                 df_atualizado.loc[mask, 'Contato'] = novo_contato
                                 df_atualizado.loc[mask, 'Data'] = nova_data
