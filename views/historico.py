@@ -233,6 +233,7 @@ def render():
                     if st.button("✅ Sim, Reverter", key=f"sim_reverter_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                         try:
                             df_atual = st.session_state.pedidos
+                            df_atual['Status'] = df_atual['Status'].astype(object)
                             df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
 
                             if not salvar_pedidos(df_atual):

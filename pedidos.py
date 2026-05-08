@@ -111,6 +111,12 @@ def atualizar_pedido(id_pedido, campos_atualizar):
 
         idx = df[mask].index[0]
 
+        # Força object dtype em colunas com tipos Python nativos antes de .at[] assignments
+        # (pandas 2.x + Python 3.13 rejeita atribuição de datetime.date/time com dtype inferido)
+        for _col in ['Data', 'Hora', 'Hora_Entrega', 'Extra', 'Vegano', 'Delivery']:
+            if _col in df.columns:
+                df[_col] = df[_col].astype(object)
+
         if 'Status' in campos_atualizar and campos_atualizar['Status'] == "✅ Entregue":
             status_anterior = df.at[idx, 'Status']
             if status_anterior != "✅ Entregue" and 'Hora_Entrega' not in campos_atualizar:
