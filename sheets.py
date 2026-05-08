@@ -263,6 +263,14 @@ def verificar_status_sheets():
                 return True, f"✅ Conectado: {spreadsheet.title}"
         return False, "❌ Erro ao conectar"
     except Exception as e:
+        # Limpa cache para forçar reconexão na próxima tentativa
+        # (evita UI mostrar "Conectado" com credenciais expiradas/inválidas)
+        try:
+            conectar_google_sheets.clear()
+            obter_ou_criar_planilha.clear()
+            logger.warning(f"Cache do Sheets limpo após falha de conexão: {e}")
+        except Exception:
+            pass
         return False, f"❌ Erro: {str(e)[:100]}"
 
 def sincronizar_automaticamente(operacao="geral"):

@@ -146,6 +146,10 @@ with st.sidebar:
         ],
         key="menu_navegacao_principal"
     )
+    # Aviso persistente quando sync está desabilitado
+    if not st.session_state.get('sync_automatico_habilitado', True):
+        st.error("🔴 SEM BACKUP — dados em risco!")
+
     st.divider()
 
     # Mini resumo
@@ -269,8 +273,8 @@ with st.sidebar:
                         use_container_width=True,
                         type="secondary"
                     )
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Sidebar Sheets link indisponível: {e}")
 
     st.caption(f"Versão {VERSAO}")
 
