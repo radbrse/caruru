@@ -55,6 +55,10 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     if erros:
         return None, erros, avisos
 
+    # Recarrega do disco antes de gerar ID (mitiga race em uso concorrente)
+    # Uma janela mínima ainda existe entre carregar e salvar, mas o risco prático
+    # é baixo no padrão de uso doméstico (1-2 sessões simultâneas).
+    st.session_state.pedidos = carregar_pedidos()
     df_p = st.session_state.pedidos
     nid = gerar_id_sequencial(df_p)
     val = calcular_total(qc, qb, dc)

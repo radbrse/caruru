@@ -3,10 +3,18 @@ Funções utilitárias: validação, formatação, badges HTML, cálculos.
 """
 
 import re
+import html
 import urllib.parse
 import pandas as pd
 from datetime import date, datetime, time
 import time as time_module
+
+
+def safe_html(texto):
+    """Escapa texto vindo do usuário antes de interpolar em HTML."""
+    if texto is None:
+        return ""
+    return html.escape(str(texto), quote=True)
 
 from config import (
     logger, FUSO_BRASIL, agora_brasil, hoje_brasil,

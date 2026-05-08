@@ -246,8 +246,16 @@ def render():
 
             if arquivo_upload:
                 try:
+                    # Limite de tamanho: 5 MB
+                    if getattr(arquivo_upload, 'size', 0) > 5 * 1024 * 1024:
+                        st.error(f"❌ Arquivo muito grande ({arquivo_upload.size/1024/1024:.1f} MB). Limite: 5 MB.")
+                        st.stop()
+
                     # Lê para preview
                     df_preview = pd.read_csv(arquivo_upload)
+                    if len(df_preview) > 10_000:
+                        st.error(f"❌ CSV com {len(df_preview):,} linhas excede o limite de 10.000.")
+                        st.stop()
 
                     st.markdown("**📋 Preview do Arquivo:**")
                     st.write(f"- **Linhas:** {len(df_preview)}")

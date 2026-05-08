@@ -15,7 +15,7 @@ from config import (
 )
 from utils import (
     formatar_valor_br, get_status_badge, get_pagamento_badge,
-    get_obs_icon, get_extra_badge, get_vegano_badge, get_delivery_badge, get_valor_destaque, get_whatsapp_link,
+    get_obs_icon, get_extra_badge, get_vegano_badge, get_delivery_badge, get_valor_destaque, get_whatsapp_link, safe_html,
     calcular_total, gerar_link_whatsapp, limpar_telefone
 )
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
@@ -184,7 +184,7 @@ def render():
                         extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
                         vegano_tag = f" {get_vegano_badge(pedido.get('Vegano', False))}" if pedido.get('Vegano', False) else ""
                         delivery_tag = f" {get_delivery_badge(pedido.get('Delivery', False))}" if pedido.get('Delivery', False) else ""
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}{delivery_tag}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {safe_html(pedido['Cliente'])}{extra_tag}{vegano_tag}{delivery_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
                         hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])
@@ -529,7 +529,13 @@ def render():
         up = st.file_uploader("Arquivo Pedidos (CSV)", type="csv", key="rest_ped")
         if up and st.button("⚠️ Restaurar Pedidos"):
             try:
+                if getattr(up, 'size', 0) > 5 * 1024 * 1024:
+                    st.error(f"❌ Arquivo muito grande ({up.size/1024/1024:.1f} MB). Limite: 5 MB.")
+                    st.stop()
                 df_n = pd.read_csv(up)
+                if len(df_n) > 10_000:
+                    st.error(f"❌ CSV com {len(df_n):,} linhas excede o limite de 10.000.")
+                    st.stop()
 
                 # Valida schema
                 colunas_obrigatorias = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
