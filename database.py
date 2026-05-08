@@ -47,8 +47,8 @@ def file_lock(filepath, timeout=30):
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
                 os.close(lock_fd)
-                if os.path.exists(lock_file):
-                    os.remove(lock_file)
+                # NÃO remover o lockfile: deixar o inode estável evita race
+                # condition onde dois processos travam inodes diferentes.
                 logger.info(f"Lock liberado: {filepath}")
             except Exception as e:
                 logger.error(f"Erro ao liberar lock: {e}")
@@ -181,7 +181,19 @@ def importar_csv_externo(arquivo_upload, destino):
 
         arquivo_destino = destinos_validos[destino]
 
+        # Limite de tamanho do upload: 5 MB e 10.000 linhas
+        MAX_BYTES = 5 * 1024 * 1024
+        MAX_LINHAS = 10_000
+        try:
+            tamanho = getattr(arquivo_upload, 'size', None)
+            if tamanho is not None and tamanho > MAX_BYTES:
+                return False, f"❌ Arquivo muito grande ({tamanho/1024/1024:.1f} MB). Limite: 5 MB.", None
+        except Exception:
+            pass
+
         df_novo = pd.read_csv(arquivo_upload)
+        if len(df_novo) > MAX_LINHAS:
+            return False, f"❌ CSV com {len(df_novo):,} linhas excede o limite de {MAX_LINHAS:,}.", None
 
         schemas_obrigatorios = {
             'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],

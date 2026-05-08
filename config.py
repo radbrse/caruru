@@ -27,7 +27,16 @@ ARQUIVO_PEDIDOS = "banco_de_dados_caruru.csv"
 ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
 ARQUIVO_HISTORICO = "historico_alteracoes.csv"
 ARQUIVO_CONFIG = "config.json"
-CHAVE_PIX = "79999296722"
+def _carregar_chave_pix():
+    """Lê chave PIX de st.secrets se disponível, senão usa fallback hardcoded.
+    Mover para secrets evita expor dado pessoal em repositório público."""
+    try:
+        import streamlit as st
+        return st.secrets.get("chave_pix", "79999296722")
+    except Exception:
+        return "79999296722"
+
+CHAVE_PIX = _carregar_chave_pix()
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
 PRECO_BASE = 70.0

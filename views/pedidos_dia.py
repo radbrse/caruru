@@ -6,7 +6,7 @@ from datetime import time
 import time as time_module
 
 from config import logger, hoje_brasil, OPCOES_STATUS, OPCOES_PAGAMENTO
-from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_extra_badge, get_vegano_badge, get_delivery_badge, get_valor_destaque, get_whatsapp_link, calcular_total
+from utils import formatar_valor_br, get_status_badge, get_pagamento_badge, get_obs_icon, get_extra_badge, get_vegano_badge, get_delivery_badge, get_valor_destaque, get_whatsapp_link, calcular_total, safe_html
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
 from pedidos import atualizar_pedido, excluir_pedido
 from sheets import sincronizar_automaticamente
@@ -151,7 +151,7 @@ def render():
                         extra_tag = f" {get_extra_badge(pedido.get('Extra', False))}" if pedido.get('Extra', False) else ""
                         vegano_tag = f" {get_vegano_badge(pedido.get('Vegano', False))}" if pedido.get('Vegano', False) else ""
                         delivery_tag = f" {get_delivery_badge(pedido.get('Delivery', False))}" if pedido.get('Delivery', False) else ""
-                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {pedido['Cliente']}{extra_tag}{vegano_tag}{delivery_tag}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:0.9rem; font-weight:700; color:#374151;'>👤 {safe_html(pedido['Cliente'])}{extra_tag}{vegano_tag}{delivery_tag}</div>", unsafe_allow_html=True)
                     with col3:
                         hora_str = pedido['Hora'].strftime('%H:%M') if isinstance(pedido['Hora'], time) else str(pedido['Hora'])[:5]
                         st.markdown(f"<div style='font-size:0.95rem; font-weight:700; color:#374151;'>⏰ {hora_str}</div>", unsafe_allow_html=True)
