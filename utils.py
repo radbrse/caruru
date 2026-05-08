@@ -274,6 +274,12 @@ def get_vegano_badge(vegano):
         return '<span style="background-color:#f0fdf4;color:#15803d;padding:2px 7px;border-radius:8px;font-size:0.75rem;font-weight:700;display:inline-block;border:1px solid #22c55e;">🌿 Vegano</span>'
     return ""
 
+def get_delivery_badge(delivery):
+    """Retorna badge HTML azul para pedido com delivery."""
+    if delivery:
+        return '<span style="background-color:#dbeafe;color:#1e40af;padding:2px 7px;border-radius:8px;font-size:0.75rem;font-weight:700;display:inline-block;border:1px solid #3b82f6;">🛵 Delivery</span>'
+    return ""
+
 def formatar_valor_br(valor):
     """Formata valor para padrão brasileiro."""
     valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")

@@ -23,7 +23,7 @@ from sheets import sincronizar_automaticamente
 # ==============================================================================
 # CRUD DE PEDIDOS
 # ==============================================================================
-def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False, vegano=False):
+def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False, vegano=False, delivery=False):
     """Cria novo pedido com validação completa."""
     erros = []
     avisos = []
@@ -74,7 +74,8 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
         "Desconto": dc,
         "Observacoes": observacoes.strip() if observacoes else "",
         "Extra": bool(extra),
-        "Vegano": bool(vegano)
+        "Vegano": bool(vegano),
+        "Delivery": bool(delivery)
     }
 
     df_novo = pd.DataFrame([novo])
