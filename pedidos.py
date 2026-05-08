@@ -278,8 +278,9 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
         if contato_limpo:
             logger.info(f"🔍 Buscando cliente por contato: '{contato_limpo}'")
 
-            df_clientes['Contato_Normalizado'] = df_clientes['Contato'].apply(limpar_telefone)
-            mask_contato = df_clientes['Contato_Normalizado'] == contato_limpo
+            # Série local — não adiciona coluna ao DataFrame (evita race condition)
+            contatos_norm = df_clientes['Contato'].apply(limpar_telefone)
+            mask_contato = contatos_norm == contato_limpo
 
             contatos_encontrados = mask_contato.sum()
             logger.info(f"📊 Contatos encontrados: {contatos_encontrados}")
@@ -314,7 +315,6 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
                         if tipo_operacao == "sem_alteracao":
                             tipo_operacao = "atualizado_observacoes"
 
-                df_clientes = df_clientes.drop(columns=['Contato_Normalizado'])
             else:
                 logger.info(f"✨ Criando novo cliente: '{nome_cliente}' (Contato: {contato_limpo})")
 
@@ -325,9 +325,6 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
                 }
 
                 df_clientes = pd.concat([df_clientes, pd.DataFrame([novo_cliente])], ignore_index=True)
-
-                if 'Contato_Normalizado' in df_clientes.columns:
-                    df_clientes = df_clientes.drop(columns=['Contato_Normalizado'])
 
                 registrar_alteracao(
                     tipo="CRIAR_CLIENTE",

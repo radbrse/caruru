@@ -21,7 +21,7 @@ from utils import validar_hora, limpar_telefone
 # FILE LOCKING
 # ==============================================================================
 @contextmanager
-def file_lock(filepath, timeout=10):
+def file_lock(filepath, timeout=30):
     """Context manager para file locking com timeout."""
     lock_file = f"{filepath}.lock"
     lock_fd = None

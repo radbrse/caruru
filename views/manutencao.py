@@ -68,7 +68,8 @@ def render():
                     os.remove(ARQUIVO_HISTORICO)
                     st.success("✅ Histórico limpo!")
                     st.rerun()
-            except:
+            except Exception as e:
+                logger.warning(f"Erro ao carregar histórico de alterações: {e}")
                 st.info("Histórico vazio ou corrompido.")
         else:
             st.info("Nenhuma alteração registrada ainda.")
@@ -472,8 +473,8 @@ def render():
                     creds = dict(st.secrets["gcp_service_account"])
                     st.write(f"- **Project ID:** {creds.get('project_id', 'N/A')}")
                     st.write(f"- **Client Email:** {creds.get('client_email', 'N/A')}")
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Erro ao exibir detalhes das credenciais: {e}")
             else:
                 st.warning("⚠️ Credenciais não configuradas")
                 st.info("Adicione as credenciais em `.streamlit/secrets.toml`")
@@ -489,8 +490,8 @@ def render():
                         if spreadsheet:
                             st.markdown(f"**📊 Sua Planilha:**")
                             st.markdown(f"[🔗 Abrir no Google Sheets](https://docs.google.com/spreadsheets/d/{spreadsheet.id})")
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Erro ao exibir link da planilha: {e}")
 
     # ===== ABA 5: CONFIGURAÇÕES =====
     with t5:

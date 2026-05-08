@@ -39,7 +39,8 @@ def render():
     # Carrega lista de clientes
     try:
         clis = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
-    except:
+    except Exception as e:
+        logger.warning(f"Erro ao carregar lista de clientes: {e}")
         clis = []
 
     lista_clientes = ["-- Selecione --"] + clis
