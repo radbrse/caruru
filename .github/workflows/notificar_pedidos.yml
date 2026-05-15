@@ -1,0 +1,31 @@
+name: Notificador de Pedidos — Cantinho do Caruru
+
+on:
+  schedule:
+    # 10:00 UTC = 07:00 horário de Brasília (UTC-3)
+    - cron: "0 10 * * *"
+  workflow_dispatch: # Permite disparar manualmente para testar
+
+jobs:
+  notificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: pip install gspread google-auth requests
+
+      - name: Enviar notificação Telegram
+        env:
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python notificador.py
