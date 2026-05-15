@@ -203,9 +203,9 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         if falta > 0:
             pagamento = str(p.get("Pagamento", "")).strip().upper()
             icone = "💸" if pagamento == "NÃO PAGO" else "🔸"
-            pag_str = f"  {icone} {_brl(falta)}"
+            pag_str = f"  {icone} Falta {_brl(falta)}"
         else:
-            pag_str = ""
+            pag_str = "  ✅ Pedido pago"
 
         linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 

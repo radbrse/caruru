@@ -708,9 +708,9 @@ def render():
                             falta = _falta_row(p)
                             if falta > 0:
                                 pag = str(p.get("Pagamento", "")).strip().upper()
-                                pag_str = f"  {'💸' if pag == 'NÃO PAGO' else '🔸'} {_brl(falta)}"
+                                pag_str = f"  {'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
                             else:
-                                pag_str = ""
+                                pag_str = "  ✅ Pedido pago"
                             linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 
                         preview = (
