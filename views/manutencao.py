@@ -692,26 +692,29 @@ def render():
 
                         linhas = []
                         for _, p in df_filtrado.iterrows():
-                            nome = str(p.get("Cliente", "?")).strip()
+                            nome = str(p.get("Cliente", "?")).strip().title()
                             qc = int(float(p.get("Caruru") or 0))
                             qb = int(float(p.get("Bobo") or 0))
                             itens = []
                             if qc: itens.append(f"{qc}x 🥘")
                             if qb: itens.append(f"{qb}x 🦐")
                             hora = str(p.get("Hora", "")).strip()
-                            hora_str = f" ⏰ {hora}" if hora and hora != "nan" else ""
+                            hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
+                            hora_str = f"  ⏰ {hora_fmt}" if hora_fmt and hora_fmt != "nan" else ""
                             flags = []
                             if str(p.get("Extra", "")).strip().lower() in ("true", "1", "sim"): flags.append("⚡ Extra")
                             if str(p.get("Vegano", "")).strip().lower() in ("true", "1", "sim"): flags.append("🌿 Vegano")
                             if str(p.get("Delivery", "")).strip().lower() in ("true", "1", "sim"): flags.append("🛵 Delivery")
-                            flags_str = f"  {' '.join(flags)}" if flags else ""
                             falta = _falta_row(p)
                             if falta > 0:
                                 pag = str(p.get("Pagamento", "")).strip().upper()
-                                pag_str = f"  {'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
+                                pag_label = f"{'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
                             else:
-                                pag_str = "  ✅ Pedido pago"
-                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
+                                pag_label = "✅ Pedido pago"
+                            linha1 = f"• {nome}{hora_str}"
+                            detalhes = itens + flags + [pag_label]
+                            linha2 = "  " + "  ".join(detalhes)
+                            linhas.append(f"{linha1}\n{linha2}")
 
                         preview = (
                             f"🍛 *Cantinho do Caruru*\n\n"
@@ -720,7 +723,7 @@ def render():
                             f"🥘 Caruru: *{total_c}* un  |  🦐 Bobó: *{total_b}* un\n"
                             f"💰 Total: *{_brl(total_v)}*\n"
                             + (f"💸 A receber: *{_brl(total_pendente)}*\n" if total_pendente > 0 else "")
-                            + f"\n👥 *Clientes:*\n" + "\n".join(linhas)
+                            + f"\n👥 *Clientes:*\n" + "\n\n".join(linhas)
                         )
 
                     with st.expander("👁️ Preview da mensagem", expanded=True):
