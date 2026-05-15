@@ -182,7 +182,7 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
 
     linhas = []
     for p in pedidos:
-        nome = str(p.get("Cliente", "?")).strip()
+        nome = str(p.get("Cliente", "?")).strip().title()
         qc   = int(float(p.get("Caruru") or 0))
         qb   = int(float(p.get("Bobo")   or 0))
 
@@ -191,25 +191,28 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         if qb: itens.append(f"{qb}x 🦐")
 
         hora = str(p.get("Hora", "")).strip()
-        hora_str = f" ⏰ {hora}" if hora and hora != "nan" else ""
+        hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
+        hora_str = f"  ⏰ {hora_fmt}" if hora_fmt and hora_fmt != "nan" else ""
 
         flags = []
         if _bool_campo(p, "Extra"):    flags.append("⚡ Extra")
         if _bool_campo(p, "Vegano"):   flags.append("🌿 Vegano")
         if _bool_campo(p, "Delivery"): flags.append("🛵 Delivery")
-        flags_str = f"  {' '.join(flags)}" if flags else ""
 
         falta = _falta(p)
         if falta > 0:
             pagamento = str(p.get("Pagamento", "")).strip().upper()
             icone = "💸" if pagamento == "NÃO PAGO" else "🔸"
-            pag_str = f"  {icone} Falta {_brl(falta)}"
+            pag_label = f"{icone} Falta {_brl(falta)}"
         else:
-            pag_str = "  ✅ Pedido pago"
+            pag_label = "✅ Pedido pago"
 
-        linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
+        linha1 = f"• {nome}{hora_str}"
+        detalhes = itens + flags + [pag_label]
+        linha2 = "  " + "  ".join(detalhes)
+        linhas.append(f"{linha1}\n{linha2}")
 
-    pedidos_txt = "\n".join(linhas)
+    pedidos_txt = "\n\n".join(linhas)
 
     return (
         f"🍛 *Cantinho do Caruru*\n\n"
