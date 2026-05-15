@@ -259,7 +259,12 @@ def render():
                     if st.session_state.get('pedido_em_edicao_dia_id') == int(pedido['ID_Pedido']):
                         with st.expander("✏️ Editar Pedido", expanded=True):
                             id_em_edicao_dia = st.session_state['pedido_em_edicao_dia_id']
-                            pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao_dia].iloc[0]
+                            _match_dia = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao_dia]
+                            if _match_dia.empty:
+                                st.warning(f"⚠️ Pedido #{id_em_edicao_dia} não está mais disponível.")
+                                st.session_state['pedido_em_edicao_dia_id'] = None
+                                st.stop()
+                            pedido_atual = _match_dia.iloc[0]
 
                             with st.form(f"form_edit_{id_em_edicao_dia}"):
                                 edit_col1, edit_col2, edit_col3 = st.columns(3)

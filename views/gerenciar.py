@@ -248,7 +248,12 @@ def render():
                     with st.expander("✏️ Editar Pedido", expanded=True):
                         # Busca o pedido específico pelo ID armazenado (não pela variável do loop)
                         id_em_edicao = st.session_state['pedido_em_edicao_id']
-                        pedido_atual = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
+                        _match = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao]
+                        if _match.empty:
+                            st.warning(f"⚠️ Pedido #{id_em_edicao} não está mais disponível (pode ter sido excluído ou sincronizado).")
+                            st.session_state['pedido_em_edicao_id'] = None
+                            st.stop()
+                        pedido_atual = _match.iloc[0]
 
                         with st.form(f"form_edit_all_{id_em_edicao}"):
                             st.markdown("### 📝 Dados do Pedido")
@@ -341,7 +346,12 @@ def render():
 
                             if salvar:
                                 # Captura dados antigos ANTES de atualizar (para sincronização)
-                                pedido_antigo = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao].iloc[0]
+                                _antigo_match = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao]
+                                if _antigo_match.empty:
+                                    st.error(f"❌ Pedido #{id_em_edicao} desapareceu durante a edição. Tente novamente.")
+                                    st.session_state['pedido_em_edicao_id'] = None
+                                    st.stop()
+                                pedido_antigo = _antigo_match.iloc[0]
                                 cliente_antigo = pedido_antigo['Cliente']
                                 contato_antigo = pedido_antigo['Contato']
 

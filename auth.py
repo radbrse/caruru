@@ -3,6 +3,7 @@ Sistema de autenticação do Cantinho do Caruru.
 """
 
 import time
+import secrets as _secrets
 import streamlit as st
 
 
@@ -15,7 +16,11 @@ def check_password():
         if tentativas > 0:
             time.sleep(min(2 ** tentativas, 30))  # 2s, 4s, 8s, 16s, 30s (cap)
 
-        if st.session_state["password"] == st.secrets["password"]:
+        # Comparação em tempo constante (mitiga timing attack)
+        if _secrets.compare_digest(
+            str(st.session_state["password"]),
+            str(st.secrets["password"]),
+        ):
             st.session_state["password_correct"] = True
             st.session_state["auth_tentativas"] = 0
             del st.session_state["password"]
