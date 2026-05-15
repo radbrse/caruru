@@ -11,7 +11,7 @@ import requests
 from datetime import timedelta
 
 from config import (
-    logger, VERSAO, CHAVE_PIX, agora_brasil,
+    logger, VERSAO, CHAVE_PIX, agora_brasil, hoje_brasil,
     ARQUIVO_LOG, ARQUIVO_PEDIDOS, ARQUIVO_CLIENTES, ARQUIVO_HISTORICO,
     obter_preco_base, atualizar_preco_base
 )
@@ -635,10 +635,6 @@ def render():
 
             with tab_notif:
                 st.markdown("### 📤 Enviar Notificação de Pedidos")
-
-                from config import hoje_brasil
-                from datetime import timedelta
-                import pandas as pd
 
                 hoje = hoje_brasil()
                 amanha = hoje + timedelta(days=1)
