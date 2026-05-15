@@ -414,9 +414,28 @@ def salvar_pedidos(df):
             backup_path = criar_backup_com_timestamp(ARQUIVO_PEDIDOS)
 
             salvar = df.copy()
-            salvar['Data'] = salvar['Data'].apply(
-                lambda x: x.strftime('%Y-%m-%d') if (hasattr(x, 'strftime') and pd.notna(x)) else ""
-            )
+
+            def _serializar_data(x):
+                if hasattr(x, 'strftime'):
+                    try:
+                        return x.strftime('%Y-%m-%d') if pd.notna(x) else ""
+                    except Exception:
+                        return ""
+                s = str(x).strip()
+                if not s or s in ('nan', 'NaT', 'None'):
+                    return ""
+                try:
+                    return datetime.strptime(s[:10], '%Y-%m-%d').strftime('%Y-%m-%d')
+                except ValueError:
+                    pass
+                try:
+                    return datetime.strptime(s, '%d/%m/%Y').strftime('%Y-%m-%d')
+                except ValueError:
+                    pass
+                logger.warning(f"Data irreconhecível ao salvar: '{x}'")
+                return ""
+
+            salvar['Data'] = salvar['Data'].apply(_serializar_data)
             salvar['Hora'] = salvar['Hora'].apply(
                 lambda x: x.strftime('%H:%M') if isinstance(x, time) else ("12:00" if pd.isna(x) else (str(x).strip() or "12:00"))
             )
