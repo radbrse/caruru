@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import os
 import time as time_module
+import requests
 from datetime import timedelta
 
 from config import (
@@ -32,7 +33,7 @@ def render():
     """Renderiza a página de Manutenção."""
     st.title("🛠️ Manutenção do Sistema")
 
-    t1, t2, t3, t4, t5 = st.tabs(["📋 Logs", "📜 Histórico", "💾 Backups", "☁️ Google Sheets", "⚙️ Config"])
+    t1, t2, t3, t4, t5, t6 = st.tabs(["📋 Logs", "📜 Histórico", "💾 Backups", "☁️ Google Sheets", "📱 Telegram", "⚙️ Config"])
 
     # ===== ABA 1: LOGS =====
     with t1:
@@ -501,8 +502,187 @@ def render():
                 except Exception as e:
                     logger.debug(f"Erro ao exibir link da planilha: {e}")
 
-    # ===== ABA 5: CONFIGURAÇÕES =====
+    # ===== ABA 5: TELEGRAM =====
     with t5:
+        st.subheader("📱 Integração Telegram")
+
+        # Helpers
+        def _telegram_secrets():
+            """Retorna (token, chat_id) dos secrets ou (None, None)."""
+            try:
+                tok = st.secrets.get("TELEGRAM_BOT_TOKEN") or st.secrets.get("telegram", {}).get("bot_token")
+                cid = st.secrets.get("TELEGRAM_CHAT_ID") or st.secrets.get("telegram", {}).get("chat_id")
+                return (tok or "").strip(), (cid or "").strip()
+            except Exception:
+                return "", ""
+
+        def _enviar_telegram(token: str, chat_id: str, texto: str) -> tuple[bool, str]:
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                resp = requests.post(url, json={"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}, timeout=15)
+                if resp.status_code == 200:
+                    return True, "Mensagem enviada!"
+                try:
+                    desc = resp.json().get("description", resp.text)
+                except Exception:
+                    desc = resp.text
+                return False, f"HTTP {resp.status_code}: {desc}"
+            except requests.Timeout:
+                return False, "Timeout — Telegram não respondeu em 15s."
+            except Exception as e:
+                return False, str(e)
+
+        tok, cid = _telegram_secrets()
+        telegram_ok = bool(tok and cid)
+
+        st.info("""
+        💡 **Para que serve?**
+        - ✅ Teste a conexão com o seu bot Telegram
+        - ✅ Envie a lista de pedidos manualmente (sem esperar o cron do GitHub Actions)
+        - ✅ Dispare notificações para hoje ou amanhã com um clique
+        """)
+
+        st.divider()
+
+        # Status
+        st.markdown("**🔍 Status da Configuração:**")
+
+        if telegram_ok:
+            st.success(f"✅ TELEGRAM_BOT_TOKEN — configurado")
+            st.success(f"✅ TELEGRAM_CHAT_ID — {cid}")
+        else:
+            if not tok:
+                st.error("❌ TELEGRAM_BOT_TOKEN não encontrado nos secrets")
+            if not cid:
+                st.error("❌ TELEGRAM_CHAT_ID não encontrado nos secrets")
+
+            st.divider()
+            st.markdown("### ⚙️ Como Configurar")
+            st.markdown("""
+            Adicione as linhas abaixo no arquivo `.streamlit/secrets.toml` do seu projeto:
+
+            ```toml
+            TELEGRAM_BOT_TOKEN = "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+            TELEGRAM_CHAT_ID   = "-1001234567890"
+            ```
+
+            **Onde obter esses valores:**
+            1. **Bot Token:** Fale com [@BotFather](https://t.me/BotFather) no Telegram → `/newbot` → copie o token
+            2. **Chat ID:** Adicione o bot ao grupo/canal → use [@userinfobot](https://t.me/userinfobot) para obter o ID
+
+            > Se estiver no Streamlit Cloud, adicione em **App settings → Secrets**.
+            """)
+
+        if telegram_ok:
+            st.divider()
+            tab_teste, tab_notif = st.tabs(["🧪 Testar Conexão", "📤 Enviar Notificação"])
+
+            with tab_teste:
+                st.markdown("### 🧪 Teste de Conexão")
+                msg_teste = st.text_input(
+                    "Mensagem de teste:",
+                    value="🍛 Cantinho do Caruru — teste de conexão Telegram ✅",
+                    key="telegram_msg_teste"
+                )
+                if st.button("📤 Enviar Mensagem de Teste", use_container_width=True):
+                    with st.spinner("Enviando..."):
+                        ok, msg = _enviar_telegram(tok, cid, msg_teste)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.toast("Mensagem enviada!", icon="📱")
+                    else:
+                        st.error(f"❌ {msg}")
+
+            with tab_notif:
+                st.markdown("### 📤 Enviar Notificação de Pedidos")
+
+                from config import hoje_brasil
+                from datetime import timedelta
+                import pandas as pd
+
+                hoje = hoje_brasil()
+                amanha = hoje + timedelta(days=1)
+
+                data_escolha = st.radio(
+                    "Pedidos de qual data?",
+                    ["Hoje", "Amanhã"],
+                    horizontal=True,
+                    key="telegram_data_escolha"
+                )
+                data_alvo = hoje if data_escolha == "Hoje" else amanha
+
+                df = st.session_state.pedidos
+                if df.empty:
+                    st.warning("Nenhum pedido carregado.")
+                else:
+                    try:
+                        df_filtrado = df[pd.to_datetime(df["Data"], dayfirst=True, errors="coerce").dt.date == data_alvo]
+                        df_filtrado = df_filtrado[~df_filtrado["Status"].str.contains("Entregue|Cancelado", na=False)]
+                    except Exception:
+                        df_filtrado = pd.DataFrame()
+
+                    st.info(f"📦 {len(df_filtrado)} pedido(s) para {data_alvo.strftime('%d/%m/%Y')}")
+
+                    dias_pt = {
+                        "Monday": "segunda-feira", "Tuesday": "terça-feira",
+                        "Wednesday": "quarta-feira", "Thursday": "quinta-feira",
+                        "Friday": "sexta-feira", "Saturday": "sábado", "Sunday": "domingo",
+                    }
+                    dia_sem = dias_pt.get(data_alvo.strftime("%A"), data_alvo.strftime("%A"))
+                    data_fmt = f"{data_alvo.strftime('%d/%m/%Y')} ({dia_sem})"
+
+                    if df_filtrado.empty:
+                        preview = (
+                            f"🍛 *Cantinho do Caruru*\n\n"
+                            f"📅 {data_fmt}\n\n"
+                            f"📭 Nenhum pedido cadastrado para esta data."
+                        )
+                    else:
+                        total_c = int(df_filtrado.get("Caruru", pd.Series(dtype=float)).fillna(0).astype(float).sum())
+                        total_b = int(df_filtrado.get("Bobo", pd.Series(dtype=float)).fillna(0).astype(float).sum())
+                        total_v = df_filtrado.get("Valor", pd.Series(dtype=float)).fillna(0).astype(float).sum()
+                        valor_fmt = f"R$ {total_v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                        linhas = []
+                        for _, p in df_filtrado.iterrows():
+                            nome = str(p.get("Cliente", "?")).strip()
+                            qc = int(float(p.get("Caruru") or 0))
+                            qb = int(float(p.get("Bobo") or 0))
+                            itens = []
+                            if qc: itens.append(f"{qc}x 🥘")
+                            if qb: itens.append(f"{qb}x 🦐")
+                            hora = str(p.get("Hora", "")).strip()
+                            hora_str = f" ⏰ {hora}" if hora and hora != "nan" else ""
+                            flags = []
+                            if str(p.get("Extra", "")).strip().lower() in ("true", "1", "sim"): flags.append("⚡ Extra")
+                            if str(p.get("Vegano", "")).strip().lower() in ("true", "1", "sim"): flags.append("🌿 Vegano")
+                            if str(p.get("Delivery", "")).strip().lower() in ("true", "1", "sim"): flags.append("🛵 Delivery")
+                            flags_str = f"  {' '.join(flags)}" if flags else ""
+                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}")
+
+                        preview = (
+                            f"🍛 *Cantinho do Caruru*\n\n"
+                            f"📅 Pedidos: *{data_fmt}*\n\n"
+                            f"📦 *{len(df_filtrado)} pedido(s)*\n"
+                            f"🥘 Caruru: *{total_c}* un  |  🦐 Bobó: *{total_b}* un\n"
+                            f"💰 Total: *{valor_fmt}*\n\n"
+                            f"👥 *Clientes:*\n" + "\n".join(linhas)
+                        )
+
+                    with st.expander("👁️ Preview da mensagem", expanded=True):
+                        st.text(preview)
+
+                    if st.button("📤 Enviar para Telegram", type="primary", use_container_width=True):
+                        with st.spinner("Enviando..."):
+                            ok, msg = _enviar_telegram(tok, cid, preview)
+                        if ok:
+                            st.success("✅ Notificação enviada com sucesso!")
+                            st.toast("Notificação enviada!", icon="📱")
+                        else:
+                            st.error(f"❌ {msg}")
+
+    # ===== ABA 6: CONFIGURAÇÕES =====
+    with t6:
         st.subheader("⚙️ Configurações")
 
         st.write("**Informações do Sistema:**")
