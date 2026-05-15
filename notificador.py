@@ -95,6 +95,23 @@ def conectar_sheets(gcp_json: str) -> gspread.Client:
         raise
 
 
+def obter_hora_notificacao(client: gspread.Client) -> int:
+    """Lê a hora de notificação da aba Config do Sheets. Default: 7."""
+    ABA_CONFIG = "Config"
+    try:
+        spreadsheet = client.open(NOME_PLANILHA)
+        try:
+            ws = spreadsheet.worksheet(ABA_CONFIG)
+        except gspread.WorksheetNotFound:
+            return 7
+        for row in ws.get_all_records():
+            if str(row.get("Chave", "")).strip() == "notification_hour":
+                return int(row.get("Valor", 7))
+        return 7
+    except Exception:
+        return 7
+
+
 def carregar_pedidos_amanha(client: gspread.Client, data_alvo: date) -> list[dict]:
     """Retorna pedidos cujo campo Data bate com data_alvo."""
     try:
@@ -217,6 +234,20 @@ def main():
 
     print("\n🔗 Conectando ao Google Sheets...")
     client = conectar_sheets(gcp_json)
+
+    # Verifica horário configurado — disparos manuais (workflow_dispatch) sempre enviam
+    trigger = os.environ.get("GITHUB_EVENT_NAME", "schedule")
+    if trigger != "workflow_dispatch":
+        hora_config = obter_hora_notificacao(client)
+        hora_atual = datetime.now(FUSO_BRASIL).hour
+        print(f"⏰ Horário atual: {hora_atual:02d}h Brasília | Configurado: {hora_config:02d}h")
+        if hora_atual != hora_config:
+            msg = f"⏭️ Horário atual {hora_atual:02d}h ≠ configurado {hora_config:02d}h (Brasília). Sem envio hoje neste ciclo."
+            gh_notice(msg)
+            print(msg)
+            sys.exit(0)
+    else:
+        print("📤 Disparado manualmente — verificação de horário ignorada")
 
     amanha = amanha_brasil()
     print(f"📅 Buscando pedidos para: {amanha.isoformat()}")

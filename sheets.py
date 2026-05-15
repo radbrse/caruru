@@ -273,6 +273,56 @@ def verificar_status_sheets():
             pass
         return False, f"❌ Erro: {str(e)[:100]}"
 
+# ==============================================================================
+# CONFIG (horário de notificação)
+# ==============================================================================
+_ABA_CONFIG = "Config"
+
+
+def ler_hora_notificacao(client) -> int:
+    """Lê a hora de notificação configurada no Google Sheets. Default: 7."""
+    try:
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return 7
+        try:
+            ws = spreadsheet.worksheet(_ABA_CONFIG)
+        except gspread.exceptions.WorksheetNotFound:
+            return 7
+        for row in ws.get_all_records():
+            if str(row.get("Chave", "")).strip() == "notification_hour":
+                return int(row.get("Valor", 7))
+        return 7
+    except Exception as e:
+        logger.warning(f"Erro ao ler hora de notificação: {e}")
+        return 7
+
+
+def salvar_hora_notificacao(client, hora: int) -> tuple[bool, str]:
+    """Salva a hora de notificação no Google Sheets (cria aba Config se não existir)."""
+    try:
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return False, "❌ Erro ao acessar planilha"
+        try:
+            ws = spreadsheet.worksheet(_ABA_CONFIG)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet(title=_ABA_CONFIG, rows=20, cols=2)
+            ws.append_row(["Chave", "Valor"])
+        rows = ws.get_all_records()
+        for i, row in enumerate(rows, start=2):
+            if str(row.get("Chave", "")).strip() == "notification_hour":
+                ws.update_cell(i, 2, str(hora))
+                logger.info(f"Hora de notificação atualizada: {hora:02d}h")
+                return True, f"✅ Horário atualizado para {hora:02d}:00 (Brasília)"
+        ws.append_row(["notification_hour", str(hora)])
+        logger.info(f"Hora de notificação criada: {hora:02d}h")
+        return True, f"✅ Horário configurado para {hora:02d}:00 (Brasília)"
+    except Exception as e:
+        logger.error(f"Erro ao salvar hora de notificação: {e}")
+        return False, f"❌ Erro ao salvar: {e}"
+
+
 def sincronizar_automaticamente(operacao="geral"):
     """Sincroniza automaticamente com Google Sheets após operações CRUD."""
     if not st.session_state.get('sync_automatico_habilitado', False):
