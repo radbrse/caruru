@@ -165,7 +165,20 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
     total_caruru = sum(int(float(p.get("Caruru") or 0)) for p in pedidos)
     total_bobo   = sum(int(float(p.get("Bobo")   or 0)) for p in pedidos)
     total_valor  = sum(float(p.get("Valor") or 0)       for p in pedidos)
-    valor_fmt = f"R$ {total_valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def _falta(p) -> float:
+        pag = str(p.get("Pagamento", "")).strip().upper()
+        v = float(p.get("Valor") or 0)
+        if pag == "NÃO PAGO": return v
+        if pag == "METADE":   return v / 2
+        return 0.0
+
+    def _brl(v: float) -> str:
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    total_pendente = sum(_falta(p) for p in pedidos)
+    valor_fmt    = _brl(total_valor)
+    pendente_fmt = _brl(total_pendente)
 
     linhas = []
     for p in pedidos:
@@ -186,8 +199,13 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         if _bool_campo(p, "Delivery"): flags.append("🛵 Delivery")
         flags_str = f"  {' '.join(flags)}" if flags else ""
 
-        pagamento = str(p.get("Pagamento", "")).strip().upper()
-        pag_str = {"NÃO PAGO": "  💸 NÃO PAGO", "METADE": "  🔸 METADE"}.get(pagamento, "")
+        falta = _falta(p)
+        if falta > 0:
+            pagamento = str(p.get("Pagamento", "")).strip().upper()
+            icone = "💸" if pagamento == "NÃO PAGO" else "🔸"
+            pag_str = f"  {icone} {_brl(falta)}"
+        else:
+            pag_str = ""
 
         linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 
@@ -198,8 +216,9 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         f"📅 Pedidos para amanhã: *{data_fmt}*\n\n"
         f"📦 *{len(pedidos)} pedido(s)*\n"
         f"🥘 Caruru: *{total_caruru}* un  |  🦐 Bobó: *{total_bobo}* un\n"
-        f"💰 Total: *{valor_fmt}*\n\n"
-        f"👥 *Clientes:*\n{pedidos_txt}"
+        f"💰 Total: *{valor_fmt}*\n"
+        + (f"💸 A receber: *{pendente_fmt}*\n" if total_pendente > 0 else "")
+        + f"\n👥 *Clientes:*\n{pedidos_txt}"
     )
 
 
