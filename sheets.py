@@ -161,6 +161,9 @@ def carregar_do_sheets(client, nome_aba):
 
         df = pd.DataFrame(dados[1:], columns=dados[0])
 
+        if "Data" in df.columns:
+            df["Data"] = pd.to_datetime(df["Data"], errors="coerce").dt.date
+
         logger.info(f"Dados carregados do Sheets: {nome_aba} ({len(df)} linhas)")
         return df, f"✅ {len(df)} registros carregados"
 
