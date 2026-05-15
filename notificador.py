@@ -186,7 +186,10 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         if _bool_campo(p, "Delivery"): flags.append("🛵 Delivery")
         flags_str = f"  {' '.join(flags)}" if flags else ""
 
-        linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}")
+        pagamento = str(p.get("Pagamento", "")).strip().upper()
+        pag_str = {"NÃO PAGO": "  💸 NÃO PAGO", "METADE": "  🔸 METADE"}.get(pagamento, "")
+
+        linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 
     pedidos_txt = "\n".join(linhas)
 

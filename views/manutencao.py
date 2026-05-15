@@ -694,7 +694,9 @@ def render():
                             if str(p.get("Vegano", "")).strip().lower() in ("true", "1", "sim"): flags.append("🌿 Vegano")
                             if str(p.get("Delivery", "")).strip().lower() in ("true", "1", "sim"): flags.append("🛵 Delivery")
                             flags_str = f"  {' '.join(flags)}" if flags else ""
-                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}")
+                            pagamento = str(p.get("Pagamento", "")).strip().upper()
+                            pag_str = {"NÃO PAGO": "  💸 NÃO PAGO", "METADE": "  🔸 METADE"}.get(pagamento, "")
+                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 
                         preview = (
                             f"🍛 *Cantinho do Caruru*\n\n"
