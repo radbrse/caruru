@@ -652,7 +652,7 @@ def render():
                     st.warning("Nenhum pedido carregado.")
                 else:
                     try:
-                        df_filtrado = df[pd.to_datetime(df["Data"], dayfirst=True, errors="coerce").dt.date == data_alvo]
+                        df_filtrado = df[df["Data"] == data_alvo]
                         df_filtrado = df_filtrado[~df_filtrado["Status"].str.contains("Entregue|Cancelado", na=False)]
                     except Exception:
                         df_filtrado = pd.DataFrame()

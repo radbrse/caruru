@@ -228,19 +228,24 @@ def sincronizar_com_sheets(modo="enviar"):
                 logger.warning(f"⚠️ Erro ao registrar backup log: {e_log}")
 
         elif modo == "receber":
-            df_pedidos, msg = carregar_do_sheets(client, "Pedidos")
+            # Busca ambos antes de persistir qualquer um (evita estado parcial em caso de falha de rede)
+            df_pedidos, msg_p = carregar_do_sheets(client, "Pedidos")
+            df_clientes, msg_c = carregar_do_sheets(client, "Clientes")
+
+            if (df_pedidos is None or df_pedidos.empty) and (df_clientes is None or df_clientes.empty):
+                return False, "❌ Nenhum dado encontrado no Sheets para restaurar"
+
             if df_pedidos is not None and not df_pedidos.empty:
                 if not salvar_pedidos(df_pedidos):
                     return False, "❌ Erro ao salvar pedidos baixados do Sheets"
                 st.session_state.pedidos = carregar_pedidos()
-                resultados.append(f"Pedidos: {msg}")
+                resultados.append(f"Pedidos: {msg_p}")
 
-            df_clientes, msg = carregar_do_sheets(client, "Clientes")
             if df_clientes is not None and not df_clientes.empty:
                 if not salvar_clientes(df_clientes):
                     return False, "❌ Erro ao salvar clientes baixados do Sheets"
                 st.session_state.clientes = carregar_clientes()
-                resultados.append(f"Clientes: {msg}")
+                resultados.append(f"Clientes: {msg_c}")
         else:
             return False, f"❌ Modo '{modo}' inválido. Use 'enviar' ou 'receber'."
 
