@@ -187,8 +187,8 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         qb   = int(float(p.get("Bobo")   or 0))
 
         itens = []
-        if qc: itens.append(f"{qc}x 🥘")
-        if qb: itens.append(f"{qb}x 🦐")
+        if qc: itens.append(f"{qc} kg de Caruru")
+        if qb: itens.append(f"{qb} kg de Bobó")
 
         hora = str(p.get("Hora", "")).strip()
         hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
@@ -207,7 +207,7 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         else:
             pag_label = "✅ Pedido pago"
 
-        linha1 = f"• {nome}{hora_str}"
+        linha1 = f"• *{nome}*{hora_str}"
         detalhes = itens + flags + [pag_label]
         linha2 = "  " + "  ".join(detalhes)
         linhas.append(f"{linha1}\n{linha2}")
@@ -218,7 +218,7 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         f"🍛 *Cantinho do Caruru*\n\n"
         f"📅 Pedidos para amanhã: *{data_fmt}*\n\n"
         f"📦 *{len(pedidos)} pedido(s)*\n"
-        f"🥘 Caruru: *{total_caruru}* un  |  🦐 Bobó: *{total_bobo}* un\n"
+        f"🥘 Caruru: *{total_caruru} kg*  |  🦐 Bobó: *{total_bobo} kg*\n"
         f"💰 Total: *{valor_fmt}*\n"
         + (f"💸 A receber: *{pendente_fmt}*\n" if total_pendente > 0 else "")
         + f"\n👥 *Clientes:*\n{pedidos_txt}"

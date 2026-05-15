@@ -696,8 +696,8 @@ def render():
                             qc = int(float(p.get("Caruru") or 0))
                             qb = int(float(p.get("Bobo") or 0))
                             itens = []
-                            if qc: itens.append(f"{qc}x 🥘")
-                            if qb: itens.append(f"{qb}x 🦐")
+                            if qc: itens.append(f"{qc} kg de Caruru")
+                            if qb: itens.append(f"{qb} kg de Bobó")
                             hora = str(p.get("Hora", "")).strip()
                             hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
                             hora_str = f"  ⏰ {hora_fmt}" if hora_fmt and hora_fmt != "nan" else ""
@@ -711,7 +711,7 @@ def render():
                                 pag_label = f"{'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
                             else:
                                 pag_label = "✅ Pedido pago"
-                            linha1 = f"• {nome}{hora_str}"
+                            linha1 = f"• *{nome}*{hora_str}"
                             detalhes = itens + flags + [pag_label]
                             linha2 = "  " + "  ".join(detalhes)
                             linhas.append(f"{linha1}\n{linha2}")
@@ -720,7 +720,7 @@ def render():
                             f"🍛 *Cantinho do Caruru*\n\n"
                             f"📅 Pedidos: *{data_fmt}*\n\n"
                             f"📦 *{len(df_filtrado)} pedido(s)*\n"
-                            f"🥘 Caruru: *{total_c}* un  |  🦐 Bobó: *{total_b}* un\n"
+                            f"🥘 Caruru: *{total_c} kg*  |  🦐 Bobó: *{total_b} kg*\n"
                             f"💰 Total: *{_brl(total_v)}*\n"
                             + (f"💸 A receber: *{_brl(total_pendente)}*\n" if total_pendente > 0 else "")
                             + f"\n👥 *Clientes:*\n" + "\n\n".join(linhas)
