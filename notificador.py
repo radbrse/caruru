@@ -19,35 +19,105 @@ NOME_PLANILHA = "Cantinho do Caruru - Dados"
 ABA_PEDIDOS   = "Pedidos"
 
 
+def gh_error(msg: str):
+    """Emite mensagem como GitHub Actions annotation (aparece no painel de anotações)."""
+    print(f"::error::{msg}")
+
+
+def gh_notice(msg: str):
+    print(f"::notice::{msg}")
+
+
+def validar_secrets() -> tuple[str, str, str]:
+    """Valida e retorna os 3 secrets, com diagnóstico claro de qual está faltando."""
+    print("🔐 Validando secrets...")
+
+    gcp = os.environ.get("GCP_SERVICE_ACCOUNT", "").strip()
+    tok = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    cid = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+    if not gcp:
+        gh_error("Secret GCP_SERVICE_ACCOUNT não foi configurado no repositório GitHub.")
+        sys.exit(1)
+    if not tok:
+        gh_error("Secret TELEGRAM_BOT_TOKEN não foi configurado no repositório GitHub.")
+        sys.exit(1)
+    if not cid:
+        gh_error("Secret TELEGRAM_CHAT_ID não foi configurado no repositório GitHub.")
+        sys.exit(1)
+
+    # Valida formato do token (deve ser tipo "123456789:ABCdef...")
+    if ":" not in tok or len(tok) < 30:
+        gh_error(f"TELEGRAM_BOT_TOKEN parece inválido (deve ter formato '123456789:ABCxyz...'). Recebido: '{tok[:10]}...' ({len(tok)} chars)")
+        sys.exit(1)
+
+    # Valida formato do chat_id (deve ser número, opcionalmente negativo)
+    try:
+        int(cid)
+    except ValueError:
+        gh_error(f"TELEGRAM_CHAT_ID deve ser um número inteiro. Recebido: '{cid}'")
+        sys.exit(1)
+
+    # Valida JSON do GCP
+    try:
+        gcp_dict = json.loads(gcp)
+    except json.JSONDecodeError as e:
+        gh_error(f"GCP_SERVICE_ACCOUNT não é JSON válido: {e}. Cole o conteúdo do arquivo .json completo (começando com {{ e terminando com }}).")
+        sys.exit(1)
+
+    campos_obrigatorios = ["type", "project_id", "private_key", "client_email"]
+    faltantes = [c for c in campos_obrigatorios if c not in gcp_dict]
+    if faltantes:
+        gh_error(f"GCP_SERVICE_ACCOUNT JSON está incompleto. Campos faltando: {', '.join(faltantes)}")
+        sys.exit(1)
+
+    print(f"   ✅ GCP_SERVICE_ACCOUNT — JSON válido (projeto: {gcp_dict.get('project_id')})")
+    print(f"   ✅ TELEGRAM_BOT_TOKEN — formato OK")
+    print(f"   ✅ TELEGRAM_CHAT_ID — {cid}")
+    return gcp, tok, cid
+
+
 def amanha_brasil() -> date:
     return (datetime.now(FUSO_BRASIL) + timedelta(days=1)).date()
 
 
-def conectar_sheets() -> gspread.Client:
-    raw = os.environ["GCP_SERVICE_ACCOUNT"]
-    creds_dict = json.loads(raw)
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    return gspread.authorize(creds)
+def conectar_sheets(gcp_json: str) -> gspread.Client:
+    try:
+        creds_dict = json.loads(gcp_json)
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception as e:
+        gh_error(f"Falha ao autenticar no Google: {e}")
+        raise
 
 
 def carregar_pedidos_amanha(client: gspread.Client, data_alvo: date) -> list[dict]:
     """Retorna pedidos cujo campo Data bate com data_alvo."""
-    spreadsheet = client.open(NOME_PLANILHA)
-    ws = spreadsheet.worksheet(ABA_PEDIDOS)
+    try:
+        spreadsheet = client.open(NOME_PLANILHA)
+    except gspread.SpreadsheetNotFound:
+        gh_error(f"Planilha '{NOME_PLANILHA}' não encontrada. Verifique se o e-mail da service account tem acesso.")
+        raise
+
+    try:
+        ws = spreadsheet.worksheet(ABA_PEDIDOS)
+    except gspread.WorksheetNotFound:
+        gh_error(f"Aba '{ABA_PEDIDOS}' não existe na planilha.")
+        raise
+
     rows = ws.get_all_records()
 
-    alvo_iso = data_alvo.isoformat()          # "YYYY-MM-DD"
-    alvo_br  = data_alvo.strftime("%d/%m/%Y") # "DD/MM/YYYY" (fallback)
+    alvo_iso = data_alvo.isoformat()
+    alvo_br  = data_alvo.strftime("%d/%m/%Y")
 
     pedidos = []
     for row in rows:
         data_cell = str(row.get("Data", "")).strip()
         if data_cell in (alvo_iso, alvo_br):
-            # Ignorar pedidos já entregues ou cancelados
             status = str(row.get("Status", "")).strip()
             if "Entregue" not in status and "Cancelado" not in status:
                 pedidos.append(row)
@@ -72,7 +142,7 @@ def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
         return (
             f"🍛 *Cantinho do Caruru*\n\n"
             f"📅 Amanhã: {data_fmt}\n\n"
-            f"📭 Nenhum pedido cadastrado para amanhã\\."
+            f"📭 Nenhum pedido cadastrado para amanhã."
         )
 
     total_caruru = sum(int(float(p.get("Caruru") or 0)) for p in pedidos)
@@ -120,16 +190,33 @@ def enviar_telegram(token: str, chat_id: str, mensagem: str) -> dict:
         "text":       mensagem,
         "parse_mode": "Markdown",
     }, timeout=15)
-    resp.raise_for_status()
+
+    if resp.status_code != 200:
+        try:
+            erro = resp.json()
+            desc = erro.get("description", resp.text)
+        except Exception:
+            desc = resp.text
+
+        if resp.status_code == 401:
+            gh_error(f"TELEGRAM_BOT_TOKEN inválido — Telegram rejeitou: {desc}")
+        elif resp.status_code == 400 and "chat not found" in desc.lower():
+            gh_error(f"TELEGRAM_CHAT_ID '{chat_id}' não encontrado. Você enviou alguma mensagem ao bot primeiro? Detalhe: {desc}")
+        elif resp.status_code == 403:
+            gh_error(f"Bot bloqueado ou sem permissão no chat {chat_id}. Detalhe: {desc}")
+        else:
+            gh_error(f"Telegram retornou HTTP {resp.status_code}: {desc}")
+
+        resp.raise_for_status()
+
     return resp.json()
 
 
 def main():
-    token   = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+    gcp_json, token, chat_id = validar_secrets()
 
-    print("🔗 Conectando ao Google Sheets...")
-    client = conectar_sheets()
+    print("\n🔗 Conectando ao Google Sheets...")
+    client = conectar_sheets(gcp_json)
 
     amanha = amanha_brasil()
     print(f"📅 Buscando pedidos para: {amanha.isoformat()}")
@@ -142,18 +229,21 @@ def main():
     print(mensagem)
     print("-------------------------\n")
 
+    print("📤 Enviando para Telegram...")
     resultado = enviar_telegram(token, chat_id, mensagem)
     msg_id = resultado.get("result", {}).get("message_id", "?")
-    print(f"✅ Mensagem enviada! Message ID: {msg_id}")
+    gh_notice(f"Mensagem enviada com sucesso! Message ID: {msg_id}")
+    print(f"✅ Sucesso!")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except KeyError as e:
-        print(f"❌ Variável de ambiente ausente: {e}")
-        print("   Verifique os secrets: GCP_SERVICE_ACCOUNT, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
-        sys.exit(1)
+    except SystemExit:
+        raise
     except Exception as e:
-        print(f"❌ Erro inesperado: {e}")
+        gh_error(f"Erro inesperado: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
+
