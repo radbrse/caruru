@@ -677,7 +677,18 @@ def render():
                         total_c = int(df_filtrado.get("Caruru", pd.Series(dtype=float)).fillna(0).astype(float).sum())
                         total_b = int(df_filtrado.get("Bobo", pd.Series(dtype=float)).fillna(0).astype(float).sum())
                         total_v = df_filtrado.get("Valor", pd.Series(dtype=float)).fillna(0).astype(float).sum()
-                        valor_fmt = f"R$ {total_v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                        def _brl(v: float) -> str:
+                            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                        def _falta_row(row) -> float:
+                            pag = str(row.get("Pagamento", "")).strip().upper()
+                            v = float(row.get("Valor") or 0)
+                            if pag == "NÃO PAGO": return v
+                            if pag == "METADE":   return v / 2
+                            return 0.0
+
+                        total_pendente = sum(_falta_row(r) for _, r in df_filtrado.iterrows())
 
                         linhas = []
                         for _, p in df_filtrado.iterrows():
@@ -694,15 +705,22 @@ def render():
                             if str(p.get("Vegano", "")).strip().lower() in ("true", "1", "sim"): flags.append("🌿 Vegano")
                             if str(p.get("Delivery", "")).strip().lower() in ("true", "1", "sim"): flags.append("🛵 Delivery")
                             flags_str = f"  {' '.join(flags)}" if flags else ""
-                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}")
+                            falta = _falta_row(p)
+                            if falta > 0:
+                                pag = str(p.get("Pagamento", "")).strip().upper()
+                                pag_str = f"  {'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
+                            else:
+                                pag_str = "  ✅ Pedido pago"
+                            linhas.append(f"• {nome} — {' '.join(itens)}{hora_str}{flags_str}{pag_str}")
 
                         preview = (
                             f"🍛 *Cantinho do Caruru*\n\n"
                             f"📅 Pedidos: *{data_fmt}*\n\n"
                             f"📦 *{len(df_filtrado)} pedido(s)*\n"
                             f"🥘 Caruru: *{total_c}* un  |  🦐 Bobó: *{total_b}* un\n"
-                            f"💰 Total: *{valor_fmt}*\n\n"
-                            f"👥 *Clientes:*\n" + "\n".join(linhas)
+                            f"💰 Total: *{_brl(total_v)}*\n"
+                            + (f"💸 A receber: *{_brl(total_pendente)}*\n" if total_pendente > 0 else "")
+                            + f"\n👥 *Clientes:*\n" + "\n".join(linhas)
                         )
 
                     with st.expander("👁️ Preview da mensagem", expanded=True):
