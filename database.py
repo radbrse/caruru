@@ -436,15 +436,24 @@ def salvar_pedidos(df):
                 return ""
 
             salvar['Data'] = salvar['Data'].apply(_serializar_data)
-            salvar['Hora'] = salvar['Hora'].apply(
-                lambda x: x.strftime('%H:%M') if isinstance(x, time) else ("12:00" if pd.isna(x) else (str(x).strip() or "12:00"))
-            )
+
+            def _serializar_hora(x, default="12:00"):
+                if isinstance(x, time):
+                    return x.strftime('%H:%M')
+                s = str(x).strip() if x is not None else ""
+                return s if s and s not in ('nan', 'NaT', 'None', 'nat') else default
+
+            def _serializar_hora_entrega(x):
+                if isinstance(x, time):
+                    return x.strftime('%H:%M')
+                s = str(x).strip() if x is not None else ""
+                return s if s and s not in ('nan', 'NaT', 'None', 'nat') else ""
+
+            salvar['Hora'] = salvar['Hora'].apply(_serializar_hora)
             # Hora_Entrega pode não existir em DataFrames vindos do Sheets (retrocompatibilidade)
             if 'Hora_Entrega' not in salvar.columns:
                 salvar['Hora_Entrega'] = ""
-            salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(
-                lambda x: x.strftime('%H:%M') if isinstance(x, time) else (str(x) if pd.notna(x) and str(x).strip() else "")
-            )
+            salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(_serializar_hora_entrega)
             salvar['Contato'] = salvar['Contato'].fillna("").astype(str).str.replace(".0", "", regex=False)
             if 'Extra' not in salvar.columns:
                 salvar['Extra'] = "False"

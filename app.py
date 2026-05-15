@@ -69,12 +69,13 @@ if 'auto_restore_tentado' not in st.session_state:
     st.session_state['auto_restore_tentado'] = False
 
 if not st.session_state['auto_restore_tentado']:
+    st.session_state['auto_restore_tentado'] = True  # marca ANTES de qualquer rerun
     if st.session_state.pedidos.empty and GSPREAD_AVAILABLE:
         status_ok, _ = verificar_status_sheets()
         if status_ok:
             with st.spinner("📥 CSV vazio detectado - Restaurando do Google Sheets..."):
                 sucesso, msg = sincronizar_com_sheets(modo="receber")
-                if sucesso:
+                if sucesso and not st.session_state.pedidos.empty:
                     st.success("✅ Dados restaurados do backup em nuvem!")
                     st.toast("☁️ Restauração automática bem-sucedida", icon="✅")
                     logger.info("🔄 Auto-restore: Dados restaurados do Sheets com sucesso")
@@ -82,7 +83,6 @@ if not st.session_state['auto_restore_tentado']:
                 else:
                     st.warning("⚠️ Não foi possível restaurar dados do Sheets")
                     logger.warning(f"⚠️ Auto-restore falhou: {msg}")
-        st.session_state['auto_restore_tentado'] = True
 
 # ==============================================================================
 # SIDEBAR
