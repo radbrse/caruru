@@ -25,7 +25,8 @@ from sheets import (
     GSPREAD_AVAILABLE,
     conectar_google_sheets, obter_ou_criar_planilha,
     sincronizar_com_sheets, verificar_status_sheets,
-    carregar_do_sheets, salvar_no_sheets
+    carregar_do_sheets, salvar_no_sheets,
+    ler_hora_notificacao, salvar_hora_notificacao,
 )
 
 
@@ -575,7 +576,7 @@ def render():
 
         if telegram_ok:
             st.divider()
-            tab_teste, tab_notif = st.tabs(["🧪 Testar Conexão", "📤 Enviar Notificação"])
+            tab_teste, tab_notif, tab_horario = st.tabs(["🧪 Testar Conexão", "📤 Enviar Notificação", "⏰ Horário Automático"])
 
             with tab_teste:
                 st.markdown("### 🧪 Teste de Conexão")
@@ -592,6 +593,45 @@ def render():
                         st.toast("Mensagem enviada!", icon="📱")
                     else:
                         st.error(f"❌ {msg}")
+
+            with tab_horario:
+                st.markdown("### ⏰ Horário da Notificação Automática")
+                st.info(
+                    "Define em que horário (Brasília) o GitHub Actions envia o resumo diário.\n\n"
+                    "O sistema verifica a cada hora entre **04:00 e 12:00 (Brasília)** e só envia "
+                    "quando o horário bate com o configurado aqui."
+                )
+
+                status_ok_sheets, _ = verificar_status_sheets()
+                if not status_ok_sheets:
+                    st.warning("⚠️ Configure o Google Sheets primeiro — o horário é salvo lá.")
+                else:
+                    client_sheets = conectar_google_sheets()
+                    if client_sheets:
+                        hora_salva = ler_hora_notificacao(client_sheets)
+
+                        horas_disponiveis = list(range(4, 13))  # 4h a 12h Brasília
+                        idx_atual = horas_disponiveis.index(hora_salva) if hora_salva in horas_disponiveis else 3
+
+                        hora_nova = st.selectbox(
+                            "Horário de envio (Brasília):",
+                            options=horas_disponiveis,
+                            format_func=lambda h: f"{h:02d}:00",
+                            index=idx_atual,
+                            key="telegram_hora_notif",
+                        )
+
+                        st.caption(f"Configuração atual: **{hora_salva:02d}:00 (Brasília)**")
+
+                        if st.button("💾 Salvar Horário", type="primary", use_container_width=True, key="btn_salvar_horario"):
+                            ok_h, msg_h = salvar_hora_notificacao(client_sheets, hora_nova)
+                            if ok_h:
+                                st.success(msg_h)
+                                st.toast(f"⏰ Notificações agendadas para {hora_nova:02d}:00 Brasília", icon="⏰")
+                            else:
+                                st.error(msg_h)
+                    else:
+                        st.error("❌ Não foi possível conectar ao Google Sheets")
 
             with tab_notif:
                 st.markdown("### 📤 Enviar Notificação de Pedidos")
