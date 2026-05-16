@@ -576,7 +576,7 @@ def render():
 
         if telegram_ok:
             st.divider()
-            tab_teste, tab_notif, tab_horario = st.tabs(["🧪 Testar Conexão", "📤 Enviar Notificação", "⏰ Horário Automático"])
+            tab_notif, tab_teste, tab_horario = st.tabs(["📤 Enviar Notificação", "🧪 Testar Conexão", "⏰ Horário Automático"])
 
             with tab_teste:
                 st.markdown("### 🧪 Teste de Conexão")
@@ -639,24 +639,37 @@ def render():
                 hoje = hoje_brasil()
                 amanha = hoje + timedelta(days=1)
 
+                if "telegram_data_escolha" not in st.session_state:
+                    st.session_state["telegram_data_escolha"] = amanha
+
+                def _set_telegram_hoje():
+                    st.session_state["telegram_data_escolha"] = hoje_brasil()
+
+                def _set_telegram_amanha():
+                    st.session_state["telegram_data_escolha"] = hoje_brasil() + timedelta(days=1)
+
                 data_alvo = st.date_input(
                     "📅 Pedidos de qual data?",
-                    value=amanha,
                     format="DD/MM/YYYY",
                     key="telegram_data_escolha",
                     help="Selecione a data dos pedidos que deseja enviar. Por padrão, mostra os pedidos de amanhã."
                 )
 
-                # Atalhos rápidos
                 col_h, col_a = st.columns(2)
                 with col_h:
-                    if st.button("📍 Hoje", use_container_width=True, key="btn_telegram_hoje"):
-                        st.session_state["telegram_data_escolha"] = hoje
-                        st.rerun()
+                    st.button(
+                        "📍 Hoje",
+                        use_container_width=True,
+                        key="btn_telegram_hoje",
+                        on_click=_set_telegram_hoje,
+                    )
                 with col_a:
-                    if st.button("➡️ Amanhã", use_container_width=True, key="btn_telegram_amanha"):
-                        st.session_state["telegram_data_escolha"] = amanha
-                        st.rerun()
+                    st.button(
+                        "➡️ Amanhã",
+                        use_container_width=True,
+                        key="btn_telegram_amanha",
+                        on_click=_set_telegram_amanha,
+                    )
 
                 df = st.session_state.pedidos
                 if df.empty:
