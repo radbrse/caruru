@@ -280,6 +280,15 @@ def main():
     pedidos = carregar_pedidos_amanha(client, amanha)
     print(f"📦 {len(pedidos)} pedido(s) encontrado(s)")
 
+    # Em disparos automáticos (cron), só envia se houver pelo menos 1 pedido.
+    # Disparos manuais (workflow_dispatch) sempre enviam, mesmo sem pedidos,
+    # para confirmar que o sistema está funcionando.
+    if not pedidos and trigger != "workflow_dispatch":
+        msg = f"📭 Nenhum pedido para {amanha.isoformat()} — sem envio automático."
+        gh_notice(msg)
+        print(msg)
+        sys.exit(0)
+
     mensagem = formatar_mensagem(pedidos, amanha)
     print("\n--- Mensagem a enviar ---")
     print(mensagem)
