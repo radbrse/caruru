@@ -639,13 +639,24 @@ def render():
                 hoje = hoje_brasil()
                 amanha = hoje + timedelta(days=1)
 
-                data_escolha = st.radio(
-                    "Pedidos de qual data?",
-                    ["Hoje", "Amanhã"],
-                    horizontal=True,
-                    key="telegram_data_escolha"
+                data_alvo = st.date_input(
+                    "📅 Pedidos de qual data?",
+                    value=amanha,
+                    format="DD/MM/YYYY",
+                    key="telegram_data_escolha",
+                    help="Selecione a data dos pedidos que deseja enviar. Por padrão, mostra os pedidos de amanhã."
                 )
-                data_alvo = hoje if data_escolha == "Hoje" else amanha
+
+                # Atalhos rápidos
+                col_h, col_a = st.columns(2)
+                with col_h:
+                    if st.button("📍 Hoje", use_container_width=True, key="btn_telegram_hoje"):
+                        st.session_state["telegram_data_escolha"] = hoje
+                        st.rerun()
+                with col_a:
+                    if st.button("➡️ Amanhã", use_container_width=True, key="btn_telegram_amanha"):
+                        st.session_state["telegram_data_escolha"] = amanha
+                        st.rerun()
 
                 df = st.session_state.pedidos
                 if df.empty:
