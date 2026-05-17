@@ -671,6 +671,62 @@ def render():
                         on_click=_set_telegram_amanha,
                     )
 
+                with st.expander("🔍 Diagnóstico da notificação automática"):
+                    hora_atual_br = agora_brasil().hour
+                    hora_atual_str = agora_brasil().strftime("%H:%M")
+                    status_sheets_diag, _ = verificar_status_sheets()
+                    hora_notif_diag = 7
+                    df_sheets_diag = None
+
+                    if status_sheets_diag:
+                        client_diag = conectar_google_sheets()
+                        if client_diag:
+                            hora_notif_diag = ler_hora_notificacao(client_diag)
+                            df_sheets_diag, _ = carregar_do_sheets(client_diag, "Pedidos")
+
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        st.metric("⏰ Hora configurada", f"{hora_notif_diag:02d}:00 Brasília")
+                    with col_d2:
+                        st.metric("🕐 Hora atual", f"{hora_atual_str} Brasília")
+
+                    if hora_atual_br == hora_notif_diag:
+                        st.success("✅ Horário atual coincide — o cron enviaria neste momento.")
+                    else:
+                        st.info(f"⏳ O cron enviará quando forem {hora_notif_diag:02d}:00 Brasília.")
+
+                    st.markdown(f"**📦 Pedidos para {data_alvo.strftime('%d/%m/%Y')} no Google Sheets:**")
+                    if not status_sheets_diag:
+                        st.warning("⚠️ Google Sheets não conectado — não é possível verificar.")
+                    elif df_sheets_diag is None:
+                        st.error("❌ Falha ao conectar ao Sheets.")
+                    elif df_sheets_diag.empty:
+                        st.warning("⚠️ Sheets está vazio — sincronize os dados primeiro.")
+                    else:
+                        try:
+                            df_diag = df_sheets_diag[df_sheets_diag["Data"] == data_alvo]
+                            df_diag = df_diag[~df_diag["Status"].str.contains("Entregue|Cancelado", na=False)]
+                            if df_diag.empty:
+                                st.warning(
+                                    f"⚠️ Nenhum pedido encontrado no Sheets para "
+                                    f"{data_alvo.strftime('%d/%m/%Y')} — o cron **não enviará** mensagem."
+                                )
+                            else:
+                                st.success(
+                                    f"✅ {len(df_diag)} pedido(s) no Sheets para esta data "
+                                    f"— o cron enviará normalmente."
+                                )
+                                for _, r in df_diag.iterrows():
+                                    nome = str(r.get("Cliente", "?")).strip().title()
+                                    st.caption(f"→ {nome}")
+                        except Exception as _e:
+                            st.error(f"Erro ao filtrar pedidos do Sheets: {_e}")
+
+                    st.markdown(
+                        "🔗 [Ver histórico de execuções no GitHub Actions]"
+                        "(https://github.com/radbrse/caruru/actions/workflows/notificar_pedidos.yml)"
+                    )
+
                 df = st.session_state.pedidos
                 if df.empty:
                     st.warning("Nenhum pedido carregado.")
