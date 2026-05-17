@@ -306,6 +306,47 @@ def ler_hora_notificacao(client) -> int:
         return 7
 
 
+def ler_ultima_data_envio(client) -> str:
+    """Lê last_notification_date (ISO) da aba Config. Retorna '' se nunca enviou."""
+    try:
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return ""
+        try:
+            ws = spreadsheet.worksheet(_ABA_CONFIG)
+        except gspread.exceptions.WorksheetNotFound:
+            return ""
+        for row in ws.get_all_records():
+            if str(row.get("Chave", "")).strip() == "last_notification_date":
+                return str(row.get("Valor", "")).strip()
+        return ""
+    except Exception as e:
+        logger.warning(f"Erro ao ler última data de envio: {e}")
+        return ""
+
+
+def resetar_ultima_data_envio(client) -> tuple[bool, str]:
+    """Limpa last_notification_date — útil para forçar reenvio no mesmo dia."""
+    try:
+        spreadsheet = obter_ou_criar_planilha(client)
+        if not spreadsheet:
+            return False, "❌ Erro ao acessar planilha"
+        try:
+            ws = spreadsheet.worksheet(_ABA_CONFIG)
+        except gspread.exceptions.WorksheetNotFound:
+            return True, "✅ Nenhum registro de envio para limpar"
+        rows = ws.get_all_records()
+        for i, row in enumerate(rows, start=2):
+            if str(row.get("Chave", "")).strip() == "last_notification_date":
+                ws.update_cell(i, 2, "")
+                logger.info("last_notification_date limpa")
+                return True, "✅ Registro de envio limpo — próximo cron tentará enviar"
+        return True, "✅ Nenhum registro de envio para limpar"
+    except Exception as e:
+        logger.error(f"Erro ao limpar última data de envio: {e}")
+        return False, f"❌ Erro: {e}"
+
+
 def salvar_hora_notificacao(client, hora: int) -> tuple[bool, str]:
     """Salva a hora de notificação no Google Sheets (cria aba Config se não existir)."""
     try:
