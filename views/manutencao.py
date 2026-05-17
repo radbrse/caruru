@@ -27,6 +27,7 @@ from sheets import (
     sincronizar_com_sheets, verificar_status_sheets,
     carregar_do_sheets, salvar_no_sheets,
     ler_hora_notificacao, salvar_hora_notificacao,
+    ler_ultima_data_envio, resetar_ultima_data_envio,
 )
 
 
@@ -674,26 +675,55 @@ def render():
                 with st.expander("🔍 Diagnóstico da notificação automática"):
                     hora_atual_br = agora_brasil().hour
                     hora_atual_str = agora_brasil().strftime("%H:%M")
+                    hoje_iso_diag = agora_brasil().date().isoformat()
                     status_sheets_diag, _ = verificar_status_sheets()
                     hora_notif_diag = 7
                     df_sheets_diag = None
+                    ultima_envio_diag = ""
+                    client_diag = None
 
                     if status_sheets_diag:
                         client_diag = conectar_google_sheets()
                         if client_diag:
                             hora_notif_diag = ler_hora_notificacao(client_diag)
+                            ultima_envio_diag = ler_ultima_data_envio(client_diag)
                             df_sheets_diag, _ = carregar_do_sheets(client_diag, "Pedidos")
 
                     col_d1, col_d2 = st.columns(2)
                     with col_d1:
-                        st.metric("⏰ Hora configurada", f"{hora_notif_diag:02d}:00 Brasília")
+                        st.metric("⏰ Janela a partir de", f"{hora_notif_diag:02d}:00 Brasília")
                     with col_d2:
                         st.metric("🕐 Hora atual", f"{hora_atual_str} Brasília")
 
-                    if hora_atual_br == hora_notif_diag:
-                        st.success("✅ Horário atual coincide — o cron enviaria neste momento.")
+                    if ultima_envio_diag == hoje_iso_diag:
+                        st.success(
+                            f"✅ Notificação de hoje ({hoje_iso_diag}) já foi enviada. "
+                            "Próximos runs do cron pularão até amanhã."
+                        )
+                        if st.button(
+                            "🔁 Resetar registro de envio de hoje",
+                            key="btn_reset_envio",
+                            help="Limpa o registro para o próximo cron tentar enviar novamente hoje.",
+                        ):
+                            if client_diag:
+                                ok_r, msg_r = resetar_ultima_data_envio(client_diag)
+                                if ok_r:
+                                    st.success(msg_r)
+                                    st.rerun()
+                                else:
+                                    st.error(msg_r)
+                    elif hora_atual_br >= hora_notif_diag:
+                        st.success(
+                            f"✅ Estamos na janela de envio ({hora_atual_br:02d}h ≥ "
+                            f"{hora_notif_diag:02d}h) — o próximo cron enviará se houver pedidos."
+                        )
                     else:
-                        st.info(f"⏳ O cron enviará quando forem {hora_notif_diag:02d}:00 Brasília.")
+                        st.info(
+                            f"⏳ Janela começa às {hora_notif_diag:02d}:00 Brasília "
+                            f"(faltam {hora_notif_diag - hora_atual_br}h)."
+                        )
+
+                    st.caption(f"📝 Última notificação enviada: **{ultima_envio_diag or '(nunca)'}**")
 
                     st.markdown(f"**📦 Pedidos para {data_alvo.strftime('%d/%m/%Y')} no Google Sheets:**")
                     if not status_sheets_diag:

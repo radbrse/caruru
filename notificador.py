@@ -112,6 +112,44 @@ def obter_hora_notificacao(client: gspread.Client) -> int:
         return 7
 
 
+def obter_ultima_data_envio(client: gspread.Client) -> str:
+    """Lê last_notification_date (ISO) da aba Config. Retorna '' se nunca enviou."""
+    ABA_CONFIG = "Config"
+    try:
+        spreadsheet = client.open(NOME_PLANILHA)
+        try:
+            ws = spreadsheet.worksheet(ABA_CONFIG)
+        except gspread.WorksheetNotFound:
+            return ""
+        for row in ws.get_all_records():
+            if str(row.get("Chave", "")).strip() == "last_notification_date":
+                return str(row.get("Valor", "")).strip()
+        return ""
+    except Exception as e:
+        print(f"⚠️ Erro ao ler última data de envio: {e}")
+        return ""
+
+
+def salvar_ultima_data_envio(client: gspread.Client, data_iso: str) -> None:
+    """Grava last_notification_date na aba Config (cria aba/linha se não existir)."""
+    ABA_CONFIG = "Config"
+    try:
+        spreadsheet = client.open(NOME_PLANILHA)
+        try:
+            ws = spreadsheet.worksheet(ABA_CONFIG)
+        except gspread.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet(title=ABA_CONFIG, rows=20, cols=2)
+            ws.append_row(["Chave", "Valor"])
+        rows = ws.get_all_records()
+        for i, row in enumerate(rows, start=2):
+            if str(row.get("Chave", "")).strip() == "last_notification_date":
+                ws.update_cell(i, 2, data_iso)
+                return
+        ws.append_row(["last_notification_date", data_iso])
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar última data de envio: {e}")
+
+
 def carregar_pedidos_amanha(client: gspread.Client, data_alvo: date) -> list[dict]:
     """Retorna pedidos cujo campo Data bate com data_alvo."""
     try:
@@ -260,19 +298,33 @@ def main():
     print("\n🔗 Conectando ao Google Sheets...")
     client = conectar_sheets(gcp_json)
 
-    # Verifica horário configurado — disparos manuais (workflow_dispatch) sempre enviam
+    # Janela de envio com idempotência — disparos manuais (workflow_dispatch) sempre enviam.
+    # O cron do GitHub Actions é "best-effort" e frequentemente pula horários específicos.
+    # Por isso usamos hora_atual >= hora_config + flag de "já enviei hoje" no Sheets:
+    # se o run das 11h for pulado, o das 12h pega; depois de enviar, os runs seguintes pulam.
     trigger = os.environ.get("GITHUB_EVENT_NAME", "schedule")
+    hoje_iso = datetime.now(FUSO_BRASIL).date().isoformat()
+
     if trigger != "workflow_dispatch":
         hora_config = obter_hora_notificacao(client)
         hora_atual = datetime.now(FUSO_BRASIL).hour
-        print(f"⏰ Horário atual: {hora_atual:02d}h Brasília | Configurado: {hora_config:02d}h")
-        if hora_atual != hora_config:
-            msg = f"⏭️ Horário atual {hora_atual:02d}h ≠ configurado {hora_config:02d}h (Brasília). Sem envio hoje neste ciclo."
+        ultima_data = obter_ultima_data_envio(client)
+        print(f"⏰ Horário atual: {hora_atual:02d}h Brasília | Janela: a partir das {hora_config:02d}h")
+        print(f"📅 Hoje: {hoje_iso} | Última notificação enviada: {ultima_data or '(nunca)'}")
+
+        if hora_atual < hora_config:
+            msg = f"⏭️ Ainda não chegou a janela ({hora_atual:02d}h < {hora_config:02d}h Brasília)."
+            gh_notice(msg)
+            print(msg)
+            sys.exit(0)
+
+        if ultima_data == hoje_iso:
+            msg = f"✅ Notificação de hoje ({hoje_iso}) já foi enviada — pulando."
             gh_notice(msg)
             print(msg)
             sys.exit(0)
     else:
-        print("📤 Disparado manualmente — verificação de horário ignorada")
+        print("📤 Disparado manualmente — verificação de horário/idempotência ignorada")
 
     amanha = amanha_brasil()
     print(f"📅 Buscando pedidos para: {amanha.isoformat()}")
@@ -281,10 +333,10 @@ def main():
     print(f"📦 {len(pedidos)} pedido(s) encontrado(s)")
 
     # Em disparos automáticos (cron), só envia se houver pelo menos 1 pedido.
-    # Disparos manuais (workflow_dispatch) sempre enviam, mesmo sem pedidos,
-    # para confirmar que o sistema está funcionando.
+    # NÃO atualiza last_notification_date aqui — assim o próximo cron tenta de novo
+    # caso o usuário cadastre um pedido depois (no mesmo dia, dentro da janela).
     if not pedidos and trigger != "workflow_dispatch":
-        msg = f"📭 Nenhum pedido para {amanha.isoformat()} — sem envio automático."
+        msg = f"📭 Nenhum pedido para {amanha.isoformat()} — sem envio (tentará novamente na próxima hora)."
         gh_notice(msg)
         print(msg)
         sys.exit(0)
@@ -299,6 +351,12 @@ def main():
     msg_id = resultado.get("result", {}).get("message_id", "?")
     gh_notice(f"Mensagem enviada com sucesso! Message ID: {msg_id}")
     print(f"✅ Sucesso!")
+
+    # Marca como enviado hoje apenas em disparos automáticos
+    # (manuais não devem bloquear o envio automático do mesmo dia)
+    if trigger != "workflow_dispatch":
+        salvar_ultima_data_envio(client, hoje_iso)
+        print(f"📝 Registrado: notificação de {hoje_iso} enviada.")
 
 
 if __name__ == "__main__":
