@@ -14,6 +14,8 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
+from telegram_format import formatar_mensagem
+
 FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 NOME_PLANILHA = "Cantinho do Caruru - Dados"
 ABA_PEDIDOS   = "Pedidos"
@@ -26,6 +28,12 @@ def gh_error(msg: str):
 
 def gh_notice(msg: str):
     print(f"::notice::{msg}")
+
+
+def _mascarar(valor: str) -> str:
+    """Mascara identificador sensível para logs (mantém só os 4 últimos dígitos)."""
+    s = str(valor or "")
+    return f"***{s[-4:]}" if len(s) > 4 else "***"
 
 
 def validar_secrets() -> tuple[str, str, str]:
@@ -48,7 +56,7 @@ def validar_secrets() -> tuple[str, str, str]:
 
     # Valida formato do token (deve ser tipo "123456789:ABCdef...")
     if ":" not in tok or len(tok) < 30:
-        gh_error(f"TELEGRAM_BOT_TOKEN parece inválido (deve ter formato '123456789:ABCxyz...'). Recebido: '{tok[:10]}...' ({len(tok)} chars)")
+        gh_error(f"TELEGRAM_BOT_TOKEN parece inválido (deve ter formato '123456789:ABCxyz...'). Recebido: {len(tok)} chars")
         sys.exit(1)
 
     # Valida formato do chat_id (deve ser número, opcionalmente negativo)
@@ -73,7 +81,7 @@ def validar_secrets() -> tuple[str, str, str]:
 
     print(f"   ✅ GCP_SERVICE_ACCOUNT — JSON válido (projeto: {gcp_dict.get('project_id')})")
     print(f"   ✅ TELEGRAM_BOT_TOKEN — formato OK")
-    print(f"   ✅ TELEGRAM_CHAT_ID — {cid}")
+    print(f"   ✅ TELEGRAM_CHAT_ID — {_mascarar(cid)}")
     return gcp, tok, cid
 
 
@@ -180,89 +188,6 @@ def carregar_pedidos_amanha(client: gspread.Client, data_alvo: date) -> list[dic
     return pedidos
 
 
-def _bool_campo(row: dict, campo: str) -> bool:
-    return str(row.get(campo, "")).strip().lower() in ("true", "1", "sim")
-
-
-def formatar_mensagem(pedidos: list[dict], data_alvo: date) -> str:
-    dias_pt = {
-        "Monday": "segunda-feira", "Tuesday": "terça-feira",
-        "Wednesday": "quarta-feira", "Thursday": "quinta-feira",
-        "Friday": "sexta-feira", "Saturday": "sábado", "Sunday": "domingo",
-    }
-    dia_semana = dias_pt.get(data_alvo.strftime("%A"), data_alvo.strftime("%A"))
-    data_fmt = f"{data_alvo.strftime('%d/%m/%Y')} ({dia_semana})"
-
-    if not pedidos:
-        return (
-            f"🍛 *Cantinho do Caruru*\n\n"
-            f"📅 Amanhã: {data_fmt}\n\n"
-            f"📭 Nenhum pedido cadastrado para amanhã."
-        )
-
-    total_caruru = sum(int(float(p.get("Caruru") or 0)) for p in pedidos)
-    total_bobo   = sum(int(float(p.get("Bobo")   or 0)) for p in pedidos)
-    total_valor  = sum(float(p.get("Valor") or 0)       for p in pedidos)
-
-    def _falta(p) -> float:
-        pag = str(p.get("Pagamento", "")).strip().upper()
-        v = float(p.get("Valor") or 0)
-        if pag == "NÃO PAGO": return v
-        if pag == "METADE":   return v / 2
-        return 0.0
-
-    def _brl(v: float) -> str:
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-    total_pendente = sum(_falta(p) for p in pedidos)
-    valor_fmt    = _brl(total_valor)
-    pendente_fmt = _brl(total_pendente)
-
-    linhas = []
-    for p in pedidos:
-        nome = str(p.get("Cliente", "?")).strip().title()
-        qc   = int(float(p.get("Caruru") or 0))
-        qb   = int(float(p.get("Bobo")   or 0))
-
-        itens = []
-        if qc: itens.append(f"{qc} kg de Caruru")
-        if qb: itens.append(f"{qb} kg de Bobó")
-
-        hora = str(p.get("Hora", "")).strip()
-        hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
-        hora_str = f"  ⏰ {hora_fmt}" if hora_fmt and hora_fmt != "nan" else ""
-
-        flags = []
-        if _bool_campo(p, "Extra"):    flags.append("⚡ Extra")
-        if _bool_campo(p, "Vegano"):   flags.append("🌿 Vegano")
-        if _bool_campo(p, "Delivery"): flags.append("🛵 Delivery")
-
-        falta = _falta(p)
-        if falta > 0:
-            pagamento = str(p.get("Pagamento", "")).strip().upper()
-            icone = "💸" if pagamento == "NÃO PAGO" else "🔸"
-            pag_label = f"{icone} Falta {_brl(falta)}"
-        else:
-            pag_label = "✅ Pedido pago"
-
-        linha1 = f"• *{nome}*{hora_str}"
-        detalhes = itens + flags + [pag_label]
-        linha2 = "  " + "  ".join(detalhes)
-        linhas.append(f"{linha1}\n{linha2}")
-
-    pedidos_txt = "\n\n".join(linhas)
-
-    return (
-        f"🍛 *Cantinho do Caruru*\n\n"
-        f"📅 Pedidos para amanhã: *{data_fmt}*\n\n"
-        f"📦 *{len(pedidos)} pedido(s)*\n"
-        f"🥘 Caruru: *{total_caruru} kg*  |  🦐 Bobó: *{total_bobo} kg*\n"
-        f"💰 Total: *{valor_fmt}*\n"
-        + (f"💸 A receber: *{pendente_fmt}*\n" if total_pendente > 0 else "")
-        + f"\n👥 *Clientes:*\n{pedidos_txt}"
-    )
-
-
 def enviar_telegram(token: str, chat_id: str, mensagem: str) -> dict:
     url  = f"https://api.telegram.org/bot{token}/sendMessage"
     resp = requests.post(url, json={
@@ -281,9 +206,9 @@ def enviar_telegram(token: str, chat_id: str, mensagem: str) -> dict:
         if resp.status_code == 401:
             gh_error(f"TELEGRAM_BOT_TOKEN inválido — Telegram rejeitou: {desc}")
         elif resp.status_code == 400 and "chat not found" in desc.lower():
-            gh_error(f"TELEGRAM_CHAT_ID '{chat_id}' não encontrado. Você enviou alguma mensagem ao bot primeiro? Detalhe: {desc}")
+            gh_error(f"TELEGRAM_CHAT_ID '{_mascarar(chat_id)}' não encontrado. Você enviou alguma mensagem ao bot primeiro? Detalhe: {desc}")
         elif resp.status_code == 403:
-            gh_error(f"Bot bloqueado ou sem permissão no chat {chat_id}. Detalhe: {desc}")
+            gh_error(f"Bot bloqueado ou sem permissão no chat {_mascarar(chat_id)}. Detalhe: {desc}")
         else:
             gh_error(f"Telegram retornou HTTP {resp.status_code}: {desc}")
 
@@ -341,7 +266,7 @@ def main():
         print(msg)
         sys.exit(0)
 
-    mensagem = formatar_mensagem(pedidos, amanha)
+    mensagem = formatar_mensagem(pedidos, amanha, rotulo_data="Pedidos para amanhã")
     print("\n--- Mensagem a enviar ---")
     print(mensagem)
     print("-------------------------\n")

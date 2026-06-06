@@ -15,6 +15,7 @@ sheets.py           — Integração Google Sheets (backup em nuvem + restauraç
 pedidos.py          — CRUD de pedidos + sincronização de clientes
 utils.py            — Validações (telefone, hora), formatação (BRL, WhatsApp links), badges HTML
 pdf.py              — Geração de PDFs (recibos, lista de pedidos, clientes)
+telegram_format.py  — Formatação compartilhada das mensagens Telegram (stdlib-only)
 notificador.py      — Script standalone executado pelo GitHub Actions (Telegram)
 views/
   novo_pedido.py    — Formulário de criação de pedido
