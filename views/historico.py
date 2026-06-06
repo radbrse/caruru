@@ -81,6 +81,17 @@ def render():
         except Exception as e:
             logger.warning(f"Erro ao ordenar histórico: {e}")
 
+        # IDs visíveis (após filtro + ordenação) — usados pelos callbacks de seleção
+        ids_entregues = df_entregues['ID_Pedido'].tolist()
+
+        def _sel_todos():
+            for id_ in ids_entregues:
+                st.session_state[f"sel_hist_{id_}"] = True
+
+        def _limpar_sel():
+            for id_ in ids_entregues:
+                st.session_state[f"sel_hist_{id_}"] = False
+
         # Métricas
         st.markdown("### 📊 Resumo")
         col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7 = st.columns(7)
@@ -103,6 +114,48 @@ def render():
             if st.button("🗑️ Limpar Histórico", type="secondary", use_container_width=True):
                 st.session_state['confirmar_limpar_historico'] = True
                 st.rerun()
+
+        # Barra de seleção
+        selecionados = [id_ for id_ in ids_entregues if st.session_state.get(f"sel_hist_{id_}", False)]
+        col_s1, col_s2, col_s3 = st.columns([1, 1, 3])
+        with col_s1:
+            st.button("☑️ Selecionar todos", key="btn_sel_todos_hist", on_click=_sel_todos, use_container_width=True)
+        with col_s2:
+            st.button("⬜ Limpar seleção", key="btn_limpar_sel_hist", on_click=_limpar_sel, use_container_width=True)
+        with col_s3:
+            if selecionados:
+                if st.button(f"🗑️ Deletar {len(selecionados)} selecionado(s)", type="primary", key="btn_del_sel_hist", use_container_width=True):
+                    st.session_state['confirmar_deletar_selecionados'] = True
+                    st.rerun()
+
+        # Confirmação de exclusão seletiva
+        if st.session_state.get('confirmar_deletar_selecionados', False) and selecionados:
+            st.warning(f"⚠️ Excluir permanentemente {len(selecionados)} pedido(s) entregue(s)?")
+            st.error("⚠️ ESTA AÇÃO É IRREVERSÍVEL!")
+            col_ds1, col_ds2 = st.columns(2)
+            with col_ds1:
+                if st.button("✅ Sim, excluir selecionados", key="confirmar_del_sel_hist", type="primary", use_container_width=True):
+                    try:
+                        df_atual = st.session_state.pedidos
+                        df_atual = df_atual[~df_atual['ID_Pedido'].isin(selecionados)]
+                        if not salvar_pedidos(df_atual):
+                            st.error("❌ ERRO: Não foi possível excluir. Tente novamente.")
+                        else:
+                            st.session_state.pedidos = carregar_pedidos()
+                            registrar_alteracao("DELETAR_SELETIVO", 0, "Historico", f"{len(selecionados)} pedidos", "excluídos")
+                            sincronizar_automaticamente(operacao="excluir")
+                            logger.info(f"🗑️ Deleção seletiva: {len(selecionados)} pedidos removidos")
+                            _limpar_sel()
+                        st.session_state['confirmar_deletar_selecionados'] = False
+                        st.toast(f"🗑️ {len(selecionados)} pedido(s) excluído(s)!", icon="🗑️")
+                        st.rerun()
+                    except Exception as e:
+                        logger.error(f"Erro na deleção seletiva: {e}", exc_info=True)
+                        st.error(f"❌ Erro: {e}")
+            with col_ds2:
+                if st.button("❌ Cancelar", key="cancelar_del_sel_hist", use_container_width=True):
+                    st.session_state['confirmar_deletar_selecionados'] = False
+                    st.rerun()
 
         # Confirmação de limpeza de histórico
         if st.session_state.get('confirmar_limpar_historico', False):
@@ -161,8 +214,10 @@ def render():
                     </style>
                 """, unsafe_allow_html=True)
 
-                col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.4, 0.4])
+                col0, col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([0.25, 0.4, 1.5, 0.8, 0.7, 0.9, 0.9, 0.4, 0.4, 0.4])
 
+                with col0:
+                    st.checkbox("", key=f"sel_hist_{pedido['ID_Pedido']}", label_visibility="collapsed")
                 with col1:
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:700; color:#1f2937;'>#{int(pedido['ID_Pedido'])}</div>", unsafe_allow_html=True)
                 with col2:
