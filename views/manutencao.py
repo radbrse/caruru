@@ -29,6 +29,7 @@ from sheets import (
     ler_hora_notificacao, salvar_hora_notificacao,
     ler_ultima_data_envio, resetar_ultima_data_envio,
 )
+from telegram_format import formatar_mensagem
 
 
 def render():
@@ -769,72 +770,10 @@ def render():
 
                     st.info(f"📦 {len(df_filtrado)} pedido(s) para {data_alvo.strftime('%d/%m/%Y')}")
 
-                    dias_pt = {
-                        "Monday": "segunda-feira", "Tuesday": "terça-feira",
-                        "Wednesday": "quarta-feira", "Thursday": "quinta-feira",
-                        "Friday": "sexta-feira", "Saturday": "sábado", "Sunday": "domingo",
-                    }
-                    dia_sem = dias_pt.get(data_alvo.strftime("%A"), data_alvo.strftime("%A"))
-                    data_fmt = f"{data_alvo.strftime('%d/%m/%Y')} ({dia_sem})"
-
-                    if df_filtrado.empty:
-                        preview = (
-                            f"🍛 *Cantinho do Caruru*\n\n"
-                            f"📅 {data_fmt}\n\n"
-                            f"📭 Nenhum pedido cadastrado para esta data."
-                        )
-                    else:
-                        total_c = int(df_filtrado.get("Caruru", pd.Series(dtype=float)).fillna(0).astype(float).sum())
-                        total_b = int(df_filtrado.get("Bobo", pd.Series(dtype=float)).fillna(0).astype(float).sum())
-                        total_v = df_filtrado.get("Valor", pd.Series(dtype=float)).fillna(0).astype(float).sum()
-
-                        def _brl(v: float) -> str:
-                            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-                        def _falta_row(row) -> float:
-                            pag = str(row.get("Pagamento", "")).strip().upper()
-                            v = float(row.get("Valor") or 0)
-                            if pag == "NÃO PAGO": return v
-                            if pag == "METADE":   return v / 2
-                            return 0.0
-
-                        total_pendente = sum(_falta_row(r) for _, r in df_filtrado.iterrows())
-
-                        linhas = []
-                        for _, p in df_filtrado.iterrows():
-                            nome = str(p.get("Cliente", "?")).strip().title()
-                            qc = int(float(p.get("Caruru") or 0))
-                            qb = int(float(p.get("Bobo") or 0))
-                            itens = []
-                            if qc: itens.append(f"{qc} kg de Caruru")
-                            if qb: itens.append(f"{qb} kg de Bobó")
-                            hora = str(p.get("Hora", "")).strip()
-                            hora_fmt = hora[:5] if hora and hora != "nan" and len(hora) >= 5 else hora
-                            hora_str = f"  ⏰ {hora_fmt}" if hora_fmt and hora_fmt != "nan" else ""
-                            flags = []
-                            if str(p.get("Extra", "")).strip().lower() in ("true", "1", "sim"): flags.append("⚡ Extra")
-                            if str(p.get("Vegano", "")).strip().lower() in ("true", "1", "sim"): flags.append("🌿 Vegano")
-                            if str(p.get("Delivery", "")).strip().lower() in ("true", "1", "sim"): flags.append("🛵 Delivery")
-                            falta = _falta_row(p)
-                            if falta > 0:
-                                pag = str(p.get("Pagamento", "")).strip().upper()
-                                pag_label = f"{'💸' if pag == 'NÃO PAGO' else '🔸'} Falta {_brl(falta)}"
-                            else:
-                                pag_label = "✅ Pedido pago"
-                            linha1 = f"• *{nome}*{hora_str}"
-                            detalhes = itens + flags + [pag_label]
-                            linha2 = "  " + "  ".join(detalhes)
-                            linhas.append(f"{linha1}\n{linha2}")
-
-                        preview = (
-                            f"🍛 *Cantinho do Caruru*\n\n"
-                            f"📅 Pedidos: *{data_fmt}*\n\n"
-                            f"📦 *{len(df_filtrado)} pedido(s)*\n"
-                            f"🥘 Caruru: *{total_c} kg*  |  🦐 Bobó: *{total_b} kg*\n"
-                            f"💰 Total: *{_brl(total_v)}*\n"
-                            + (f"💸 A receber: *{_brl(total_pendente)}*\n" if total_pendente > 0 else "")
-                            + f"\n👥 *Clientes:*\n" + "\n\n".join(linhas)
-                        )
+                    # Usa a MESMA função do notificador.py — o preview reflete
+                    # exatamente a mensagem que será enviada (sem duplicação de lógica).
+                    pedidos_lista = df_filtrado.to_dict("records")
+                    preview = formatar_mensagem(pedidos_lista, data_alvo, rotulo_data="Pedidos")
 
                     with st.expander("👁️ Preview da mensagem", expanded=True):
                         st.text(preview)
