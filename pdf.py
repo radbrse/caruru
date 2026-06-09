@@ -374,156 +374,305 @@ def _quebrar_texto(p, texto, fonte, tamanho, largura):
     return lines
 
 
+def _valor_por_extenso(valor: float) -> str:
+    """Converte valor em reais para texto por extenso (até R$ 999.999,99)."""
+    _UNI = ["", "UM", "DOIS", "TRÊS", "QUATRO", "CINCO", "SEIS", "SETE", "OITO", "NOVE",
+            "DEZ", "ONZE", "DOZE", "TREZE", "QUATORZE", "QUINZE", "DEZESSEIS",
+            "DEZESSETE", "DEZOITO", "DEZENOVE"]
+    _DEZ = ["", "", "VINTE", "TRINTA", "QUARENTA", "CINQUENTA", "SESSENTA", "SETENTA", "OITENTA", "NOVENTA"]
+    _CEN = ["", "CENTO", "DUZENTOS", "TREZENTOS", "QUATROCENTOS", "QUINHENTOS",
+            "SEISCENTOS", "SETECENTOS", "OITOCENTOS", "NOVECENTOS"]
+
+    def _grupo(n):
+        """Converte 0-999 em lista de palavras."""
+        if n == 0:
+            return []
+        partes = []
+        if n >= 100:
+            c = n // 100
+            partes.append("CEM" if n == 100 else _CEN[c])
+            n %= 100
+        if n >= 20:
+            partes.append(_DEZ[n // 10])
+            n %= 10
+        if n > 0:
+            partes.append(_UNI[n])
+        return partes
+
+    try:
+        reais = int(round(valor))
+        centavos = round((valor - int(valor)) * 100)
+    except Exception:
+        return ""
+
+    if reais == 0 and centavos == 0:
+        return "ZERO REAIS"
+
+    partes = []
+    if reais >= 1000:
+        m = reais // 1000
+        g = _grupo(m)
+        partes.append("MIL" if m == 1 else f"{' E '.join(g)} MIL")
+        reais %= 1000
+    if reais > 0:
+        partes.extend(_grupo(reais))
+
+    total_int = int(round(valor))
+    result = f"{' E '.join(partes)} {'REAL' if total_int == 1 else 'REAIS'}"
+
+    if centavos > 0:
+        g_c = _grupo(centavos)
+        result += f" E {' E '.join(g_c)} {'CENTAVO' if centavos == 1 else 'CENTAVOS'}"
+
+    return result
+
+
+def _brl(v: float) -> str:
+    """Formata float em padrão brasileiro sem símbolo (ex.: 1.050,00)."""
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def gerar_orcamento_pdf(dados):
-    """Gera orçamento/proposta comercial em PDF."""
+    """Gera orçamento em PDF no modelo Cantinho do Caruru."""
     try:
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
-        desenhar_cabecalho(p, "ORÇAMENTO")
+        W, H = A4  # 595 × 842
 
-        agora = agora_brasil()
-        num_orc = agora.strftime("%Y%m%d%H%M")
-        y = 700
+        CORAL = colors.HexColor('#E55740')
+        CINZA_SEP = colors.HexColor('#CCCCCC')
+        CINZA_ZEBRA = colors.HexColor('#F8F8F8')
+        MARG = 25
+        LARG = W - 2 * MARG  # 545
 
-        # Número e datas
-        p.setFont("Helvetica", 9)
-        p.setFillColor(colors.grey)
-        p.drawString(30, y, f"Nº {num_orc}")
-        p.drawString(300, y, f"Emitido em: {agora.strftime('%d/%m/%Y %H:%M')}")
-        validade = dados.get('Validade')
-        if validade:
-            val_s = validade.strftime('%d/%m/%Y') if hasattr(validade, 'strftime') else str(validade)
-            p.drawString(300, y - 14, f"Válido até: {val_s}")
-            y -= 14
-        p.setFillColor(colors.black)
-        y -= 28
+        # ── LOGO ──────────────────────────────────────────────────────
+        logo_h = 67
+        logo_w = 70
+        logo_x = (W - logo_w) / 2
+        logo_y = H - 25 - logo_h  # bottom-left of logo image
+        if os.path.exists("logo.png"):
+            try:
+                p.drawImage("logo.png", logo_x, logo_y, width=logo_w, height=logo_h,
+                            mask='auto', preserveAspectRatio=True)
+            except Exception:
+                pass
 
-        # Dados do cliente
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(30, y, "DADOS DO CLIENTE")
-        y -= 18
-        p.setFont("Helvetica", 11)
-        p.drawString(30, y, f"Nome: {dados.get('Cliente', '')}")
-        contato = dados.get('Contato', '')
-        if contato:
-            p.drawString(300, y, f"WhatsApp: {contato}")
-        y -= 35
-
-        # Cabeçalho da tabela de itens
-        p.setFillColor(colors.HexColor('#2c3e50'))
-        p.rect(30, y - 5, 535, 22, fill=1, stroke=0)
+        # ── BANNER ────────────────────────────────────────────────────
+        ban_y = logo_y - 2         # top of banner = bottom of logo gap
+        ban_h = 24
+        p.setFillColor(CORAL)
+        p.rect(MARG, ban_y - ban_h, LARG, ban_h, fill=1, stroke=0)
         p.setFillColor(colors.white)
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(40, y, "ITEM")
-        p.drawString(310, y, "QTD")
-        p.drawString(390, y, "UNIT.")
-        p.drawString(480, y, "SUBTOTAL")
-        p.setFillColor(colors.black)
-        y -= 28
+        p.setFont("Helvetica-Bold", 18)
+        p.drawCentredString(W / 2, ban_y - ban_h + 5, "P  E  D  I  D  O")
 
-        # Cálculos
+        # ── EMPRESA (esquerda) / CLIENTE (direita) ────────────────────
+        bloco_y = ban_y - ban_h - 14  # first text line
+
+        p.setFillColor(CORAL)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(MARG, bloco_y, "CANTINHO DO CARURU")
+
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica", 9)
+        p.drawString(MARG, bloco_y - 14, "(79) 99929-6722")
+        p.drawString(MARG, bloco_y - 27, "@cantinhodocaruru")
+
+        cli_x = W / 2 + 15
+        p.setFillColor(CORAL)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawRightString(W - MARG, bloco_y, "CLIENTE:")
+
+        cliente_nome = str(dados.get('Cliente', '')).strip().title()
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 13)
+        p.drawString(cli_x, bloco_y - 14, cliente_nome)
+
+        p.setFont("Helvetica", 9)
+        contato = str(dados.get('Contato', '')).strip()
+        if contato:
+            p.drawString(cli_x, bloco_y - 28, contato)
+
+        endereco = str(dados.get('Endereco', '')).strip()
+        if endereco:
+            # wrap if long
+            end_lines = _quebrar_texto(p, endereco, "Helvetica", 9, W - MARG - cli_x - 5)
+            for i, ln in enumerate(end_lines[:2]):
+                p.drawString(cli_x, bloco_y - 41 - i * 12, ln)
+
+        # ── SEPARADOR ─────────────────────────────────────────────────
+        sep_y = bloco_y - 56
+        p.setStrokeColor(CINZA_SEP)
+        p.setLineWidth(0.5)
+        p.line(MARG, sep_y, W - MARG, sep_y)
+
+        # ── TABELA PRODUTOS ───────────────────────────────────────────
+        # Colunas (x): PRODUTO | QUANTIDADE | VALOR KG | TOTAL
+        PC2 = 228   # início QUANTIDADE
+        PC3 = 370   # início VALOR KG
+        PC4 = 480   # início TOTAL
+
+        HDR_H = 22
+        ROW_H = 20
+
+        tbl_top = sep_y - 8
+
+        p.setFillColor(CORAL)
+        p.rect(MARG, tbl_top - HDR_H, LARG, HDR_H, fill=1, stroke=0)
+        p.setFillColor(colors.white)
+        p.setFont("Helvetica-Bold", 9)
+        hy = tbl_top - HDR_H + 7
+        p.drawString(MARG + 10, hy, "PRODUTO")
+        p.drawCentredString((PC2 + PC3) / 2, hy, "QUANTIDADE")
+        p.drawCentredString((PC3 + PC4) / 2, hy, "VALOR KG")
+        p.drawCentredString((PC4 + W - MARG) / 2, hy, "TOTAL")
+
         preco_atual = obter_preco_base()
-        preco_fmt = f"R$ {preco_atual:.2f}".replace(".", ",")
         caruru = float(dados.get('Caruru', 0))
         bobo = float(dados.get('Bobo', 0))
         desconto = float(dados.get('Desconto', 0))
+
+        itens = []
+        if caruru > 0:
+            itens.append(("CARURU", f"{int(caruru)} KG", preco_atual, caruru * preco_atual))
+        if bobo > 0:
+            itens.append(("BOBÓ DE CAMARÃO", f"{int(bobo)} KG", preco_atual, bobo * preco_atual))
+
+        row_y = tbl_top - HDR_H
+        for i, (nome, qtd, preco_kg, total_item) in enumerate(itens):
+            row_y -= ROW_H
+            p.setFillColor(CINZA_ZEBRA if i % 2 == 0 else colors.white)
+            p.rect(MARG, row_y, LARG, ROW_H, fill=1, stroke=0)
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 10)
+            ty = row_y + 6
+            p.drawString(MARG + 10, ty, nome)
+            p.drawCentredString((PC2 + PC3) / 2, ty, qtd)
+            p.drawCentredString((PC3 + PC4) / 2, ty, _brl(preco_kg))
+            p.drawCentredString((PC4 + W - MARG) / 2, ty, _brl(total_item))
+            # separadores verticais internos
+            p.setStrokeColor(CINZA_SEP)
+            p.setLineWidth(0.3)
+            for cx in [PC2, PC3, PC4]:
+                p.line(cx, row_y, cx, row_y + ROW_H)
+
+        # borda da tabela
+        p.setStrokeColor(CINZA_SEP)
+        p.setLineWidth(0.5)
+        p.rect(MARG, row_y, LARG, tbl_top - row_y, fill=0, stroke=1)
+
+        # ── TABELA ENTREGA ────────────────────────────────────────────
+        DC2 = 165   # início LOCAL
+        DC3 = 415   # início HORÁRIO
+
+        del_top = row_y - 10
+
+        p.setFillColor(CORAL)
+        p.rect(MARG, del_top - HDR_H, LARG, HDR_H, fill=1, stroke=0)
+        p.setFillColor(colors.white)
+        p.setFont("Helvetica-Bold", 9)
+        dhy = del_top - HDR_H + 7
+        p.drawCentredString((MARG + DC2) / 2, dhy, "DATA")
+        p.drawCentredString((DC2 + DC3) / 2, dhy, "LOCAL")
+        p.drawCentredString((DC3 + W - MARG) / 2, dhy, "HORÁRIO")
+
+        del_row_y = del_top - HDR_H - ROW_H
+        p.setFillColor(colors.white)
+        p.rect(MARG, del_row_y, LARG, ROW_H, fill=1, stroke=0)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica", 10)
+        dty = del_row_y + 6
+
+        data = dados.get('Data')
+        data_s = data.strftime('%d/%m/%Y') if hasattr(data, 'strftime') else str(data) if data else ""
+        local_s = str(dados.get('Local', '')).strip()
+        hora_s = str(dados.get('Hora', '')).strip()
+
+        p.drawCentredString((MARG + DC2) / 2, dty, data_s)
+        p.drawCentredString((DC2 + DC3) / 2, dty, local_s)
+        p.drawCentredString((DC3 + W - MARG) / 2, dty, hora_s)
+
+        p.setStrokeColor(CINZA_SEP)
+        p.setLineWidth(0.3)
+        for cx in [DC2, DC3]:
+            p.line(cx, del_row_y, cx, del_row_y + ROW_H)
+        p.setLineWidth(0.5)
+        p.rect(MARG, del_row_y, LARG, del_top - del_row_y, fill=0, stroke=1)
+
+        # ── SEÇÃO INFERIOR: OBS (esq) | TOTAL + PAGAMENTO (dir) ──────
+        bot_top = del_row_y - 15
         subtotal_bruto = (caruru + bobo) * preco_atual
         desconto_valor = subtotal_bruto * desconto / 100
         total = subtotal_bruto - desconto_valor
 
-        # Linhas de itens com zebra
-        linha_par = True
-        p.setFont("Helvetica", 10)
-        if caruru > 0:
-            if linha_par:
-                p.setFillColor(colors.HexColor('#f2f3f4'))
-                p.rect(30, y - 4, 535, 17, fill=1, stroke=0)
-                p.setFillColor(colors.black)
-            sub_fmt = f"R$ {caruru * preco_atual:.2f}".replace(".", ",")
-            p.drawString(40, y, "Caruru Tradicional")
-            p.drawString(310, y, f"{int(caruru)} kg")
-            p.drawString(390, y, preco_fmt)
-            p.drawString(480, y, sub_fmt)
-            y -= 18
-            linha_par = not linha_par
+        # Coluna direita
+        rx = W / 2 + 10       # x início coluna direita
+        rw = W - MARG - rx    # largura coluna direita (~238)
 
-        if bobo > 0:
-            if linha_par:
-                p.setFillColor(colors.HexColor('#f2f3f4'))
-                p.rect(30, y - 4, 535, 17, fill=1, stroke=0)
-                p.setFillColor(colors.black)
-            sub_fmt = f"R$ {bobo * preco_atual:.2f}".replace(".", ",")
-            p.drawString(40, y, "Bobó de Camarão")
-            p.drawString(310, y, f"{int(bobo)} kg")
-            p.drawString(390, y, preco_fmt)
-            p.drawString(480, y, sub_fmt)
-            y -= 18
-
-        p.setLineWidth(1)
-        p.line(30, y - 8, 565, y - 8)
-        y -= 28
-
-        # Subtotal
-        p.setFont("Helvetica", 11)
-        p.drawString(380, y, "Subtotal:")
-        p.drawRightString(565, y, f"R$ {subtotal_bruto:.2f}".replace(".", ","))
-        y -= 18
-
-        # Desconto (se houver)
-        if desconto > 0:
-            p.setFont("Helvetica-Oblique", 10)
-            p.setFillColor(colors.red)
-            p.drawString(380, y, f"Desconto ({desconto:.0f}%):")
-            p.drawRightString(565, y, f"- R$ {desconto_valor:.2f}".replace(".", ","))
-            p.setFillColor(colors.black)
-            y -= 18
-
-        # Box de total destacado
-        y -= 8
-        p.setFillColor(colors.HexColor('#eaf4fb'))
-        p.rect(330, y - 8, 235, 26, fill=1, stroke=0)
-        p.setFillColor(colors.HexColor('#1a5276'))
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(345, y, "TOTAL:")
-        p.drawRightString(558, y, f"R$ {total:.2f}".replace(".", ","))
-        p.setFillColor(colors.black)
-        y -= 45
-
-        # Pagamento
-        p.setFont("Helvetica-Bold", 11)
-        p.drawString(30, y, "PAGAMENTO")
-        y -= 18
-        p.setFont("Helvetica", 10)
-        p.drawString(30, y, f"Chave PIX: {CHAVE_PIX}")
-        y -= 30
-
-        # Observações
-        obs = dados.get('Observacoes', '')
-        if obs:
-            p.setFont("Helvetica-Bold", 11)
-            p.drawString(30, y, "OBSERVAÇÕES")
-            y -= 16
-            p.setFont("Helvetica-Oblique", 9)
-            for line in _quebrar_texto(p, obs, "Helvetica-Oblique", 9, 535):
-                p.drawString(30, y, line)
-                y -= 12
-            y -= 10
-
-        # Linhas de assinatura
-        y_ass = max(y - 40, 110)
-        p.setFont("Helvetica", 9)
-        p.setFillColor(colors.grey)
-        p.drawString(30, y_ass + 20, "Para confirmar este orçamento, assine abaixo e realize o pagamento via PIX.")
-        p.setFillColor(colors.black)
+        # Caixa TOTAL
+        tot_h = 42
+        tot_y = bot_top - tot_h
+        p.setStrokeColor(CINZA_SEP)
         p.setLineWidth(0.8)
-        p.line(30, y_ass, 250, y_ass)
-        p.drawCentredString(140, y_ass - 14, "Assinatura do Cliente")
-        p.line(310, y_ass, 565, y_ass)
-        p.drawCentredString(437, y_ass - 14, "Data de Aceite")
+        p.rect(rx, tot_y, rw, tot_h, fill=0, stroke=1)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 12)
+        total_txt = f"TOTAL: {_brl(total)}"
+        p.drawCentredString(rx + rw / 2, tot_y + tot_h / 2 - 4, total_txt)
 
-        p.setFont("Helvetica-Oblique", 8)
+        # Extenso abaixo da caixa
+        extenso = _valor_por_extenso(total)
+        ext_lines = _quebrar_texto(p, f"({extenso}).", "Helvetica-Oblique", 7, rw)
+        ext_y = tot_y - 10
+        p.setFont("Helvetica-Oblique", 7)
+        p.setFillColor(colors.HexColor('#555555'))
+        for ln in ext_lines:
+            p.drawCentredString(rx + rw / 2, ext_y, ln)
+            ext_y -= 9
+
+        # Caixa FORMA DE PAGAMENTO
+        forma_pag = str(dados.get('FormaPagamento', '')).strip()
+        fpag_lines = _quebrar_texto(p, forma_pag, "Helvetica", 8.5, rw - 10) if forma_pag else []
+        fpag_h = max(40, 18 + len(fpag_lines) * 11 + 8)
+        fpag_y = ext_y - 8 - fpag_h
+        p.setStrokeColor(CINZA_SEP)
+        p.setLineWidth(0.8)
+        p.rect(rx, fpag_y, rw, fpag_h, fill=0, stroke=1)
+        # título
+        p.setFillColor(CORAL)
+        p.rect(rx, fpag_y + fpag_h - 16, rw, 16, fill=1, stroke=0)
+        p.setFillColor(colors.white)
+        p.setFont("Helvetica-Bold", 8)
+        p.drawCentredString(rx + rw / 2, fpag_y + fpag_h - 11, "FORMA DE PAGAMENTO")
+        # texto
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica", 8.5)
+        fpag_ty = fpag_y + fpag_h - 28
+        for ln in fpag_lines:
+            p.drawString(rx + 7, fpag_ty, ln)
+            fpag_ty -= 11
+
+        # Coluna esquerda: OBSERVAÇÕES
+        obs = str(dados.get('Observacoes', '')).strip()
+        if obs:
+            p.setFillColor(CORAL)
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(MARG, bot_top, "OBSERVAÇÕES:")
+            obs_y = bot_top - 15
+            p.setFillColor(colors.black)
+            p.setFont("Helvetica", 8.5)
+            obs_lines = _quebrar_texto(p, obs, "Helvetica", 8.5, rx - MARG - 15)
+            for ln in obs_lines:
+                if obs_y < 35:
+                    break
+                p.drawString(MARG, obs_y, ln)
+                obs_y -= 11
+
+        # ── RODAPÉ ────────────────────────────────────────────────────
+        p.setFont("Helvetica", 7)
         p.setFillColor(colors.grey)
-        p.drawCentredString(300, 30, f"Cantinho do Caruru | Orçamento Nº {num_orc} | {agora.strftime('%d/%m/%Y %H:%M')}")
+        p.drawCentredString(W / 2, 18,
+            f"Cantinho do Caruru  |  Emitido em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
 
         p.showPage()
         p.save()

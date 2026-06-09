@@ -121,10 +121,12 @@ def render():
 
             orc_contato_input = st.text_input("📱 WhatsApp", value=contato_orc, placeholder="79999999999", key="orc_contato")
 
+        orc_endereco = st.text_input("📍 Endereço do cliente", placeholder="Rua Leopoldo Mesquita, 125, Grageru", key="orc_endereco")
+
         # --- Itens e valores ---
         st.markdown("#### 2️⃣ Itens e Valores")
         preco_atual = obter_preco_base()
-        st.caption(f"💵 Preço unitário atual: **R$ {preco_atual:.2f}/kg**")
+        st.caption(f"💵 Preço por kg: **R$ {preco_atual:.2f}**")
 
         col_c, col_b, col_d = st.columns(3)
         with col_c:
@@ -145,20 +147,27 @@ def render():
             with col_prev2:
                 st.metric("Desconto", f"- {formatar_valor_br(desconto_valor)}" if orc_desconto > 0 else "—")
             with col_prev3:
-                st.metric("**Total**", formatar_valor_br(total_orc))
+                st.metric("Total", formatar_valor_br(total_orc))
 
-        # --- Validade e observações ---
-        st.markdown("#### 3️⃣ Complemento")
-        col_v, col_obs = st.columns([1, 2])
-        with col_v:
-            orc_validade = st.date_input(
-                "📅 Validade do orçamento",
-                value=hoje_brasil() + timedelta(days=7),
-                format="DD/MM/YYYY",
-                key="orc_validade"
-            )
-        with col_obs:
-            orc_obs = st.text_area("📝 Observações", placeholder="Ex: Retirada no local, embalagem inclusa...", key="orc_obs")
+        # --- Entrega ---
+        st.markdown("#### 3️⃣ Entrega")
+        col_data, col_local, col_hora = st.columns([1, 2, 1])
+        with col_data:
+            orc_data = st.date_input("📅 Data", value=None, format="DD/MM/YYYY", key="orc_data")
+        with col_local:
+            orc_local = st.text_input("📍 Local / Espaço", placeholder="Espaço Villa Rica", key="orc_local")
+        with col_hora:
+            orc_hora = st.text_input("⏰ Horário", placeholder="11h", key="orc_hora")
+
+        # --- Pagamento e Observações ---
+        st.markdown("#### 4️⃣ Pagamento e Observações")
+        orc_forma_pag = st.text_area(
+            "💳 Forma de pagamento",
+            placeholder="Ex: Entrada de 50% até dia 21/06 + 50% no ato da entrega, dia 20/12.",
+            height=80,
+            key="orc_forma_pag"
+        )
+        orc_obs = st.text_area("📝 Observações", placeholder="Ex: Panelas serão disponibilizadas gratuitamente...", key="orc_obs", height=80)
 
         # --- Geração do PDF ---
         st.divider()
@@ -169,13 +178,17 @@ def render():
         if st.button("📋 Gerar Orçamento PDF", use_container_width=True, type="primary",
                      key="btn_gerar_orcamento", disabled=not pode_gerar):
             dados_orc = {
-                'Cliente':    orc_cliente,
-                'Contato':    orc_contato_input,
-                'Caruru':     orc_caruru,
-                'Bobo':       orc_bobo,
-                'Desconto':   orc_desconto,
-                'Validade':   orc_validade,
-                'Observacoes': orc_obs,
+                'Cliente':        orc_cliente,
+                'Contato':        orc_contato_input,
+                'Endereco':       orc_endereco,
+                'Caruru':         orc_caruru,
+                'Bobo':           orc_bobo,
+                'Desconto':       orc_desconto,
+                'Data':           orc_data,
+                'Local':          orc_local,
+                'Hora':           orc_hora,
+                'FormaPagamento': orc_forma_pag,
+                'Observacoes':    orc_obs,
             }
             pdf = gerar_orcamento_pdf(dados_orc)
             if pdf:
