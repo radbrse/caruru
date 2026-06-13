@@ -94,7 +94,7 @@ def render():
 
         # Métricas
         st.markdown("### 📊 Resumo")
-        col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7 = st.columns(7)
+        col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7 = st.columns([1, 1, 1, 1.6, 1, 1, 1.4])
         with col_m1:
             st.metric("📦 Entregas", len(df_entregues))
         with col_m2:
@@ -103,7 +103,7 @@ def render():
             st.metric("🦐 Bobó", int(df_entregues['Bobo'].sum()))
         with col_m4:
             valor_total = df_entregues['Valor'].sum()
-            st.metric("💰 Valor Total", formatar_valor_br(valor_total))
+            st.metric("💰 Total (R$)", formatar_valor_br(valor_total).replace("R$ ", ""))
         with col_m5:
             df_pagos = df_entregues[df_entregues['Pagamento'] == "PAGO"]
             st.metric("✅ Pagos", len(df_pagos))
