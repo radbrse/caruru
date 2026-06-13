@@ -92,7 +92,8 @@ def render():
                 res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
                 if not res.empty:
                     contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
-            except:
+            except Exception as e:
+                logger.warning(f"Erro ao buscar contato do cliente '{c_sel}': {e}")
                 contato_cliente = ""
         else:
             c_sel = ""  # Reseta para vazio se for "-- Selecione --"

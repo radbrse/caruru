@@ -264,7 +264,7 @@ def render():
                                 clientes_lista = sorted(st.session_state.clientes['Nome'].astype(str).unique().tolist())
                                 try:
                                     idx_cliente = clientes_lista.index(pedido_atual['Cliente']) if pedido_atual['Cliente'] in clientes_lista else 0
-                                except:
+                                except Exception:
                                     idx_cliente = 0
                                 novo_cliente = st.selectbox("👤 Cliente", clientes_lista, index=idx_cliente)
                             with col_e2:
@@ -279,14 +279,21 @@ def render():
                                 _hora_val = pedido_atual['Hora'] if isinstance(pedido_atual['Hora'], time) else time(12, 0)
                                 nova_hora = st.time_input("⏰ Hora Retirada", value=_hora_val)
 
-                            # Quantidades
+                            # Quantidades — conversão defensiva: dados de CSV/Sheets podem
+                            # conter valores não numéricos que derrubariam int() direto
+                            def _int_seguro(v, default=0):
+                                try:
+                                    return int(float(v))
+                                except (ValueError, TypeError):
+                                    return default
+
                             col_e5, col_e6, col_e7 = st.columns(3)
                             with col_e5:
-                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']))
+                                novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=_int_seguro(pedido_atual['Caruru']))
                             with col_e6:
-                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']))
+                                novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=_int_seguro(pedido_atual['Bobo']))
                             with col_e7:
-                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']))
+                                novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=min(_int_seguro(pedido_atual['Desconto']), 100))
 
                             # Pagamento e status
                             col_e8, col_e9 = st.columns(2)

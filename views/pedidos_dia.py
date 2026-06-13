@@ -189,7 +189,12 @@ def render():
                         with col_sim_ent:
                             if st.button("✅ SIM, CONFIRMAR", key=f"sim_entregue_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                                 from config import agora_brasil
-                                idx_original = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']].index[0]
+                                _match = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']]
+                                if _match.empty:
+                                    st.warning(f"⚠️ Pedido #{int(pedido['ID_Pedido'])} não está mais disponível (pode ter sido excluído ou sincronizado).")
+                                    del st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"]
+                                    st.stop()
+                                idx_original = _match.index[0]
                                 status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
                                 pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
 

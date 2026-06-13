@@ -20,7 +20,7 @@ def desenhar_cabecalho(p, titulo):
     if os.path.exists("logo.png"):
         try:
             p.drawImage("logo.png", 20, 750, width=100, height=50, mask='auto', preserveAspectRatio=True)
-        except:
+        except Exception:
             pass
     p.setFont("Helvetica-Bold", 16)
     p.drawString(150, 775, "Cantinho do Caruru")

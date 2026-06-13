@@ -3,7 +3,7 @@ import pandas as pd
 
 from config import logger
 from utils import limpar_telefone, formatar_valor_br, validar_telefone
-from database import salvar_clientes, carregar_clientes, salvar_pedidos, registrar_alteracao
+from database import salvar_clientes, carregar_clientes, salvar_pedidos, carregar_pedidos, registrar_alteracao
 from pedidos import sincronizar_dados_cliente, sincronizar_contatos_pedidos
 from pdf import gerar_lista_clientes_pdf
 from sheets import sincronizar_automaticamente
@@ -71,7 +71,10 @@ def render():
                 edited_limpo['Contato'] = edited_limpo['Contato'].fillna("").astype(str).apply(limpar_telefone)
                 edited_limpo['Observacoes'] = edited_limpo['Observacoes'].fillna("").astype(str).str.strip()
 
-                # Detecta mudanças de nome e telefone e sincroniza com pedidos
+                # Detecta mudanças de nome e telefone e sincroniza com pedidos.
+                # Se a propagação para os pedidos falhar, NÃO salva os clientes —
+                # evita estado inconsistente (cliente com dado novo, pedidos com dado antigo).
+                falha_propagacao = False
                 for idx in edited_limpo.index:
                     nome_novo = edited_limpo.loc[idx, 'Nome']
                     contato_novo = edited_limpo.loc[idx, 'Contato']
@@ -87,6 +90,7 @@ def render():
                                 st.session_state.pedidos.loc[mask_nome, 'Cliente'] = nome_novo
                                 if not salvar_pedidos(st.session_state.pedidos):
                                     st.error(f"❌ ERRO: Não foi possível renomear '{nome_antigo}' nos pedidos.")
+                                    falha_propagacao = True
                                 else:
                                     registrar_alteracao("EDITAR", "CLIENTE", "Nome", nome_antigo, nome_novo)
                                     st.info(f"✏️ Cliente '{nome_antigo}' renomeado para '{nome_novo}' em {qtd_rename} pedido(s)")
@@ -102,8 +106,14 @@ def render():
                                 st.session_state.pedidos.loc[mask_pedidos, 'Contato'] = contato_novo
                                 if not salvar_pedidos(st.session_state.pedidos):
                                     st.error("❌ ERRO: Não foi possível atualizar telefones nos pedidos.")
+                                    falha_propagacao = True
                                 else:
                                     st.info(f"📱 Telefone de '{nome_novo}' atualizado em {qtd_pedidos} pedido(s)")
+
+                if falha_propagacao:
+                    st.error("❌ As alterações dos clientes NÃO foram salvas porque a atualização dos pedidos falhou. Tente novamente.")
+                    st.session_state.pedidos = carregar_pedidos()
+                    st.stop()
 
                 st.session_state.clientes = edited_limpo
 
