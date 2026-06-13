@@ -149,7 +149,7 @@ def validar_hora(hora):
         for fmt in ["%H:%M", "%H:%M:%S", "%I:%M %p"]:
             try:
                 return datetime.strptime(hora_str, fmt).time(), None
-            except:
+            except ValueError:
                 continue
 
         parsed = pd.to_datetime(hora_str, errors='coerce')

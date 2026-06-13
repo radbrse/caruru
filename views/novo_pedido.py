@@ -11,15 +11,28 @@ from database import carregar_pedidos, carregar_clientes
 def render():
     st.title("📝 Novo Pedido")
 
+    # Keys dos widgets do formulário — usados para limpar manualmente após salvar.
+    # O form NÃO usa clear_on_submit: se usasse, clicar em "CORRIGIR DATA" no dialog
+    # de confirmação voltaria para um formulário já apagado, perdendo tudo digitado.
+    _FORM_KEYS = [
+        'np_contato', 'np_data', 'np_hora', 'np_caruru', 'np_bobo', 'np_desconto',
+        'np_obs', 'np_pagamento', 'np_status', 'np_extra', 'np_vegano', 'np_delivery',
+    ]
+
+    def _limpar_form():
+        for k in _FORM_KEYS:
+            st.session_state.pop(k, None)
+
     # Botão para limpar o formulário
     col_titulo, col_limpar = st.columns([4, 1])
     with col_limpar:
         if st.button("🔄 Limpar", help="Limpar todos os campos do formulário", key="btn_limpar_novo_pedido"):
             # Remove todas as keys relacionadas ao formulário
-            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo']
+            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo', 'np_cliente_anterior']
             for key in keys_to_delete:
                 if key in st.session_state:
                     del st.session_state[key]
+            _limpar_form()
             st.rerun()
 
     # Verifica se deve resetar o cliente (após salvar pedido)
@@ -29,6 +42,8 @@ def render():
             del st.session_state['sel_cliente_novo']
         if 'cliente_novo_index' in st.session_state:
             del st.session_state['cliente_novo_index']
+        st.session_state.pop('np_cliente_anterior', None)
+        _limpar_form()
         st.session_state.resetar_cliente_novo = False
         logger.info("Formulário de novo pedido resetado com sucesso")
 
@@ -77,7 +92,8 @@ def render():
                 res = st.session_state.clientes[st.session_state.clientes['Nome'] == c_sel]
                 if not res.empty:
                     contato_cliente = str(res.iloc[0]['Contato']) if pd.notna(res.iloc[0]['Contato']) else ""
-            except:
+            except Exception as e:
+                logger.warning(f"Erro ao buscar contato do cliente '{c_sel}': {e}")
                 contato_cliente = ""
         else:
             c_sel = ""  # Reseta para vazio se for "-- Selecione --"
@@ -89,13 +105,20 @@ def render():
 
     st.markdown("### 2️⃣ Dados do Pedido")
 
-    # Usar form com clear_on_submit para limpar automaticamente
-    with st.form("form_novo_pedido", clear_on_submit=True):
+    # Auto-preenche o WhatsApp quando o cliente selecionado muda (antes do form instanciar o widget)
+    if not eh_novo and st.session_state.get('np_cliente_anterior') != c_sel:
+        st.session_state['np_cliente_anterior'] = c_sel
+        st.session_state['np_contato'] = contato_cliente
+
+    # Form SEM clear_on_submit: os valores precisam sobreviver ao submit para que
+    # "CORRIGIR DATA" no dialog devolva o formulário preenchido. A limpeza é manual
+    # (_limpar_form) e só acontece após o pedido ser salvo com sucesso.
+    with st.form("form_novo_pedido"):
         c1, c2, c3 = st.columns(3)
         with c1:
-            cont = st.text_input("📱 WhatsApp", value=contato_cliente, placeholder="79999999999")
+            cont = st.text_input("📱 WhatsApp", placeholder="79999999999", key="np_contato")
         with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY")
+            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY", key="np_data")
             # Mostra a data por extenso para confirmação visual
             meses = {
                 1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
@@ -110,37 +133,37 @@ def render():
             data_extenso = f"{dia_semana}, {dt.day} de {meses[dt.month]} de {dt.year}"
             st.caption(f"📆 **{data_extenso}**")
         with c3:
-            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido")
+            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="np_hora")
 
         st.markdown("### 3️⃣ Itens do Pedido")
         c3, c4, c5 = st.columns(3)
         with c3:
-            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0)
+            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0, key="np_caruru")
         with c4:
-            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0)
+            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0, key="np_bobo")
         with c5:
-            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0)
+            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0, key="np_desconto")
 
         # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
         preco_atual = obter_preco_base()
         st.caption(f"💵 Preço unitário: R$ {preco_atual:.2f} | Cálculo: (Caruru + Bobó) × R$ {preco_atual:.2f} - Desconto%")
 
-        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...")
+        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...", key="np_obs")
 
         _PAGAMENTO_DISPLAY = ["💳 SELECIONAR", "✅ PAGO", "❌ NÃO PAGO", "🔸 METADE"]
         _PAGAMENTO_VALOR  = {"💳 SELECIONAR": None, "✅ PAGO": "PAGO", "❌ NÃO PAGO": "NÃO PAGO", "🔸 METADE": "METADE"}
 
         c6, c7, c8, c9, c10 = st.columns([2, 2, 1, 1, 1])
         with c6:
-            pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY)
+            pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY, key="np_pagamento")
         with c7:
-            stt = st.selectbox("📊 Status", OPCOES_STATUS)
+            stt = st.selectbox("📊 Status", OPCOES_STATUS, key="np_status")
         with c8:
-            eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual")
+            eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual", key="np_extra")
         with c9:
-            eh_vegano = st.checkbox("🌿 Vegano", help="Pedido sem ingredientes de origem animal")
+            eh_vegano = st.checkbox("🌿 Vegano", help="Pedido sem ingredientes de origem animal", key="np_vegano")
         with c10:
-            eh_delivery = st.checkbox("🛵 Delivery", help="Pedido será entregue (em vez de retirada)")
+            eh_delivery = st.checkbox("🛵 Delivery", help="Pedido será entregue (em vez de retirada)", key="np_delivery")
 
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")

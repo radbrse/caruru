@@ -108,6 +108,7 @@ def confirmar_data_pedido():
 
     with col_cancela:
         if st.button("❌ CORRIGIR DATA", use_container_width=True, key="btn_corrigir_data_pedido"):
-            # Remove o pedido pendente e volta para o formulário
+            # Fecha o dialog e volta para o formulário, que continua preenchido
+            # (o form de novo_pedido.py não usa clear_on_submit justamente para isso)
             del st.session_state.pedido_pendente
             st.rerun()
