@@ -19,30 +19,34 @@ def render():
         'np_obs', 'np_pagamento', 'np_status', 'np_extra', 'np_vegano', 'np_delivery',
     ]
 
+    # Keys do bloco "Cliente" (fora do form) que precisam ser resetadas após salvar:
+    # toggle "Novo", nome digitado, selectbox e estado auxiliar.
+    _CLIENTE_KEYS = [
+        'toggle_novo_cliente', 'input_novo_cliente',
+        'sel_cliente_novo', 'cliente_novo_index', 'np_cliente_anterior',
+    ]
+
     def _limpar_form():
         for k in _FORM_KEYS:
+            st.session_state.pop(k, None)
+
+    def _limpar_cliente():
+        for k in _CLIENTE_KEYS:
             st.session_state.pop(k, None)
 
     # Botão para limpar o formulário
     col_titulo, col_limpar = st.columns([4, 1])
     with col_limpar:
         if st.button("🔄 Limpar", help="Limpar todos os campos do formulário", key="btn_limpar_novo_pedido"):
-            # Remove todas as keys relacionadas ao formulário
-            keys_to_delete = ['cliente_novo_index', 'sel_cliente_novo', 'resetar_cliente_novo', 'np_cliente_anterior']
-            for key in keys_to_delete:
-                if key in st.session_state:
-                    del st.session_state[key]
+            st.session_state.pop('resetar_cliente_novo', None)
+            _limpar_cliente()
             _limpar_form()
             st.rerun()
 
     # Verifica se deve resetar o cliente (após salvar pedido)
     if st.session_state.get('resetar_cliente_novo', False):
-        # Deleta as keys do selectbox para forçar reset
-        if 'sel_cliente_novo' in st.session_state:
-            del st.session_state['sel_cliente_novo']
-        if 'cliente_novo_index' in st.session_state:
-            del st.session_state['cliente_novo_index']
-        st.session_state.pop('np_cliente_anterior', None)
+        # Reset roda ANTES dos widgets serem instanciados → seguro deletar as keys
+        _limpar_cliente()
         _limpar_form()
         st.session_state.resetar_cliente_novo = False
         logger.info("Formulário de novo pedido resetado com sucesso")
