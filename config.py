@@ -28,17 +28,18 @@ ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
 ARQUIVO_HISTORICO = "historico_alteracoes.csv"
 ARQUIVO_CONFIG = "config.json"
 def _carregar_chave_pix():
-    """Lê a chave PIX exclusivamente de st.secrets["chave_pix"].
+    """Lê a chave PIX de st.secrets["chave_pix"], com fallback embutido.
 
-    Sem fallback hardcoded (evita expor dado pessoal no repositório público).
-    Se o secret não estiver configurado, retorna "" — o PIX aparece em branco
-    nos PDFs/mensagens, sinalizando que falta configurar o secret.
+    A chave PIX é de RECEBIMENTO — feita para ser compartilhada com clientes
+    que vão pagar as encomendas —, então não é um segredo. Manter o fallback
+    garante que o PIX apareça nos PDFs/mensagens mesmo sem o secret configurado.
     """
+    _FALLBACK_PIX = "79999296722"
     try:
         import streamlit as st
-        return str(st.secrets.get("chave_pix", "")).strip()
+        return str(st.secrets.get("chave_pix", _FALLBACK_PIX)).strip() or _FALLBACK_PIX
     except Exception:
-        return ""
+        return _FALLBACK_PIX
 
 CHAVE_PIX = _carregar_chave_pix()
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
