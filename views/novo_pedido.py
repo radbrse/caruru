@@ -11,25 +11,25 @@ from database import carregar_pedidos, carregar_clientes
 def render():
     st.title("📝 Novo Pedido")
 
-    # Keys dos widgets do formulário — usados para limpar manualmente após salvar.
-    # O form NÃO usa clear_on_submit: se usasse, clicar em "CORRIGIR DATA" no dialog
-    # de confirmação voltaria para um formulário já apagado, perdendo tudo digitado.
-    _FORM_KEYS = [
-        'np_contato', 'np_data', 'np_hora', 'np_caruru', 'np_bobo', 'np_desconto',
-        'np_entrada', 'np_obs', 'np_pagamento', 'np_status', 'np_extra', 'np_vegano',
-        'np_delivery',
-    ]
+    # Versão do formulário: incrementar força TODOS os widgets do form a reinicializar
+    # com seus valores default. É o único mecanismo confiável no Streamlit para reset de
+    # form — deletar chaves do session_state não garante que o React frontend descarte
+    # o estado do componente na mesma passagem de renderização.
+    if 'np_form_v' not in st.session_state:
+        st.session_state.np_form_v = 0
 
-    # Keys do bloco "Cliente" (fora do form) que precisam ser resetadas após salvar:
-    # toggle "Novo", nome digitado, selectbox e estado auxiliar.
+    _v = st.session_state.np_form_v  # versão atual; só lê UMA vez por render
+
+    # Keys do bloco "Cliente" (fora do form) que precisam ser resetadas após salvar.
     _CLIENTE_KEYS = [
         'toggle_novo_cliente', 'input_novo_cliente',
         'sel_cliente_novo', 'cliente_novo_index', 'np_cliente_anterior',
     ]
 
     def _limpar_form():
-        for k in _FORM_KEYS:
-            st.session_state.pop(k, None)
+        # Incrementar a versão torna todas as chaves versioned obsoletas →
+        # Streamlit cria novos componentes com os value= defaults.
+        st.session_state.np_form_v = st.session_state.np_form_v + 1
 
     def _limpar_cliente():
         for k in _CLIENTE_KEYS:
@@ -44,13 +44,14 @@ def render():
             _limpar_form()
             st.rerun()
 
-    # Verifica se deve resetar o cliente (após salvar pedido)
+    # Verifica se deve resetar (após salvar pedido com sucesso via dialog)
     if st.session_state.get('resetar_cliente_novo', False):
-        # Reset roda ANTES dos widgets serem instanciados → seguro deletar as keys
         _limpar_cliente()
         _limpar_form()
         st.session_state.resetar_cliente_novo = False
         logger.info("Formulário de novo pedido resetado com sucesso")
+        # Atualiza _v para refletir a nova versão gerada por _limpar_form()
+        _v = st.session_state.np_form_v
 
     # Inicializa índice do cliente (sempre volta para 0 = "-- Selecione --")
     if 'cliente_novo_index' not in st.session_state:
@@ -110,20 +111,22 @@ def render():
 
     st.markdown("### 2️⃣ Dados do Pedido")
 
-    # Auto-preenche o WhatsApp quando o cliente selecionado muda (antes do form instanciar o widget)
+    # Auto-preenche o WhatsApp quando o cliente selecionado muda (antes do form instanciar o widget).
+    # Usa a chave versionada para que o pré-preenchimento funcione independente da versão do form.
     if not eh_novo and st.session_state.get('np_cliente_anterior') != c_sel:
         st.session_state['np_cliente_anterior'] = c_sel
-        st.session_state['np_contato'] = contato_cliente
+        st.session_state[f'np_contato_{_v}'] = contato_cliente
 
     # Form SEM clear_on_submit: os valores precisam sobreviver ao submit para que
-    # "CORRIGIR DATA" no dialog devolva o formulário preenchido. A limpeza é manual
-    # (_limpar_form) e só acontece após o pedido ser salvo com sucesso.
-    with st.form("form_novo_pedido"):
+    # "CORRIGIR DATA" no dialog devolva o formulário preenchido. O reset é feito
+    # incrementando np_form_v (_limpar_form), que troca as chaves dos widgets e
+    # força reinicialização pelo React na próxima renderização.
+    with st.form(f"form_novo_pedido_{_v}"):
         c1, c2, c3 = st.columns(3)
         with c1:
-            cont = st.text_input("📱 WhatsApp", placeholder="79999999999", key="np_contato")
+            cont = st.text_input("📱 WhatsApp", placeholder="79999999999", key=f"np_contato_{_v}")
         with c2:
-            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY", key="np_data")
+            dt = st.date_input("📅 Data Entrega", min_value=hoje_brasil(), format="DD/MM/YYYY", key=f"np_data_{_v}")
             # Mostra a data por extenso para confirmação visual
             meses = {
                 1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
@@ -138,16 +141,16 @@ def render():
             data_extenso = f"{dia_semana}, {dt.day} de {meses[dt.month]} de {dt.year}"
             st.caption(f"📆 **{data_extenso}**")
         with c3:
-            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key="np_hora")
+            h_ent = st.time_input("⏰ Hora Retirada", value=time(12, 0), help="Horário que o cliente vai retirar o pedido", key=f"np_hora_{_v}")
 
         st.markdown("### 3️⃣ Itens do Pedido")
         c3, c4, c5 = st.columns(3)
         with c3:
-            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0, key="np_caruru")
+            qc = st.number_input("🥘 Caruru (qtd)", min_value=0, max_value=999, step=1, value=0, key=f"np_caruru_{_v}")
         with c4:
-            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0, key="np_bobo")
+            qb = st.number_input("🦐 Bobó (qtd)", min_value=0, max_value=999, step=1, value=0, key=f"np_bobo_{_v}")
         with c5:
-            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0, key="np_desconto")
+            dc = st.number_input("💸 Desconto %", min_value=0, max_value=100, step=5, value=0, key=f"np_desconto_{_v}")
 
         # Preview do valor (dentro do form não atualiza em tempo real, mas mostra o cálculo)
         preco_atual = obter_preco_base()
@@ -155,26 +158,26 @@ def render():
 
         ent = st.number_input(
             "💵 Entrada (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f",
-            key="np_entrada",
+            key=f"np_entrada_{_v}",
             help="Valor pago antecipadamente pelo cliente. O restante a receber é calculado automaticamente."
         )
 
-        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...", key="np_obs")
+        obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...", key=f"np_obs_{_v}")
 
         _PAGAMENTO_DISPLAY = ["💳 SELECIONAR", "✅ PAGO", "❌ NÃO PAGO", "🔸 METADE"]
         _PAGAMENTO_VALOR  = {"💳 SELECIONAR": None, "✅ PAGO": "PAGO", "❌ NÃO PAGO": "NÃO PAGO", "🔸 METADE": "METADE"}
 
         c6, c7, c8, c9, c10 = st.columns([2, 2, 1, 1, 1])
         with c6:
-            pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY, key="np_pagamento")
+            pg_display = st.selectbox("💳 Pagamento", _PAGAMENTO_DISPLAY, key=f"np_pagamento_{_v}")
         with c7:
-            stt = st.selectbox("📊 Status", OPCOES_STATUS, key="np_status")
+            stt = st.selectbox("📊 Status", OPCOES_STATUS, key=f"np_status_{_v}")
         with c8:
-            eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual", key="np_extra")
+            eh_extra = st.checkbox("⚡ Extra", help="Pedido fora da programação habitual", key=f"np_extra_{_v}")
         with c9:
-            eh_vegano = st.checkbox("🌿 Vegano", help="Pedido sem ingredientes de origem animal", key="np_vegano")
+            eh_vegano = st.checkbox("🌿 Vegano", help="Pedido sem ingredientes de origem animal", key=f"np_vegano_{_v}")
         with c10:
-            eh_delivery = st.checkbox("🛵 Delivery", help="Pedido será entregue (em vez de retirada)", key="np_delivery")
+            eh_delivery = st.checkbox("🛵 Delivery", help="Pedido será entregue (em vez de retirada)", key=f"np_delivery_{_v}")
 
         # Botão de salvar
         submitted = st.form_submit_button("💾 SALVAR PEDIDO", use_container_width=True, type="primary")
