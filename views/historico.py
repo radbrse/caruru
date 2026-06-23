@@ -30,7 +30,7 @@ def render():
     if df_entregues.empty:
         st.info("📭 Nenhum pedido entregue ainda.")
     else:
-        # Filtro por tipo
+        # ── Linha 1: tipo + ordenação ─────────────────────────────────────────
         col_ord1, col_ord2 = st.columns([3, 1])
         with col_ord1:
             tipo_filtro = st.radio(
@@ -58,7 +58,54 @@ def render():
                 "🆔 ID (menor)"
             ], index=0, key="ordem_historico")
 
-        # Aplica ordenação
+        # ── Linha 2: filtro de data ───────────────────────────────────────────
+        datas_validas = df_entregues['Data'].dropna()
+        _min_d = datas_validas.min() if not datas_validas.empty else None
+        _max_d = datas_validas.max() if not datas_validas.empty else None
+
+        col_f1, col_f2, col_f3 = st.columns([1, 1, 1])
+        with col_f1:
+            data_de = st.date_input(
+                "📅 De",
+                value=_min_d,
+                key="hist_data_de",
+                format="DD/MM/YYYY",
+                help="Exibe pedidos entregues a partir desta data"
+            )
+        with col_f2:
+            data_ate = st.date_input(
+                "📅 Até",
+                value=_max_d,
+                key="hist_data_ate",
+                format="DD/MM/YYYY",
+                help="Exibe pedidos entregues até esta data"
+            )
+        with col_f3:
+            st.markdown("<div style='padding-top:28px'>", unsafe_allow_html=True)
+            if st.button("🔄 Todos os dias", key="hist_limpar_data", use_container_width=True,
+                         help="Remove o filtro de data e mostra todo o histórico"):
+                st.session_state.pop('hist_data_de', None)
+                st.session_state.pop('hist_data_ate', None)
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Aplica filtro de data (comparação type-safe via strftime)
+        if data_de is not None and data_ate is not None:
+            _de_str  = data_de.strftime('%Y-%m-%d')
+            _ate_str = data_ate.strftime('%Y-%m-%d')
+
+            def _data_no_intervalo(x):
+                try:
+                    if pd.isna(x):
+                        return False
+                except (TypeError, ValueError):
+                    pass
+                s = x.strftime('%Y-%m-%d') if hasattr(x, 'strftime') else str(x)[:10]
+                return _de_str <= s <= _ate_str
+
+            df_entregues = df_entregues[df_entregues['Data'].apply(_data_no_intervalo)]
+
+        # ── Ordenação ─────────────────────────────────────────────────────────
         try:
             if ordem_hist == "📅 Data (mais recente)":
                 df_entregues['sort_hora'] = df_entregues['Hora'].apply(lambda x: x if isinstance(x, time) else time(0, 0))
@@ -81,7 +128,7 @@ def render():
         except Exception as e:
             logger.warning(f"Erro ao ordenar histórico: {e}")
 
-        # IDs visíveis (após filtro + ordenação) — usados pelos callbacks de seleção
+        # IDs visíveis (após filtros + ordenação) — usados pelos callbacks de seleção
         ids_entregues = df_entregues['ID_Pedido'].tolist()
 
         def _sel_todos():
@@ -92,7 +139,7 @@ def render():
             for id_ in ids_entregues:
                 st.session_state[f"sel_hist_{id_}"] = False
 
-        # Métricas
+        # ── Métricas (refletem filtro de data + tipo) ─────────────────────────
         st.markdown("### 📊 Resumo")
         col_m1, col_m2, col_m3, col_m4, col_m5, col_m6, col_m7 = st.columns([1, 1, 1, 1.6, 1, 1, 1.4])
         with col_m1:
@@ -115,7 +162,7 @@ def render():
                 st.session_state['confirmar_limpar_historico'] = True
                 st.rerun()
 
-        # Barra de seleção
+        # ── Barra de seleção ──────────────────────────────────────────────────
         selecionados = [id_ for id_ in ids_entregues if st.session_state.get(f"sel_hist_{id_}", False)]
         col_s1, col_s2, col_s3 = st.columns([1, 1, 3])
         with col_s1:
@@ -170,7 +217,6 @@ def render():
                             df_atual = st.session_state.pedidos
                             qtd_removidos = len(df_atual[df_atual['Status'] == "✅ Entregue"])
 
-                            # Remove todos os pedidos entregues
                             df_atual = df_atual[df_atual['Status'] != "✅ Entregue"]
 
                             if not salvar_pedidos(df_atual):
@@ -178,14 +224,9 @@ def render():
                                 st.session_state['confirmar_limpar_historico'] = False
                             else:
                                 st.session_state.pedidos = carregar_pedidos()
-
-                                # Registra auditoria
                                 registrar_alteracao("LIMPAR_HISTORICO", 0, "Historico", f"{qtd_removidos} pedidos", "0 pedidos")
-
-                                # SINCRONIZA COM GOOGLE SHEETS - CRÍTICO para evitar que dados voltem
                                 sincronizar_automaticamente(operacao="excluir")
                                 logger.info(f"🗑️ Histórico limpo: {qtd_removidos} pedidos removidos e sincronizados com Sheets")
-
                                 st.session_state['confirmar_limpar_historico'] = False
                                 st.toast("🗑️ Histórico limpo com sucesso!", icon="🗑️")
                                 st.rerun()
@@ -229,7 +270,6 @@ def render():
                     data_str = pedido['Data'].strftime('%d/%m/%Y') if (hasattr(pedido['Data'], 'strftime') and pd.notna(pedido['Data'])) else str(pedido['Data'])
                     hora_str = pedido['Hora'].strftime('%H:%M') if (hasattr(pedido['Hora'], 'strftime') and pd.notna(pedido['Hora'])) else str(pedido['Hora'])
 
-                    # Mostrar hora de entrega se existir
                     hora_entrega = pedido.get('Hora_Entrega', None)
                     if hora_entrega and pd.notna(hora_entrega):
                         hora_entrega_str = hora_entrega.strftime('%H:%M') if hasattr(hora_entrega, 'strftime') else str(hora_entrega)
@@ -263,7 +303,6 @@ def render():
                         st.markdown(f"**📅 Data:** {data_str}")
                         st.markdown(f"**⏰ Agendado:** {hora_str}")
 
-                        # Mostrar hora de entrega se existir
                         hora_entrega = pedido.get('Hora_Entrega', None)
                         if hora_entrega and pd.notna(hora_entrega):
                             hora_entrega_str = hora_entrega.strftime('%H:%M') if hasattr(hora_entrega, 'strftime') else str(hora_entrega)
@@ -274,6 +313,12 @@ def render():
                         st.markdown(f"**💰 Valor:** {formatar_valor_br(pedido['Valor'])}")
                         if pedido.get('Desconto', 0) > 0:
                             st.markdown(f"**💸 Desconto:** {pedido['Desconto']}%")
+                        _ent_h = float(pedido.get('Entrada', 0.0) or 0.0)
+                        if _ent_h > 0:
+                            _falta_h = max(0.0, float(pedido['Valor']) - _ent_h)
+                            st.markdown(f"**💵 Entrada:** {formatar_valor_br(_ent_h)}")
+                            if _falta_h > 0:
+                                st.markdown(f"**📥 Falta receber:** {formatar_valor_br(_falta_h)}")
                     st.markdown(f"**📊 Status:** {pedido['Status']}")
                     st.markdown(f"**💳 Pagamento:** {pedido['Pagamento']}")
                     if pedido.get('Observacoes'):
