@@ -11,7 +11,8 @@ import time as time_module
 
 from config import (
     logger, hoje_brasil, OPCOES_STATUS, OPCOES_PAGAMENTO,
-    CHAVE_PIX, ARQUIVO_HISTORICO
+    CHAVE_PIX, ARQUIVO_HISTORICO,
+    COLUNAS_PEDIDOS, COLUNAS_PEDIDOS_OBRIGATORIAS, COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS
 )
 from utils import (
     formatar_valor_br, get_status_badge, get_pagamento_badge,
@@ -575,21 +576,19 @@ def render():
                     st.error(f"❌ CSV com {len(df_n):,} linhas excede o limite de 10.000.")
                     st.stop()
 
-                # Valida schema
-                colunas_obrigatorias = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"]
-                colunas_faltantes = set(colunas_obrigatorias) - set(df_n.columns.tolist())
+                # Valida schema usando a fonte única (config) — preserva
+                # Entrada, Vegano e Delivery na restauração (evita perda de dados).
+                colunas_faltantes = set(COLUNAS_PEDIDOS_OBRIGATORIAS) - set(df_n.columns.tolist())
                 if colunas_faltantes:
                     st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                 else:
-                    # Adiciona colunas opcionais se não existirem (retrocompatibilidade)
-                    if 'Hora_Entrega' not in df_n.columns:
-                        df_n['Hora_Entrega'] = ""
-                    if 'Extra' not in df_n.columns:
-                        df_n['Extra'] = "False"
+                    # Adiciona colunas opcionais que faltarem, com seus defaults
+                    for col_opcional, default in COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS.items():
+                        if col_opcional not in df_n.columns:
+                            df_n[col_opcional] = default
 
-                    # Reordena para manter colunas esperadas
-                    todas_colunas = colunas_obrigatorias + ["Hora_Entrega", "Extra"]
-                    df_n = df_n[[c for c in todas_colunas if c in df_n.columns]]
+                    # Reordena para a ordem canônica completa
+                    df_n = df_n[[c for c in COLUNAS_PEDIDOS if c in df_n.columns]]
 
                     if not salvar_pedidos(df_n):
                         st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")

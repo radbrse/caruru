@@ -13,7 +13,8 @@ from contextlib import contextmanager
 from config import (
     logger, FUSO_BRASIL, agora_brasil,
     ARQUIVO_PEDIDOS, ARQUIVO_CLIENTES, ARQUIVO_HISTORICO,
-    MAX_BACKUP_FILES, OPCOES_STATUS, OPCOES_PAGAMENTO
+    MAX_BACKUP_FILES, OPCOES_STATUS, OPCOES_PAGAMENTO,
+    COLUNAS_PEDIDOS, COLUNAS_PEDIDOS_OBRIGATORIAS, COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS
 )
 from utils import validar_hora, limpar_telefone
 
@@ -195,15 +196,21 @@ def importar_csv_externo(arquivo_upload, destino):
         if len(df_novo) > MAX_LINHAS:
             return False, f"❌ CSV com {len(df_novo):,} linhas excede o limite de {MAX_LINHAS:,}.", None
 
+        # Schema de pedidos vem do config (fonte única) para não dessincronizar
+        # com load/save — evita que a importação descarte colunas que o app grava.
         schemas_obrigatorios = {
-            'Pedidos': ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Status", "Pagamento", "Contato", "Desconto", "Observacoes"],
+            'Pedidos': COLUNAS_PEDIDOS_OBRIGATORIAS,
             'Clientes': ["Nome", "Contato", "Observacoes"],
             'Histórico': ["Timestamp", "Tipo", "ID_Pedido", "Campo", "Valor_Antigo", "Valor_Novo"]
         }
 
-        # Colunas opcionais (retrocompatibilidade)
-        schemas_opcionais = {
-            'Pedidos': ["Hora_Entrega", "Extra", "Vegano", "Delivery"]
+        # Colunas opcionais (retrocompatibilidade) e defaults ao faltarem
+        schemas_opcionais_defaults = {
+            'Pedidos': COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS,
+        }
+        # Ordem canônica final por destino (preserva todas as colunas conhecidas)
+        ordem_canonica = {
+            'Pedidos': COLUNAS_PEDIDOS,
         }
 
         colunas_esperadas = schemas_obrigatorios[destino]
@@ -213,18 +220,18 @@ def importar_csv_externo(arquivo_upload, destino):
         if colunas_faltantes:
             return False, f"❌ Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}", None
 
-        # Adicionar colunas opcionais se não existirem
-        _defaults_opcionais = {"Extra": "False", "Vegano": "False", "Delivery": "False"}
-        if destino in schemas_opcionais:
-            for col_opcional in schemas_opcionais[destino]:
+        # Adicionar colunas opcionais que faltarem, com seus defaults
+        if destino in schemas_opcionais_defaults:
+            for col_opcional, default in schemas_opcionais_defaults[destino].items():
                 if col_opcional not in df_novo.columns:
-                    df_novo[col_opcional] = _defaults_opcionais.get(col_opcional, "")
+                    df_novo[col_opcional] = default
                     logger.info(f"Coluna opcional '{col_opcional}' adicionada automaticamente")
 
-        # Montar lista completa de colunas
-        todas_colunas = colunas_esperadas.copy()
-        if destino in schemas_opcionais:
-            todas_colunas.extend(schemas_opcionais[destino])
+        # Montar lista completa de colunas na ordem canônica (preserva Entrada/Vegano/Delivery)
+        if destino in ordem_canonica:
+            todas_colunas = list(ordem_canonica[destino])
+        else:
+            todas_colunas = list(colunas_esperadas)
 
         colunas_extras = set(colunas_recebidas) - set(todas_colunas)
         if colunas_extras:
@@ -310,7 +317,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
-    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Entrada", "Observacoes", "Extra", "Vegano", "Delivery"]
+    colunas_padrao = list(COLUNAS_PEDIDOS)
     _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets

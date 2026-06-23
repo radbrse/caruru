@@ -28,17 +28,45 @@ ARQUIVO_CLIENTES = "banco_de_dados_clientes.csv"
 ARQUIVO_HISTORICO = "historico_alteracoes.csv"
 ARQUIVO_CONFIG = "config.json"
 def _carregar_chave_pix():
-    """Lê chave PIX de st.secrets se disponível, senão usa fallback hardcoded.
-    Mover para secrets evita expor dado pessoal em repositório público."""
+    """Lê a chave PIX exclusivamente de st.secrets["chave_pix"].
+
+    Sem fallback hardcoded (evita expor dado pessoal no repositório público).
+    Se o secret não estiver configurado, retorna "" — o PIX aparece em branco
+    nos PDFs/mensagens, sinalizando que falta configurar o secret.
+    """
     try:
         import streamlit as st
-        return st.secrets.get("chave_pix", "79999296722")
+        return str(st.secrets.get("chave_pix", "")).strip()
     except Exception:
-        return "79999296722"
+        return ""
 
 CHAVE_PIX = _carregar_chave_pix()
 OPCOES_STATUS = ["🔴 Pendente", "🟡 Em Produção", "✅ Entregue", "🚫 Cancelado"]
 OPCOES_PAGAMENTO = ["PAGO", "NÃO PAGO", "METADE"]
+
+# --- SCHEMA ÚNICO DE PEDIDOS (fonte de verdade) ---
+# Usado em load/save (CSV e Sheets) e na validação de import/restauração.
+# Centralizar evita que um caminho (ex.: restaurar backup) descarte colunas
+# que outro caminho grava — causa real de perda de dados em round-trips.
+COLUNAS_PEDIDOS = [
+    "ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora",
+    "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Entrada",
+    "Observacoes", "Extra", "Vegano", "Delivery",
+]
+# Colunas que DEVEM existir num CSV importado (mínimo aceito).
+COLUNAS_PEDIDOS_OBRIGATORIAS = [
+    "ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora",
+    "Status", "Pagamento", "Contato", "Desconto", "Observacoes",
+]
+# Colunas opcionais (retrocompatibilidade) e seus defaults ao faltarem.
+COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS = {
+    "Hora_Entrega": "",
+    "Entrada": 0.0,
+    "Extra": "False",
+    "Vegano": "False",
+    "Delivery": "False",
+}
+
 PRECO_BASE = 70.0
 VERSAO = "21.0"
 MAX_BACKUP_FILES = 5
