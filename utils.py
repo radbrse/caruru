@@ -101,6 +101,27 @@ def validar_desconto(valor):
         logger.error(f"Erro inesperado ao validar desconto: {e}", exc_info=True)
         return 0.0, "❌ Erro ao processar desconto."
 
+def validar_entrada(valor):
+    """Valida valor de entrada (pagamento antecipado): float >= 0."""
+    try:
+        if valor is None or valor == "":
+            return 0.0, None
+
+        v = float(str(valor).replace(",", "."))
+
+        if v < 0:
+            logger.warning(f"Entrada negativa: {v}, ajustando para 0")
+            return 0.0, "⚠️ Entrada não pode ser negativa."
+
+        return round(v, 2), None
+
+    except (ValueError, TypeError) as e:
+        logger.error(f"Erro ao validar entrada: {valor} - {e}")
+        return 0.0, "❌ Entrada inválida."
+    except Exception as e:
+        logger.error(f"Erro inesperado ao validar entrada: {e}", exc_info=True)
+        return 0.0, "❌ Erro ao processar entrada."
+
 def validar_data_pedido(data, permitir_passado=False):
     """Valida data do pedido."""
     try:

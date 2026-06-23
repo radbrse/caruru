@@ -202,6 +202,19 @@ df_clientes, msg_c = carregar_do_sheets(client, "Clientes")
 # só salva depois que ambas foram carregadas
 ```
 
+### Entrada (pagamento antecipado) e cálculo de "falta"
+
+`Entrada` é o valor em R$ pago adiantado, complementar ao `Desconto` (%). A regra
+em `telegram_format.calcular_falta(pagamento, valor, entrada)` é:
+
+1. `Pagamento == "PAGO"` → falta `0` (quitado, ignora entrada).
+2. `entrada > 0` → falta `max(0, valor - entrada)` (precisão sobrepõe o status textual).
+3. Sem entrada → comportamento legado: `NÃO PAGO` → valor cheio, `METADE` → metade.
+
+Invariante: `Entrada` nunca excede `Valor` — clampado em `criar_pedido`,
+`atualizar_pedido` e nos forms de edição. Retrocompatível: pedidos/Sheets sem a
+coluna carregam `Entrada = 0.0`.
+
 ### Carregar do Sheets com parse de datas
 
 `carregar_do_sheets()` retorna strings brutas. A coluna `Data` é parseada logo após:
@@ -232,6 +245,7 @@ if "Data" in df.columns:
 | Pagamento | str | `PAGO` / `NÃO PAGO` / `METADE` |
 | Contato | str | Apenas dígitos |
 | Desconto | float | % |
+| Entrada | float | R$ pago antecipadamente (nunca excede `Valor`) |
 | Observacoes | str | |
 | Extra | bool | |
 | Vegano | bool | |

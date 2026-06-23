@@ -115,9 +115,23 @@ def render():
         df_nao_cancelados = df_dia[~df_dia['Status'].str.contains("Cancelado", na=False)]
         faturamento = df_nao_cancelados['Valor'].sum()
 
-        valor_nao_pago = df_nao_cancelados[df_nao_cancelados['Pagamento'] == 'NÃO PAGO']['Valor'].sum()
-        valor_metade = df_nao_cancelados[df_nao_cancelados['Pagamento'] == 'METADE']['Valor'].sum() * 0.5
-        a_receber = valor_nao_pago + valor_metade
+        # "A Receber" usa a mesma regra de calcular_falta: entrada (R$) tem prioridade
+        # sobre o status textual; sem entrada, cai no comportamento NÃO PAGO / METADE.
+        def _falta_linha(row):
+            pag = str(row.get('Pagamento', '')).strip().upper()
+            valor = float(row.get('Valor', 0) or 0)
+            if pag == 'PAGO':
+                return 0.0
+            entrada = float(row.get('Entrada', 0) or 0)
+            if entrada > 0:
+                return max(0.0, valor - entrada)
+            if pag == 'NÃO PAGO':
+                return valor
+            if pag == 'METADE':
+                return valor / 2
+            return 0.0
+
+        a_receber = float(df_nao_cancelados.apply(_falta_linha, axis=1).sum()) if not df_nao_cancelados.empty else 0.0
 
         c1.metric("📦 Pedidos do dia", total_dia)
         c2.metric("⏳ Falta entregar", len(pend))
@@ -245,11 +259,19 @@ def render():
                                     """)
                                 st.markdown(f"**Contato:** {get_whatsapp_link(pedido['Contato'])}", unsafe_allow_html=True)
                             with col_det2:
+                                _ent_det = float(pedido.get('Entrada', 0.0) or 0.0)
+                                _entrada_md = ""
+                                if _ent_det > 0:
+                                    _falta_det = max(0.0, float(pedido['Valor']) - _ent_det)
+                                    _entrada_md = (
+                                        f"\n**💵 Entrada:** {formatar_valor_br(_ent_det)}"
+                                        f"\n**📥 Falta receber:** {formatar_valor_br(_falta_det)}"
+                                    )
                                 st.markdown(f"""
                                 **🥘 Caruru:** {int(pedido['Caruru'])}
                                 **🦐 Bobó:** {int(pedido['Bobo'])}
                                 **💸 Desconto:** {pedido['Desconto']:.0f}%
-                                **💰 Valor Total:** {formatar_valor_br(pedido['Valor'])}
+                                **💰 Valor Total:** {formatar_valor_br(pedido['Valor'])}{_entrada_md}
                                 **📊 Status:** {pedido['Status']}
                                 **💳 Pagamento:** {pedido['Pagamento']}
                                 """)
@@ -285,13 +307,22 @@ def render():
                                     novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=int(pedido_atual['Desconto']),
                                                                    key=f"desc_{pedido['ID_Pedido']}")
 
-                                edit_col4, edit_col5 = st.columns(2)
+                                edit_col4, edit_col5, edit_col6 = st.columns(3)
                                 with edit_col4:
                                     novo_caruru = st.number_input("🥘 Caruru", min_value=0, max_value=999, value=int(pedido_atual['Caruru']),
                                                                  key=f"car_{pedido['ID_Pedido']}")
                                 with edit_col5:
                                     novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=int(pedido_atual['Bobo']),
                                                                key=f"bob_{pedido['ID_Pedido']}")
+                                with edit_col6:
+                                    try:
+                                        _ent_val = float(pedido_atual.get('Entrada', 0.0) or 0.0)
+                                    except (ValueError, TypeError):
+                                        _ent_val = 0.0
+                                    novo_entrada = st.number_input("💵 Entrada (R$)", min_value=0.0, step=10.0, format="%.2f",
+                                                                  value=_ent_val,
+                                                                  help="Valor pago antecipadamente. O restante é calculado automaticamente.",
+                                                                  key=f"ent_{pedido['ID_Pedido']}")
 
                                 novas_obs = st.text_area("📝 Observações", value=pedido_atual['Observacoes'], height=150,
                                                         key=f"obs_{pedido['ID_Pedido']}")
@@ -347,6 +378,7 @@ def render():
                                             "Caruru": novo_caruru,
                                             "Bobo": novo_bobo,
                                             "Desconto": novo_desconto,
+                                            "Entrada": novo_entrada,
                                             "Observacoes": novas_obs,
                                             "Extra": novo_extra,
                                             "Vegano": novo_vegano,

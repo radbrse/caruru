@@ -34,10 +34,23 @@ def brl(valor) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def calcular_falta(pagamento, valor) -> float:
-    """Quanto ainda falta pagar conforme o status de pagamento."""
+def calcular_falta(pagamento, valor, entrada=0) -> float:
+    """Quanto ainda falta pagar.
+
+    A entrada (pagamento antecipado em R$) tem prioridade sobre o status textual:
+    quando informada, o que falta é exatamente `valor - entrada`. Sem entrada,
+    cai no comportamento antigo baseado em PAGO / NÃO PAGO / METADE — mantendo
+    retrocompatibilidade com pedidos que não usam o campo.
+    """
     pag = str(pagamento or "").strip().upper()
     v = _num(valor)
+    if pag == "PAGO":
+        return 0.0
+
+    ent = _num(entrada)
+    if ent > 0:
+        return max(0.0, v - ent)
+
     if pag == "NÃO PAGO":
         return v
     if pag == "METADE":
@@ -76,7 +89,7 @@ def formatar_mensagem(pedidos, data_alvo: date, rotulo_data: str = "Pedidos") ->
     total_caruru = sum(int(_num(p.get("Caruru"))) for p in pedidos)
     total_bobo   = sum(int(_num(p.get("Bobo"))) for p in pedidos)
     total_valor  = sum(_num(p.get("Valor")) for p in pedidos)
-    total_pendente = sum(calcular_falta(p.get("Pagamento"), p.get("Valor")) for p in pedidos)
+    total_pendente = sum(calcular_falta(p.get("Pagamento"), p.get("Valor"), p.get("Entrada")) for p in pedidos)
 
     linhas = []
     for p in pedidos:
@@ -102,11 +115,15 @@ def formatar_mensagem(pedidos, data_alvo: date, rotulo_data: str = "Pedidos") ->
         if campo_verdadeiro(p.get("Delivery", "")):
             flags.append("🛵 Delivery")
 
-        falta = calcular_falta(p.get("Pagamento"), p.get("Valor"))
+        falta = calcular_falta(p.get("Pagamento"), p.get("Valor"), p.get("Entrada"))
         if falta > 0:
-            pag = str(p.get("Pagamento", "")).strip().upper()
-            icone = "💸" if pag == "NÃO PAGO" else "🔸"
-            pag_label = f"{icone} Falta {brl(falta)}"
+            ent = _num(p.get("Entrada"))
+            if ent > 0:
+                pag_label = f"🔸 Entrada {brl(ent)} · Falta {brl(falta)}"
+            else:
+                pag = str(p.get("Pagamento", "")).strip().upper()
+                icone = "💸" if pag == "NÃO PAGO" else "🔸"
+                pag_label = f"{icone} Falta {brl(falta)}"
         else:
             pag_label = "✅ Pedido pago"
 

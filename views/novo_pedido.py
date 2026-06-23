@@ -16,7 +16,8 @@ def render():
     # de confirmação voltaria para um formulário já apagado, perdendo tudo digitado.
     _FORM_KEYS = [
         'np_contato', 'np_data', 'np_hora', 'np_caruru', 'np_bobo', 'np_desconto',
-        'np_obs', 'np_pagamento', 'np_status', 'np_extra', 'np_vegano', 'np_delivery',
+        'np_entrada', 'np_obs', 'np_pagamento', 'np_status', 'np_extra', 'np_vegano',
+        'np_delivery',
     ]
 
     # Keys do bloco "Cliente" (fora do form) que precisam ser resetadas após salvar:
@@ -152,6 +153,12 @@ def render():
         preco_atual = obter_preco_base()
         st.caption(f"💵 Preço unitário: R$ {preco_atual:.2f} | Cálculo: (Caruru + Bobó) × R$ {preco_atual:.2f} - Desconto%")
 
+        ent = st.number_input(
+            "💵 Entrada (R$)", min_value=0.0, step=10.0, value=0.0, format="%.2f",
+            key="np_entrada",
+            help="Valor pago antecipadamente pelo cliente. O restante a receber é calculado automaticamente."
+        )
+
         obs = st.text_area("📝 Observações", placeholder="Ex: Sem pimenta, entregar na portaria...", key="np_obs")
 
         _PAGAMENTO_DISPLAY = ["💳 SELECIONAR", "✅ PAGO", "❌ NÃO PAGO", "🔸 METADE"]
@@ -190,6 +197,7 @@ def render():
                     'pagamento': pg,
                     'contato': cont,
                     'desconto': dc,
+                    'entrada': ent,
                     'observacoes': obs,
                     'extra': eh_extra,
                     'vegano': eh_vegano,

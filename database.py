@@ -310,7 +310,7 @@ def carregar_clientes():
 def carregar_pedidos():
     """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
     import streamlit as st
-    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Observacoes", "Extra", "Vegano", "Delivery"]
+    colunas_padrao = ["ID_Pedido", "Cliente", "Caruru", "Bobo", "Valor", "Data", "Hora", "Hora_Entrega", "Status", "Pagamento", "Contato", "Desconto", "Entrada", "Observacoes", "Extra", "Vegano", "Delivery"]
     _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
 
     # AUTO-RECOVERY do Google Sheets
@@ -351,7 +351,7 @@ def carregar_pedidos():
         df["Hora"] = df["Hora"].apply(lambda x: validar_hora(x)[0])
         df["Hora_Entrega"] = df["Hora_Entrega"].apply(lambda x: validar_hora(x)[0] if pd.notna(x) and str(x).strip() else None)
 
-        for col in ["Caruru", "Bobo", "Desconto", "Valor"]:
+        for col in ["Caruru", "Bobo", "Desconto", "Valor", "Entrada"]:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
         df['ID_Pedido'] = pd.to_numeric(df['ID_Pedido'], errors='coerce').fillna(0).astype(int)
@@ -455,6 +455,10 @@ def salvar_pedidos(df):
                 salvar['Hora_Entrega'] = ""
             salvar['Hora_Entrega'] = salvar['Hora_Entrega'].apply(_serializar_hora_entrega)
             salvar['Contato'] = salvar['Contato'].fillna("").astype(str).str.replace(".0", "", regex=False)
+            # Entrada (pagamento antecipado) pode não existir em DataFrames antigos/Sheets
+            if 'Entrada' not in salvar.columns:
+                salvar['Entrada'] = 0.0
+            salvar['Entrada'] = pd.to_numeric(salvar['Entrada'], errors='coerce').fillna(0.0)
             if 'Extra' not in salvar.columns:
                 salvar['Extra'] = "False"
             salvar['Extra'] = salvar['Extra'].apply(
