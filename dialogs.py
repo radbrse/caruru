@@ -68,6 +68,15 @@ def confirmar_data_pedido():
     if pedido_temp['desconto'] > 0:
         st.info(f"💸 Desconto aplicado: {pedido_temp['desconto']}%")
 
+    _entrada = float(pedido_temp.get('entrada', 0.0) or 0.0)
+    if _entrada > 0:
+        _entrada_aplicada = min(_entrada, valor_total)
+        _falta = max(0.0, valor_total - _entrada_aplicada)
+        st.success(
+            f"💵 Entrada: {formatar_valor_br(_entrada_aplicada)}  •  "
+            f"📥 Falta receber: {formatar_valor_br(_falta)}"
+        )
+
     if pedido_temp['observacoes']:
         st.markdown(f"**📝 Obs:** {pedido_temp['observacoes']}")
 
@@ -92,7 +101,8 @@ def confirmar_data_pedido():
                 observacoes=pedido_temp['observacoes'],
                 extra=pedido_temp.get('extra', False),
                 vegano=pedido_temp.get('vegano', False),
-                delivery=pedido_temp.get('delivery', False)
+                delivery=pedido_temp.get('delivery', False),
+                entrada=pedido_temp.get('entrada', 0.0)
             )
 
             if erros:

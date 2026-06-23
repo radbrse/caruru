@@ -227,6 +227,11 @@ def render():
                             st.markdown(f"**🦐 Bobó:** {int(pedido['Bobo'])} un.")
                             st.markdown(f"**💸 Desconto:** {int(pedido['Desconto'])}%")
                             st.markdown(f"**💵 Valor Total:** {formatar_valor_br(pedido['Valor'])}")
+                            _ent_vis = float(pedido.get('Entrada', 0.0) or 0.0)
+                            if _ent_vis > 0:
+                                _falta_vis = max(0.0, float(pedido['Valor']) - _ent_vis)
+                                st.markdown(f"**💵 Entrada:** {formatar_valor_br(_ent_vis)}")
+                                st.markdown(f"**📥 Falta receber:** {formatar_valor_br(_falta_vis)}")
 
                         st.markdown("---")
                         col_c, col_d = st.columns(2)
@@ -294,6 +299,20 @@ def render():
                                 novo_bobo = st.number_input("🦐 Bobó", min_value=0, max_value=999, value=_int_seguro(pedido_atual['Bobo']))
                             with col_e7:
                                 novo_desconto = st.number_input("💸 Desconto %", min_value=0, max_value=100, value=min(_int_seguro(pedido_atual['Desconto']), 100))
+
+                            # Entrada (pagamento antecipado) — float defensivo
+                            def _float_seguro(v, default=0.0):
+                                try:
+                                    return float(v)
+                                except (ValueError, TypeError):
+                                    return default
+
+                            novo_entrada = st.number_input(
+                                "💵 Entrada (R$)", min_value=0.0, step=10.0, format="%.2f",
+                                value=_float_seguro(pedido_atual.get('Entrada', 0.0)),
+                                help="Valor pago antecipadamente. O restante a receber é calculado automaticamente.",
+                                key=f"entrada_edit_all_{id_em_edicao}"
+                            )
 
                             # Pagamento e status
                             col_e8, col_e9 = st.columns(2)
@@ -381,6 +400,8 @@ def render():
                                 df_atualizado.loc[mask, 'Bobo'] = novo_bobo
                                 df_atualizado.loc[mask, 'Desconto'] = novo_desconto
                                 df_atualizado.loc[mask, 'Valor'] = novo_valor
+                                # Entrada nunca pode exceder o valor do pedido
+                                df_atualizado.loc[mask, 'Entrada'] = min(novo_entrada, novo_valor)
                                 df_atualizado.loc[mask, 'Pagamento'] = novo_pagamento
                                 df_atualizado.loc[mask, 'Status'] = novo_status
                                 df_atualizado.loc[mask, 'Observacoes'] = novas_obs

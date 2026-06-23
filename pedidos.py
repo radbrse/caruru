@@ -10,7 +10,7 @@ from config import (
 )
 from utils import (
     limpar_telefone, validar_telefone, validar_quantidade,
-    validar_desconto, validar_data_pedido, validar_hora,
+    validar_desconto, validar_entrada, validar_data_pedido, validar_hora,
     gerar_id_sequencial, calcular_total
 )
 from database import (
@@ -23,7 +23,7 @@ from sheets import sincronizar_automaticamente
 # ==============================================================================
 # CRUD DE PEDIDOS
 # ==============================================================================
-def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False, vegano=False, delivery=False):
+def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False, vegano=False, delivery=False, entrada=0.0):
     """Cria novo pedido com validação completa."""
     erros = []
     avisos = []
@@ -41,6 +41,9 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
         erros.append("❌ Pedido deve ter pelo menos 1 item (Caruru ou Bobó).")
 
     dc, msg = validar_desconto(desconto)
+    if msg: avisos.append(msg)
+
+    ent, msg = validar_entrada(entrada)
     if msg: avisos.append(msg)
 
     dt, msg = validar_data_pedido(data, permitir_passado=False)
@@ -76,6 +79,7 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
         "Pagamento": pagamento if pagamento in OPCOES_PAGAMENTO else "NÃO PAGO",
         "Contato": tel,
         "Desconto": dc,
+        "Entrada": min(ent, val),  # entrada não pode exceder o valor do pedido
         "Observacoes": observacoes.strip() if observacoes else "",
         "Extra": bool(extra),
         "Vegano": bool(vegano),
@@ -136,6 +140,8 @@ def atualizar_pedido(id_pedido, campos_atualizar):
                 valor, _ = validar_quantidade(valor, "Bobó")
             elif campo == "Desconto":
                 valor, _ = validar_desconto(valor)
+            elif campo == "Entrada":
+                valor, _ = validar_entrada(valor)
             elif campo == "Data":
                 valor, _ = validar_data_pedido(valor, permitir_passado=True)
             elif campo == "Hora":
@@ -158,6 +164,16 @@ def atualizar_pedido(id_pedido, campos_atualizar):
                 df.at[idx, 'Bobo'],
                 df.at[idx, 'Desconto']
             )
+
+        # Entrada nunca pode exceder o valor do pedido (evita "falta" negativa)
+        if 'Entrada' in df.columns:
+            try:
+                _ent = float(df.at[idx, 'Entrada'])
+                _val = float(df.at[idx, 'Valor'])
+                if _ent > _val:
+                    df.at[idx, 'Entrada'] = _val
+            except (ValueError, TypeError):
+                pass
 
         if not salvar_pedidos(df):
             return False, f"❌ ERRO: Não foi possível salvar as alterações. Tente novamente."
