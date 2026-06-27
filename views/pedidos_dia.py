@@ -294,6 +294,18 @@ def render():
                             pedido_atual = _match_dia.iloc[0]
 
                             with st.form(f"form_edit_{id_em_edicao_dia}"):
+                                # Data e hora de retirada — gravadas pelo caminho resiliente
+                                # atualizar_pedido (validar_data_pedido/validar_hora).
+                                edit_cdata, edit_chora = st.columns(2)
+                                with edit_cdata:
+                                    _data_val = pedido_atual['Data'] if pd.notna(pedido_atual['Data']) else hoje_brasil()
+                                    nova_data = st.date_input("📅 Data Entrega", value=_data_val, format="DD/MM/YYYY",
+                                                              key=f"data_{pedido['ID_Pedido']}")
+                                with edit_chora:
+                                    _hora_val = pedido_atual['Hora'] if isinstance(pedido_atual['Hora'], time) else time(12, 0)
+                                    nova_hora = st.time_input("⏰ Hora Retirada", value=_hora_val,
+                                                              key=f"hora_ret_{pedido['ID_Pedido']}")
+
                                 edit_col1, edit_col2, edit_col3 = st.columns(3)
                                 with edit_col1:
                                     novo_status = st.selectbox("📊 Status", OPCOES_STATUS,
@@ -373,6 +385,8 @@ def render():
                                         st.error("❌ Pedido deve ter pelo menos 1 item")
                                     else:
                                         campos = {
+                                            "Data": nova_data,
+                                            "Hora": nova_hora,
                                             "Status": novo_status,
                                             "Pagamento": novo_pagamento,
                                             "Caruru": novo_caruru,
