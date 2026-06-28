@@ -88,6 +88,33 @@ if not st.session_state['auto_restore_tentado']:
 # SIDEBAR
 # ==============================================================================
 with st.sidebar:
+    # Destaque visual do item de menu selecionado ("acende" em laranja).
+    # Apenas CSS — não altera o roteamento. Degrada graciosamente em
+    # navegadores sem suporte a :has() (o menu só não fica destacado).
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] div[role="radiogroup"] { gap: 2px; }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+            display: flex; align-items: center; width: 100%;
+            padding: 9px 14px; margin: 1px 0; border-radius: 10px;
+            cursor: pointer; transition: background .15s ease, box-shadow .15s ease;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+            background: #fff1e8;
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+            background: linear-gradient(135deg, #ff9a56 0%, #ff6b35 100%);
+            box-shadow: 0 2px 10px rgba(255, 107, 53, 0.35);
+        }
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
+            color: #ffffff !important; font-weight: 700;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # Relógio em tempo real
     import streamlit.components.v1 as components
     components.html(
