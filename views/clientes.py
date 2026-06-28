@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 from config import logger
-from utils import limpar_telefone, formatar_valor_br, validar_telefone
+from utils import limpar_telefone, formatar_valor_br, validar_telefone, safe_html
 from database import salvar_clientes, carregar_clientes, salvar_pedidos, carregar_pedidos, registrar_alteracao
 from pedidos import sincronizar_dados_cliente, sincronizar_contatos_pedidos
 from pdf import gerar_lista_clientes_pdf
@@ -15,44 +15,122 @@ def render():
     t1, t2, t3 = st.tabs(["➕ Cadastrar", "📋 Lista", "🗑️ Excluir"])
 
     with t1:
-        st.subheader("Novo Cliente")
-        with st.form("cli_form", clear_on_submit=True):
-            n = st.text_input("👤 Nome*", placeholder="Ex: João Silva")
-            z = st.text_input("📱 WhatsApp", placeholder="79999999999")
-            o = st.text_area("📝 Observações", placeholder="Ex: Cliente VIP, prefere entrega à tarde...")
+        col_form, col_base = st.columns([1.2, 1], gap="large")
 
-            if st.form_submit_button("💾 Cadastrar", use_container_width=True, type="primary"):
-                if not n.strip():
-                    st.error("❌ Nome é obrigatório!")
-                else:
-                    # Verifica duplicado
-                    nomes = st.session_state.clientes['Nome'].str.lower().str.strip().tolist()
-                    if n.lower().strip() in nomes:
-                        st.warning(f"⚠️ Cliente '{n}' já cadastrado!")
+        # ── Coluna esquerda: formulário de cadastro ───────────────────────────
+        with col_form:
+            st.markdown(
+                "<div style='font-size:1.15rem; font-weight:800; color:#1f2937;'>"
+                "<span style='color:#ea580c;'>●</span> Novo cliente</div>"
+                "<div style='color:#6b7280; font-size:0.85rem; margin-bottom:10px;'>"
+                "Cadastro e contatos da sua base.</div>",
+                unsafe_allow_html=True
+            )
+            with st.form("cli_form", clear_on_submit=True):
+                n = st.text_input("Nome*", placeholder="Ex: João Silva")
+                z = st.text_input("WhatsApp", placeholder="79 99999-9999")
+                o = st.text_area("Observações", placeholder="Ex: cliente VIP, prefere entrega à tarde...")
+
+                if st.form_submit_button("Cadastrar cliente", use_container_width=True, type="primary"):
+                    if not n.strip():
+                        st.error("❌ Nome é obrigatório!")
                     else:
-                        tel_limpo, msg_tel = validar_telefone(z)
-                        if msg_tel:
-                            st.warning(msg_tel)
-
-                        novo = pd.DataFrame([{
-                            "Nome": n.strip(),
-                            "Contato": tel_limpo,
-                            "Observacoes": o.strip()
-                        }])
-                        st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
-
-                        # Tenta salvar no disco
-                        if not salvar_clientes(st.session_state.clientes):
-                            st.error("❌ ERRO: Não foi possível cadastrar o cliente. Tente novamente.")
+                        # Verifica duplicado
+                        nomes = st.session_state.clientes['Nome'].str.lower().str.strip().tolist()
+                        if n.lower().strip() in nomes:
+                            st.warning(f"⚠️ Cliente '{n}' já cadastrado!")
                         else:
-                            # Recarrega do arquivo para garantir sincronização
-                            st.session_state.clientes = carregar_clientes()
+                            tel_limpo, msg_tel = validar_telefone(z)
+                            if msg_tel:
+                                st.warning(msg_tel)
 
-                            # Sincronização automática com Google Sheets (se habilitada)
-                            sincronizar_automaticamente(operacao="cadastrar_cliente")
+                            novo = pd.DataFrame([{
+                                "Nome": n.strip(),
+                                "Contato": tel_limpo,
+                                "Observacoes": o.strip()
+                            }])
+                            st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
 
-                            st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
-                            st.rerun()
+                            # Tenta salvar no disco
+                            if not salvar_clientes(st.session_state.clientes):
+                                st.error("❌ ERRO: Não foi possível cadastrar o cliente. Tente novamente.")
+                            else:
+                                # Recarrega do arquivo para garantir sincronização
+                                st.session_state.clientes = carregar_clientes()
+
+                                # Sincronização automática com Google Sheets (se habilitada)
+                                sincronizar_automaticamente(operacao="cadastrar_cliente")
+
+                                st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
+                                st.rerun()
+
+        # ── Coluna direita: base de clientes com avatares (somente leitura) ───
+        with col_base:
+            df_cli = st.session_state.clientes
+            total = len(df_cli) if df_cli is not None else 0
+            st.markdown(
+                f"<div style='font-size:1.05rem; font-weight:800; color:#1f2937; margin-bottom:6px;'>"
+                f"Base de clientes <span style='color:#9ca3af; font-weight:600;'>· {total}</span></div>",
+                unsafe_allow_html=True
+            )
+            busca_base = st.text_input(
+                "Buscar cliente", key="busca_base_clientes",
+                placeholder="🔎 Buscar cliente...", label_visibility="collapsed"
+            )
+
+            # Estilos do cartão da base (escopados pela classe .cli-base)
+            estilo_base = """
+            <style>
+            .cli-base {
+                max-height: 540px; overflow-y: auto; padding: 6px 4px;
+                border: 1px solid #f0e3da; border-radius: 14px; background: #fffdfb;
+            }
+            .cli-row {
+                display: flex; align-items: center; gap: 12px;
+                padding: 9px 12px; border-bottom: 1px solid #f5eee8;
+            }
+            .cli-row:last-child { border-bottom: none; }
+            .cli-av {
+                flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+                background: #fde4d3; color: #c2410c; font-weight: 800;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 0.95rem;
+            }
+            .cli-info { display: flex; flex-direction: column; line-height: 1.2; }
+            .cli-nome { font-weight: 700; color: #374151; font-size: 0.92rem; }
+            .cli-tel { color: #9ca3af; font-size: 0.78rem; }
+            </style>
+            """
+
+            if total == 0:
+                st.info("Nenhum cliente cadastrado ainda.")
+            else:
+                df_ord = df_cli.copy()
+                df_ord['Nome'] = df_ord['Nome'].fillna("").astype(str)
+                df_ord = df_ord.sort_values('Nome', key=lambda s: s.str.lower())
+
+                termo = (busca_base or "").strip().lower()
+                if termo:
+                    df_ord = df_ord[df_ord['Nome'].str.lower().str.contains(termo, na=False)]
+
+                linhas = []
+                for _, c in df_ord.iterrows():
+                    nome = c['Nome'].strip()
+                    if not nome:
+                        continue
+                    inicial = nome[:1].upper()
+                    tel = limpar_telefone(c.get('Contato', ''))
+                    tel_html = f"<span class='cli-tel'>{safe_html(tel)}</span>" if tel else ""
+                    linhas.append(
+                        f"<div class='cli-row'><div class='cli-av'>{safe_html(inicial)}</div>"
+                        f"<div class='cli-info'><span class='cli-nome'>{safe_html(nome)}</span>"
+                        f"{tel_html}</div></div>"
+                    )
+
+                if linhas:
+                    st.markdown(estilo_base + f"<div class='cli-base'>{''.join(linhas)}</div>", unsafe_allow_html=True)
+                else:
+                    st.caption("Nenhum cliente encontrado para a busca.")
 
     with t2:
         st.subheader("Lista de Clientes")
