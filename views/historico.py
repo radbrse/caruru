@@ -174,6 +174,20 @@ def render():
                 if st.button(f"🗑️ Deletar {len(selecionados)} selecionado(s)", type="primary", key="btn_del_sel_hist", use_container_width=True):
                     st.session_state['confirmar_deletar_selecionados'] = True
                     st.rerun()
+            else:
+                # Quantidade de KG vendidos no período filtrado (Caruru + Bobó)
+                kg_caruru = int(df_entregues['Caruru'].sum())
+                kg_bobo = int(df_entregues['Bobo'].sum())
+                kg_total = kg_caruru + kg_bobo
+                st.markdown(
+                    f"""<div style='padding:8px 14px; background:#fff7ed; border:1px solid #fdba74;
+                    border-radius:10px; text-align:center; line-height:1.3;'>
+                    <span style='font-size:0.8rem; color:#9a3412; font-weight:600;'>⚖️ KG vendidos</span><br>
+                    <span style='font-size:1.15rem; color:#c2410c; font-weight:800;'>{kg_total} kg</span>
+                    <span style='font-size:0.8rem; color:#9a3412;'>&nbsp;(🥘 {kg_caruru} · 🦐 {kg_bobo})</span>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
 
         # Confirmação de exclusão seletiva
         if st.session_state.get('confirmar_deletar_selecionados', False) and selecionados:
