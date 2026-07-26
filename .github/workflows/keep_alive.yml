@@ -52,9 +52,18 @@ jobs:
                   else:
                       print('Nenhum botao de hibernacao encontrado — app ja estava ativo.')
 
-                  # Aguarda carregamento completo da rede (suficiente para registrar tráfego real)
-                  print('Aguardando carregamento...')
-                  page.wait_for_load_state('networkidle', timeout=60000)
+                  # Sinal REAL de que o app subiu: o container do Streamlit renderizou.
+                  # networkidle NAO serve como criterio de falha aqui — o Streamlit mantem
+                  # um websocket aberto, entao a rede quase nunca fica ociosa e o wait
+                  # estoura por timeout mesmo com o app no ar (falha falsa do keep-alive).
+                  print('Aguardando o app renderizar...')
+                  page.wait_for_selector('[data-testid="stApp"]', timeout=90000)
+
+                  # Melhor esforco: se a rede sossegar, otimo; se nao, seguimos adiante.
+                  try:
+                      page.wait_for_load_state('networkidle', timeout=20000)
+                  except Exception:
+                      print('networkidle nao atingido (websocket ativo) — seguindo.')
 
                   # Mantém sessão aberta para registrar como tráfego real
                   print('Carregado! Mantendo sessao por 30s...')
@@ -63,10 +72,15 @@ jobs:
                   print(f'Sucesso! Titulo: {page.title()}')
 
               except Exception as e:
-                  # Salva screenshot para diagnosticar falhas futuras
-                  page.screenshot(path='failure.png', full_page=True)
+                  # Salva screenshot para diagnosticar falhas futuras.
+                  # O proprio screenshot pode falhar (pagina morta) — nao deixar que
+                  # isso mascare a excecao original.
+                  try:
+                      page.screenshot(path='failure.png', full_page=True)
+                      print('Screenshot salvo em failure.png (ver artefato do workflow)')
+                  except Exception as e_shot:
+                      print(f'Nao foi possivel salvar screenshot: {e_shot}')
                   print(f'ERRO: {e}')
-                  print('Screenshot salvo em failure.png (ver artefato do workflow)')
                   raise
 
               finally:
