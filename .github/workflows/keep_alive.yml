@@ -34,6 +34,20 @@ jobs:
                   print('Acessando Cantinho do Caruru...')
                   page.goto(url, wait_until='domcontentloaded', timeout=90000)
 
+                  # MURO DE AUTENTICACAO: se o app estiver PRIVADO no Streamlit Cloud,
+                  # o acesso anonimo e redirecionado para share.streamlit.io/-/auth ou
+                  # /-/login e o app nunca renderiza. Isso e configuracao, nao defeito —
+                  # sinalizamos como warning e saimos sem falhar (evita alarme falso a
+                  # cada 6h). Para o keep-alive voltar a funcionar, o app precisa estar
+                  # publico (os dados seguem protegidos pela senha do proprio app).
+                  destino = page.url
+                  if '/-/auth' in destino or '/-/login' in destino or 'share.streamlit.io' in destino:
+                      print(f'::warning::App PRIVADO no Streamlit Cloud — keep-alive nao consegue acessar (redirecionado para {destino}). Torne o app publico para reativar o keep-alive; a senha do app continua protegendo os dados.')
+                      print('Encerrando sem falha (estado de configuracao, nao erro).')
+                      # SystemExit nao herda de Exception → nao cai no except abaixo;
+                      # o browser e fechado pelo finally.
+                      sys.exit(0)
+
                   # Se o app estiver hibernando, Streamlit mostra tela com botão para acordá-lo
                   # Tenta vários seletores — Streamlit já mudou o texto entre versões
                   wake_selectors = [
