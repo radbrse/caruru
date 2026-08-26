@@ -1,11 +1,21 @@
 name: Keep Alive - Cantinho do Caruru
 
 on:
-  schedule:
-    # Roda a cada 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
-    # Streamlit hiberna após 12h sem tráfego real — 6h dá folga segura
-    - cron: "0 */6 * * *"
-  workflow_dispatch: # Permite executar manualmente no GitHub
+  # AGENDAMENTO DESATIVADO PROPOSITALMENTE.
+  #
+  # O app e PRIVADO no Streamlit Cloud: um acesso anonimo e redirecionado para
+  # share.streamlit.io/-/auth, entao o robo nunca alcanca o app e nao ha como
+  # acorda-lo. Rodar a cada 6h so gerava aviso de falha sem nenhum ganho.
+  #
+  # A hibernacao do Streamlit segue coberta pelo auto-restore do Google Sheets:
+  # se o CSV local for apagado, os dados sao restaurados no proximo acesso.
+  #
+  # Para reativar: torne o app publico no Streamlit Cloud (a senha do proprio
+  # app continua protegendo os dados) e descomente o bloco schedule abaixo.
+  #
+  # schedule:
+  #   - cron: "0 */6 * * *"
+  workflow_dispatch: # Execucao manual continua disponivel
 
 jobs:
   wake-up:
@@ -33,6 +43,20 @@ jobs:
               try:
                   print('Acessando Cantinho do Caruru...')
                   page.goto(url, wait_until='domcontentloaded', timeout=90000)
+
+                  # MURO DE AUTENTICACAO: se o app estiver PRIVADO no Streamlit Cloud,
+                  # o acesso anonimo e redirecionado para share.streamlit.io/-/auth ou
+                  # /-/login e o app nunca renderiza. Isso e configuracao, nao defeito —
+                  # sinalizamos como warning e saimos sem falhar (evita alarme falso a
+                  # cada 6h). Para o keep-alive voltar a funcionar, o app precisa estar
+                  # publico (os dados seguem protegidos pela senha do proprio app).
+                  destino = page.url
+                  if '/-/auth' in destino or '/-/login' in destino or 'share.streamlit.io' in destino:
+                      print(f'::warning::App PRIVADO no Streamlit Cloud — keep-alive nao consegue acessar (redirecionado para {destino}). Torne o app publico para reativar o keep-alive; a senha do app continua protegendo os dados.')
+                      print('Encerrando sem falha (estado de configuracao, nao erro).')
+                      # SystemExit nao herda de Exception → nao cai no except abaixo;
+                      # o browser e fechado pelo finally.
+                      sys.exit(0)
 
                   # Se o app estiver hibernando, Streamlit mostra tela com botão para acordá-lo
                   # Tenta vários seletores — Streamlit já mudou o texto entre versões
