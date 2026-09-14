@@ -25,6 +25,14 @@ Thumbs.db
 
 # Logs
 *.log
+.pytest_cache/
+.caruru-transacao.lock
+.backup-confirmado.json
+.config-recuperar
+config.json
+banco_de_dados_caruru.csv
+banco_de_dados_clientes.csv
+historico_alteracoes.csv
 
 # Backup files
 *.bak

@@ -5,6 +5,9 @@ Constantes, logger, fuso horário e funções de configuração persistente.
 
 import os
 import json
+import math
+from pathlib import Path
+from storage import transacional, escrever_json
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -69,7 +72,7 @@ COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS = {
 }
 
 PRECO_BASE = 70.0
-VERSAO = "21.0"
+VERSAO = "21.1"
 MAX_BACKUP_FILES = 5
 CACHE_TIMEOUT = 60
 
@@ -78,67 +81,77 @@ logger = logging.getLogger("cantinho")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3)
+    handler = RotatingFileHandler(ARQUIVO_LOG, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
     handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
     logger.addHandler(handler)
 
 # --- CONFIGURAÇÃO PERSISTENTE ---
-def carregar_config():
-    """Carrega configurações do arquivo JSON."""
-    config_padrao = {'preco_base': 70.0}
-    try:
-        if os.path.exists(ARQUIVO_CONFIG):
-            with open(ARQUIVO_CONFIG, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                logger.info("Configurações carregadas do arquivo")
-                return config
-        else:
-            salvar_config(config_padrao)
-            logger.info("Arquivo de configuração criado com valores padrão")
-            return config_padrao
-    except Exception as e:
-        logger.error(f"Erro ao carregar config: {e}")
-        return config_padrao
+class PrecoNaoConfigurado(ValueError):
+    pass
 
+
+def validar_config(dados):
+    preco = float(dados['preco_base'])
+    if not math.isfinite(preco) or preco <= 0:
+        raise ValueError('Preço base deve ser um número finito maior que zero.')
+    return {'preco_base': preco}
+
+
+@transacional
+def carregar_config():
+    """Recupera preço persistido; nunca recria silenciosamente um default."""
+    if os.path.exists(ARQUIVO_CONFIG) and not Path('.config-recuperar').exists():
+        try:
+            with open(ARQUIVO_CONFIG, encoding='utf-8') as handle:
+                return validar_config(json.load(handle))
+        except (ValueError, KeyError, TypeError):
+            logger.warning('Configuração local inválida; tentando recuperar do Sheets.')
+    from sheets import conectar_google_sheets, ler_config_negocio
+    client = conectar_google_sheets()
+    if not client:
+        raise RuntimeError('Não foi possível recuperar o preço do Sheets. Verifique a conexão antes de cadastrar pedidos.')
+    dados = ler_config_negocio(client)
+    if dados is None:
+        raise PrecoNaoConfigurado('Preço ainda não cadastrado no backup. Confirme o preço vigente para continuar.')
+    dados = validar_config(dados)
+    if not salvar_config(dados):
+        raise RuntimeError('Preço recuperado, mas não foi possível persistir a configuração local.')
+    Path('.config-recuperar').unlink(missing_ok=True)
+    return dados
+
+
+@transacional
 def salvar_config(config):
-    """Salva configurações no arquivo JSON."""
     try:
-        with open(ARQUIVO_CONFIG, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-        logger.info(f"Configurações salvas: {config}")
+        escrever_json(ARQUIVO_CONFIG, validar_config(config))
         return True
     except Exception as e:
-        logger.error(f"Erro ao salvar config: {e}")
+        logger.error(f'Erro ao salvar configuração: {e}')
         return False
 
+
 def obter_preco_base():
-    """Obtém o preço base atual das configurações."""
-    import streamlit as st
-    if 'config' not in st.session_state:
-        st.session_state.config = carregar_config()
-    return st.session_state.config.get('preco_base', 70.0)
+    # Lê a revisão local atual: uma sessão antiga não conserva preço anterior.
+    return carregar_config()['preco_base']
 
+
+@transacional
 def atualizar_preco_base(novo_preco):
-    """Atualiza o preço base nas configurações."""
     import streamlit as st
+    from sheets import conectar_google_sheets, salvar_config_negocio
     try:
-        novo_preco = float(novo_preco)
-        if novo_preco <= 0:
-            return False, "❌ Preço deve ser maior que zero"
-
-        if 'config' not in st.session_state:
-            st.session_state.config = carregar_config()
-
-        st.session_state.config['preco_base'] = novo_preco
-
-        if salvar_config(st.session_state.config):
-            logger.info(f"Preço base atualizado: R$ {novo_preco:.2f}")
-            return True, f"✅ Preço base atualizado para R$ {novo_preco:.2f}"
-        else:
-            return False, "❌ Erro ao salvar configuração"
-
-    except ValueError:
-        return False, "❌ Valor inválido para preço"
+        dados = validar_config({'preco_base': novo_preco})
+        client = conectar_google_sheets()
+        if not client:
+            return False, 'Não foi possível conectar ao Sheets. Preço não alterado.'
+        # Se a confirmação da rede/local falhar, próxima leitura consulta o Sheets.
+        Path('.config-recuperar').touch()
+        salvar_config_negocio(client, dados)
+        if not salvar_config(dados):
+            return False, 'Preço salvo no Sheets, mas a cópia local precisa ser recuperada. Recarregue a página.'
+        Path('.config-recuperar').unlink(missing_ok=True)
+        st.session_state.config = dados
+        return True, f"Preço base salvo no Sheets: R$ {dados['preco_base']:.2f}"
     except Exception as e:
-        logger.error(f"Erro ao atualizar preço base: {e}")
-        return False, f"❌ Erro: {e}"
+        logger.error(f'Erro ao atualizar preço: {e}')
+        return False, f'Preço não confirmado. Verifique a conexão e recarregue: {e}'

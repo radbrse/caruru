@@ -355,19 +355,25 @@ def render():
                                 st.error(msg)
 
                 with col2:
-                    if st.button("📥 Baixar do Sheets ⚠️", use_container_width=True):
+                    if st.button("📥 Baixar do Sheets ⚠️", use_container_width=True, key='preparar_restore'):
+                        st.session_state['confirmar_restore_sheets'] = True
+                    if st.session_state.get('confirmar_restore_sheets', False):
                         st.warning("⚠️ **ATENÇÃO:** Isso substituirá seus dados locais!")
-                        confirmar_download = st.checkbox("Confirmo que quero sobrescrever dados locais")
+                        confirmar_download = st.checkbox("Confirmo que quero sobrescrever dados locais", key='aceitar_restore')
 
-                        if confirmar_download and st.button("✅ CONFIRMAR DOWNLOAD"):
+                        if st.button("✅ CONFIRMAR DOWNLOAD", disabled=not confirmar_download, key='confirmar_restore_exec'):
                             with st.spinner("Baixando dados..."):
                                 sucesso, msg = sincronizar_com_sheets(modo="receber")
                                 if sucesso:
+                                    st.session_state['confirmar_restore_sheets'] = False
                                     st.toast("Dados restaurados do Google Sheets!", icon="☁️")
                                     st.success(msg)
                                     st.rerun()
                                 else:
                                     st.error(msg)
+                        if st.button('Cancelar restauração', key='cancelar_restore'):
+                            st.session_state['confirmar_restore_sheets'] = False
+                            st.rerun()
 
                 st.divider()
 
@@ -381,76 +387,11 @@ def render():
             if not status_ok:
                 st.error("❌ Configure as credenciais primeiro")
             else:
-                st.markdown("#### Enviar Dados Específicos")
-
-                tipo_envio = st.selectbox(
-                    "Selecione o que deseja enviar:",
-                    ["Pedidos", "Clientes", "Ambos"]
-                )
-
-                if st.button("📤 Enviar Selecionado", use_container_width=True):
-                    try:
-                        client = conectar_google_sheets()
-                        if client:
-                            if tipo_envio in ["Pedidos", "Ambos"]:
-                                sucesso, msg = salvar_no_sheets(client, "Pedidos", st.session_state.pedidos)
-                                st.info(msg)
-
-                            if tipo_envio in ["Clientes", "Ambos"]:
-                                sucesso, msg = salvar_no_sheets(client, "Clientes", st.session_state.clientes)
-                                st.info(msg)
-
-                            st.success("✅ Operação concluída!")
-                        else:
-                            st.error("❌ Erro ao conectar")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
-
-                st.divider()
-
-                st.markdown("#### Baixar Dados Específicos")
-
-                tipo_download = st.selectbox(
-                    "Selecione o que deseja baixar:",
-                    ["Pedidos", "Clientes"],
-                    key="download_tipo"
-                )
-
-                if st.button("📥 Baixar Selecionado", use_container_width=True):
-                    try:
-                        client = conectar_google_sheets()
-                        if client:
-                            if tipo_download == "Pedidos":
-                                df, msg = carregar_do_sheets(client, "Pedidos")
-                                if df is not None and not df.empty:
-                                    st.dataframe(df.head(10), use_container_width=True)
-                                    st.info(msg)
-
-                                    if st.button("✅ Confirmar e Aplicar"):
-                                        if not salvar_pedidos(df):
-                                            st.error("❌ ERRO: Não foi possível restaurar pedidos. Tente novamente.")
-                                        else:
-                                            st.session_state.pedidos = carregar_pedidos()
-                                            st.success("✅ Pedidos restaurados!")
-                                            st.rerun()
-
-                            elif tipo_download == "Clientes":
-                                df, msg = carregar_do_sheets(client, "Clientes")
-                                if df is not None and not df.empty:
-                                    st.dataframe(df.head(10), use_container_width=True)
-                                    st.info(msg)
-
-                                    if st.button("✅ Confirmar e Aplicar", key="aplicar_clientes"):
-                                        if not salvar_clientes(df):
-                                            st.error("❌ ERRO: Não foi possível restaurar clientes. Tente novamente.")
-                                        else:
-                                            st.session_state.clientes = carregar_clientes()
-                                            st.success("✅ Clientes restaurados!")
-                                            st.rerun()
-                        else:
-                            st.error("❌ Erro ao conectar")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
+                st.info('Envio e recuperação usam um conjunto completo: pedidos, clientes e preço base.')
+                if st.button('Enviar conjunto completo', key='enviar_completo_avancado'):
+                    ok, msg = sincronizar_com_sheets('enviar')
+                    (st.success if ok else st.error)(msg)
+                st.caption('Para recuperar, use a opção de restauração acima. Ela valida todas as fontes antes de gravar.')
 
         with tab_config:
             st.markdown("### ⚙️ Configuração")
@@ -520,18 +461,10 @@ def render():
                 return "", ""
 
         def _enviar_telegram(token: str, chat_id: str, texto: str) -> tuple[bool, str]:
+            from telegram_envio import enviar_mensagem
             try:
-                url = f"https://api.telegram.org/bot{token}/sendMessage"
-                resp = requests.post(url, json={"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}, timeout=15)
-                if resp.status_code == 200:
-                    return True, "Mensagem enviada!"
-                try:
-                    desc = resp.json().get("description", resp.text)
-                except Exception:
-                    desc = resp.text
-                return False, f"HTTP {resp.status_code}: {desc}"
-            except requests.Timeout:
-                return False, "Timeout — Telegram não respondeu em 15s."
+                enviar_mensagem(token, chat_id, texto)
+                return True, 'Todas as partes foram confirmadas pelo Telegram.'
             except Exception as e:
                 return False, str(e)
 

@@ -5,6 +5,7 @@ from datetime import time
 from config import logger
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
 from sheets import sincronizar_automaticamente
+from pedidos import atualizar_pedido
 from utils import (
     formatar_valor_br,
     get_valor_destaque,
@@ -206,9 +207,10 @@ def render():
                             registrar_alteracao("DELETAR_SELETIVO", 0, "Historico", f"{len(selecionados)} pedidos", "excluídos")
                             sincronizar_automaticamente(operacao="excluir")
                             logger.info(f"🗑️ Deleção seletiva: {len(selecionados)} pedidos removidos")
+                            st.toast(f"🗑️ {len(selecionados)} pedido(s) excluído(s)!", icon="🗑️")
                             _limpar_sel()
                         st.session_state['confirmar_deletar_selecionados'] = False
-                        st.toast(f"🗑️ {len(selecionados)} pedido(s) excluído(s)!", icon="🗑️")
+
                         st.rerun()
                     except Exception as e:
                         logger.error(f"Erro na deleção seletiva: {e}", exc_info=True)
@@ -347,11 +349,8 @@ def render():
                 with col_conf1:
                     if st.button("✅ Sim, Reverter", key=f"sim_reverter_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                         try:
-                            df_atual = st.session_state.pedidos
-                            df_atual['Status'] = df_atual['Status'].astype(object)
-                            df_atual.loc[df_atual['ID_Pedido'] == pedido['ID_Pedido'], 'Status'] = "🔴 Pendente"
-
-                            if not salvar_pedidos(df_atual):
+                            ok, mensagem = atualizar_pedido(int(pedido['ID_Pedido']), {'Status': '🔴 Pendente'})
+                            if not ok:
                                 st.error("❌ ERRO: Não foi possível reverter o pedido. Tente novamente.")
                                 st.session_state[f"confirmar_reverter_{pedido['ID_Pedido']}"] = False
                             else:

@@ -6,6 +6,7 @@ import streamlit as st
 import pandas as pd
 
 from config import logger, agora_brasil
+from storage import transacional, registrar_resultado_backup
 
 # Google Sheets
 try:
@@ -121,7 +122,7 @@ def salvar_no_sheets(client, nome_aba, df):
         ultima_celula = rowcol_to_a1(num_linhas, num_colunas)
         range_atualizar = f'A1:{ultima_celula}'
 
-        worksheet.update(range_atualizar, dados_completos)
+        worksheet.update(range_name=range_atualizar, values=dados_completos)
 
         try:
             linhas_antigas = worksheet.row_count
@@ -132,7 +133,7 @@ def salvar_no_sheets(client, nome_aba, df):
                 worksheet.batch_clear([range_limpar])
                 logger.info(f"🧹 Limpou {linhas_antigas - num_linhas} linhas antigas - Range: {range_limpar}")
         except Exception as e_limpar:
-            logger.warning(f"⚠️ Dados salvos OK, mas limpeza de linhas antigas falhou: {e_limpar}")
+            return False, f"Dados enviados, mas a remoção de linhas antigas falhou: {e_limpar}"
 
         logger.info(f"Dados salvos no Sheets: {nome_aba} ({len(df)} linhas)")
         return True, f"✅ {len(df)} registros salvos no Google Sheets"
@@ -152,12 +153,12 @@ def carregar_do_sheets(client, nome_aba):
             worksheet = spreadsheet.worksheet(nome_aba)
         except gspread.exceptions.WorksheetNotFound:
             logger.warning(f"Aba '{nome_aba}' não encontrada")
-            return pd.DataFrame(), f"⚠️ Aba '{nome_aba}' não existe (vazia)"
+            return None, f"Aba '{nome_aba}' não existe"
 
         dados = worksheet.get_all_values()
 
-        if not dados or len(dados) < 2:
-            return pd.DataFrame(), f"⚠️ Aba '{nome_aba}' está vazia"
+        if not dados:
+            return None, f"Aba '{nome_aba}' sem cabeçalho"
 
         df = pd.DataFrame(dados[1:], columns=dados[0])
 
@@ -174,86 +175,93 @@ def carregar_do_sheets(client, nome_aba):
 # ==============================================================================
 # SINCRONIZAÇÃO
 # ==============================================================================
-def sincronizar_com_sheets(modo="enviar"):
-    """
-    Sincroniza dados entre CSV local e Google Sheets.
+def ler_config_negocio(client):
+    """None significa chave ainda não migrada; erro de rede nunca significa default."""
+    planilha = obter_ou_criar_planilha(client)
+    if planilha is None:
+        raise RuntimeError('Planilha indisponível')
+    try:
+        ws = planilha.worksheet('Config')
+    except gspread.exceptions.WorksheetNotFound:
+        return None
+    for row in ws.get_all_records():
+        if str(row.get('Chave', '')).strip() == 'preco_base':
+            from config import validar_config
+            return validar_config({'preco_base': row.get('Valor')})
+    return None
 
-    Modos:
-    - "enviar": Faz backup dos dados locais para o Sheets (RECOMENDADO)
-    - "receber": Restaura dados do Sheets para o local (CUIDADO: sobrescreve!)
 
-    NOTA: Modo "ambos" foi removido por segurança. Use apenas "enviar" para backup.
-    """
-    from database import salvar_pedidos, carregar_pedidos, salvar_clientes, carregar_clientes
+def salvar_config_negocio(client, config):
+    from config import validar_config
+    dados = validar_config(config)
+    planilha = obter_ou_criar_planilha(client)
+    if planilha is None:
+        raise RuntimeError('Planilha indisponível')
+    try:
+        ws = planilha.worksheet('Config')
+    except gspread.exceptions.WorksheetNotFound:
+        ws = planilha.add_worksheet(title='Config', rows=20, cols=2)
+        ws.append_row(['Chave', 'Valor'])
+    for i, row in enumerate(ws.get_all_records(), start=2):
+        if str(row.get('Chave', '')).strip() == 'preco_base':
+            ws.update_cell(i, 2, str(dados['preco_base']))
+            break
+    else:
+        ws.append_row(['preco_base', str(dados['preco_base'])])
+    if ler_config_negocio(client) != dados:
+        raise RuntimeError('Preço não confirmado após gravação no Sheets')
 
+
+@transacional
+def sincronizar_com_sheets(modo='enviar'):
+    from database import carregar_pedidos, carregar_clientes, restaurar_conjunto
+    from config import carregar_config
     try:
         client = conectar_google_sheets()
         if not client:
-            return False, "❌ Não foi possível conectar ao Google Sheets"
-
-        resultados = []
-
-        if modo == "enviar":
-            envio_ok = True
-
-            df_pedidos = st.session_state.pedidos
-            sucesso_pedidos, msg = salvar_no_sheets(client, "Pedidos", df_pedidos)
-            resultados.append(f"Pedidos: {msg}")
-            if not sucesso_pedidos:
-                envio_ok = False
-
-            df_clientes = st.session_state.clientes
-            sucesso_clientes, msg = salvar_no_sheets(client, "Clientes", df_clientes)
-            resultados.append(f"Clientes: {msg}")
-            if not sucesso_clientes:
-                envio_ok = False
-
-            if not envio_ok:
-                return False, "\n".join(resultados)
-
-            # ✅ CORREÇÃO: Usar append_row nativo do Sheets (append-only, sem race condition)
+            raise RuntimeError('Não foi possível conectar ao Google Sheets')
+        if modo == 'enviar':
+            # Snapshot do disco, nunca da sessão. A trava também serializa uploads.
+            config = carregar_config()
+            df_pedidos, df_clientes = carregar_pedidos(), carregar_clientes()
+            resultados = []
+            for aba, df in [('Pedidos', df_pedidos), ('Clientes', df_clientes)]:
+                ok, msg = salvar_no_sheets(client, aba, df)
+                resultados.append(f'{aba}: {msg}')
+                if not ok:
+                    raise RuntimeError('Backup parcial: ' + '; '.join(resultados))
+            salvar_config_negocio(client, config)
+            registrar_resultado_backup(True)
             try:
-                spreadsheet = obter_ou_criar_planilha(client)
-                if spreadsheet:
-                    worksheet = spreadsheet.worksheet("Backups_Log")
-                    nova_linha = [
-                        agora_brasil().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Backup Automático",
-                        len(df_pedidos),
-                        len(df_clientes)
-                    ]
-                    worksheet.append_row(nova_linha)  # ✅ Append atômico
-                    logger.info("Backup registrado no log")
-            except Exception as e_log:
-                logger.warning(f"⚠️ Erro ao registrar backup log: {e_log}")
-
-        elif modo == "receber":
-            # Busca ambos antes de persistir qualquer um (evita estado parcial em caso de falha de rede)
-            df_pedidos, msg_p = carregar_do_sheets(client, "Pedidos")
-            df_clientes, msg_c = carregar_do_sheets(client, "Clientes")
-
-            if (df_pedidos is None or df_pedidos.empty) and (df_clientes is None or df_clientes.empty):
-                return False, "❌ Nenhum dado encontrado no Sheets para restaurar"
-
-            if df_pedidos is not None and not df_pedidos.empty:
-                if not salvar_pedidos(df_pedidos):
-                    return False, "❌ Erro ao salvar pedidos baixados do Sheets"
-                st.session_state.pedidos = carregar_pedidos()
-                resultados.append(f"Pedidos: {msg_p}")
-
-            if df_clientes is not None and not df_clientes.empty:
-                if not salvar_clientes(df_clientes):
-                    return False, "❌ Erro ao salvar clientes baixados do Sheets"
-                st.session_state.clientes = carregar_clientes()
-                resultados.append(f"Clientes: {msg_c}")
-        else:
-            return False, f"❌ Modo '{modo}' inválido. Use 'enviar' ou 'receber'."
-
-        return True, "\n".join(resultados)
-
+                ws = obter_ou_criar_planilha(client).worksheet('Backups_Log')
+                ws.append_row([agora_brasil().strftime('%Y-%m-%d %H:%M:%S'),
+                               'Backup confirmado', len(df_pedidos), len(df_clientes)])
+            except Exception as e:
+                logger.warning(f'Backup confirmado, mas log auxiliar indisponível: {e}')
+            return True, 'Pedidos, clientes e preço base confirmados no Sheets.'
+        if modo == 'receber':
+            df_pedidos, msg_p = carregar_do_sheets(client, 'Pedidos')
+            df_clientes, msg_c = carregar_do_sheets(client, 'Clientes')
+            if df_pedidos is None or df_clientes is None:
+                raise RuntimeError(f'Restauração cancelada antes de salvar: {msg_p}; {msg_c}')
+            config = ler_config_negocio(client)
+            if config is None:
+                raise RuntimeError('Preço base ausente no Sheets. Faça a migração pela configuração antes de restaurar.')
+            ok, msg = restaurar_conjunto(df_pedidos, df_clientes, config)
+            if not ok:
+                return False, msg
+            st.session_state.pedidos = carregar_pedidos()
+            st.session_state.clientes = carregar_clientes()
+            st.session_state.config = config
+            # A restauração foi normalizada localmente; um novo envio confirmará a assinatura.
+            return True, msg
+        return False, 'Modo inválido. Use enviar ou receber.'
     except Exception as e:
-        logger.error(f"Erro na sincronização: {e}", exc_info=True)
-        return False, f"❌ Erro na sincronização: {e}"
+        if modo == 'enviar':
+            registrar_resultado_backup(False, str(e))
+        logger.error(f'Erro na sincronização: {e}', exc_info=True)
+        return False, str(e)
+
 
 def verificar_status_sheets():
     """Verifica se Google Sheets está configurado e acessível."""
@@ -372,80 +380,19 @@ def salvar_hora_notificacao(client, hora: int) -> tuple[bool, str]:
         return False, f"❌ Erro ao salvar: {e}"
 
 
-def sincronizar_automaticamente(operacao="geral"):
-    """Sincroniza automaticamente com Google Sheets após operações CRUD."""
+def sincronizar_automaticamente(operacao='geral'):
+    stats = st.session_state.setdefault('sync_stats', {
+        'total_tentativas': 0, 'sucessos': 0, 'falhas': 0,
+        'ultima_sync': None, 'ultimo_status': None, 'ultimo_erro': None,
+    })
     if not st.session_state.get('sync_automatico_habilitado', False):
-        # Não conta como tentativa — foi desabilitado intencionalmente pelo usuário
-        st.session_state['sync_stats']['ultimo_status'] = '⚪ DESABILITADO'
-        st.session_state['sync_stats']['ultimo_erro'] = 'Sincronização automática desabilitada pelo usuário'
-        logger.info("🔴 Sync automático: DESABILITADO pelo usuário")
+        stats['ultimo_status'] = '⚪ DESABILITADO'
         return
-
-    st.session_state['sync_stats']['total_tentativas'] += 1
-
-    if not GSPREAD_AVAILABLE:
-        st.session_state['sync_stats']['ultimo_status'] = '❌ GSPREAD NÃO DISPONÍVEL'
-        st.session_state['sync_stats']['ultimo_erro'] = 'Biblioteca gspread não está instalada'
-        st.session_state['sync_stats']['falhas'] += 1
-        logger.error("🔴 Sync automático: gspread não disponível")
-        return
-
-    if "gcp_service_account" not in st.secrets:
-        st.session_state['sync_stats']['ultimo_status'] = '❌ SEM CREDENCIAIS'
-        st.session_state['sync_stats']['ultimo_erro'] = 'Credenciais do Google Sheets não configuradas'
-        st.session_state['sync_stats']['falhas'] += 1
-        logger.error("🔴 Sync automático: credenciais não configuradas")
-        return
-
-    try:
-        client = conectar_google_sheets()
-        if not client:
-            st.session_state['sync_stats']['ultimo_status'] = '❌ FALHA CONEXÃO'
-            st.session_state['sync_stats']['ultimo_erro'] = 'Não foi possível conectar ao Google Sheets'
-            st.session_state['sync_stats']['falhas'] += 1
-            logger.warning("🔴 Sync automático: não foi possível conectar ao Sheets")
-            return
-
-        df_pedidos = st.session_state.pedidos
-        sucesso_pedidos, msg_pedidos = salvar_no_sheets(client, "Pedidos", df_pedidos)
-
-        df_clientes = st.session_state.clientes
-        sucesso_clientes, msg_clientes = salvar_no_sheets(client, "Clientes", df_clientes)
-
-        agora = agora_brasil().strftime("%d/%m/%Y %H:%M:%S")
-        st.session_state['sync_stats']['ultima_sync'] = agora
-
-        if sucesso_pedidos and sucesso_clientes:
-            st.session_state['sync_stats']['sucessos'] += 1
-            st.session_state['sync_stats']['ultimo_status'] = '✅ SUCESSO'
-            st.session_state['sync_stats']['ultimo_erro'] = None
-            logger.info(f"🟢 Sync automático ({operacao}): Pedidos e Clientes sincronizados ✅")
-            # ✅ NOTIFICAÇÃO: Backup bem-sucedido
-            st.toast("☁️ Backup automático realizado", icon="✅")
-        elif sucesso_pedidos:
-            st.session_state['sync_stats']['falhas'] += 1
-            st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Pedidos)'
-            st.session_state['sync_stats']['ultimo_erro'] = f'Clientes falhou: {msg_clientes}'
-            logger.warning(f"🟡 Sync automático ({operacao}): Pedidos OK, Clientes falhou - {msg_clientes}")
-            # ⚠️ NOTIFICAÇÃO: Backup parcial
-            st.toast("⚠️ Backup parcial (só Pedidos)", icon="⚠️")
-        elif sucesso_clientes:
-            st.session_state['sync_stats']['falhas'] += 1
-            st.session_state['sync_stats']['ultimo_status'] = '⚠️ PARCIAL (só Clientes)'
-            st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos falhou: {msg_pedidos}'
-            logger.warning(f"🟡 Sync automático ({operacao}): Clientes OK, Pedidos falhou - {msg_pedidos}")
-            # ⚠️ NOTIFICAÇÃO: Backup parcial
-            st.toast("⚠️ Backup parcial (só Clientes)", icon="⚠️")
-        else:
-            st.session_state['sync_stats']['falhas'] += 1
-            st.session_state['sync_stats']['ultimo_status'] = '❌ AMBOS FALHARAM'
-            st.session_state['sync_stats']['ultimo_erro'] = f'Pedidos: {msg_pedidos} | Clientes: {msg_clientes}'
-            logger.warning(f"🔴 Sync automático ({operacao}): Ambos falharam")
-            # ❌ NOTIFICAÇÃO: Backup falhou
-            st.toast("❌ Backup falhou - Dados não salvos!", icon="🚨")
-
-    except Exception as e:
-        st.session_state['sync_stats']['falhas'] += 1
-        st.session_state['sync_stats']['ultimo_status'] = '❌ EXCEÇÃO'
-        st.session_state['sync_stats']['ultimo_erro'] = str(e)
-        logger.warning(f"🔴 Sync automático ({operacao}) com erro: {e}")
+    stats['total_tentativas'] += 1
+    ok, msg = sincronizar_com_sheets('enviar')
+    stats['ultima_sync'] = agora_brasil().strftime('%d/%m/%Y %H:%M:%S')
+    stats['sucessos' if ok else 'falhas'] += 1
+    stats['ultimo_status'] = '✅ SUCESSO' if ok else '❌ FALHA'
+    stats['ultimo_erro'] = None if ok else msg
+    st.toast('Backup confirmado' if ok else 'Alteração local salva; backup não confirmado. Consulte Manutenção.',
+             icon='✅' if ok else '⚠️')

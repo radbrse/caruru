@@ -19,10 +19,13 @@ from database import (
     registrar_alteracao
 )
 from sheets import sincronizar_automaticamente
+from storage import transacional
+from financeiro import preco_contratado
 
 # ==============================================================================
 # CRUD DE PEDIDOS
 # ==============================================================================
+@transacional
 def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, desconto, observacoes, extra=False, vegano=False, delivery=False, entrada=0.0):
     """Cria novo pedido com validação completa."""
     erros = []
@@ -58,13 +61,13 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     if erros:
         return None, erros, avisos
 
-    # Recarrega do disco antes de gerar ID (mitiga race em uso concorrente)
-    # Uma janela mínima ainda existe entre carregar e salvar, mas o risco prático
-    # é baixo no padrão de uso doméstico (1-2 sessões simultâneas).
-    st.session_state.pedidos = carregar_pedidos()
-    df_p = st.session_state.pedidos
+    # Leitura, ID e gravação sob a mesma transação.
+    df_p = carregar_pedidos()
     nid = gerar_id_sequencial(df_p)
-    val = calcular_total(qc, qb, dc)
+    try:
+        val = calcular_total(qc, qb, dc)
+    except ValueError as e:
+        return None, [str(e)], avisos
 
     novo = {
         "ID_Pedido": nid,
@@ -87,10 +90,10 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
     }
 
     df_novo = pd.DataFrame([novo])
-    st.session_state.pedidos = pd.concat([df_p, df_novo], ignore_index=True)
+    df_salvar = pd.concat([df_p, df_novo], ignore_index=True)
+    df_salvar.attrs = df_p.attrs.copy()
 
-    if not salvar_pedidos(st.session_state.pedidos):
-        st.session_state.pedidos = df_p
+    if not salvar_pedidos(df_salvar):
         return None, ["❌ ERRO: Não foi possível salvar o pedido. Tente novamente."], []
 
     st.session_state.pedidos = carregar_pedidos()
@@ -108,16 +111,30 @@ def criar_pedido(cliente, caruru, bobo, data, hora, status, pagamento, contato, 
 
     return nid, [], avisos
 
+@transacional
 def atualizar_pedido(id_pedido, campos_atualizar):
     """Atualiza pedido existente."""
     try:
-        df = st.session_state.pedidos
+        df = carregar_pedidos().copy(deep=True)
         mask = df['ID_Pedido'] == id_pedido
 
         if not mask.any():
             return False, f"❌ Pedido #{id_pedido} não encontrado."
 
         idx = df[mask].index[0]
+        campos_atualizar = dict(campos_atualizar)
+        alteracoes = []
+        original = df.loc[idx].copy()
+        # Formulário aberto antes de outra edição do mesmo campo: não sobrescrever.
+        anterior_sessao = st.session_state.pedidos
+        anterior_sessao = anterior_sessao[anterior_sessao.ID_Pedido == id_pedido]
+        if not anterior_sessao.empty:
+            anterior = anterior_sessao.iloc[0]
+            for campo, novo in campos_atualizar.items():
+                if campo not in original.index:
+                    return False, f'Campo inválido: {campo}'
+                if str(anterior.get(campo)) != str(original[campo]) and str(novo) != str(original[campo]):
+                    return False, f'Pedido #{id_pedido} mudou em outra sessão. Recarregue os dados antes de editar.'
 
         # Força object dtype em colunas com tipos Python nativos antes de .at[] assignments
         # (pandas 2.x + Python 3.13 rejeita atribuição de datetime.date/time com dtype inferido)
@@ -156,14 +173,13 @@ def atualizar_pedido(id_pedido, campos_atualizar):
                     valor = "NÃO PAGO"
 
             df.at[idx, campo] = valor
-            registrar_alteracao("EDITAR", id_pedido, campo, valor_antigo, valor)
 
-        if any(c in campos_atualizar for c in ["Caruru", "Bobo", "Desconto"]):
-            df.at[idx, 'Valor'] = calcular_total(
-                df.at[idx, 'Caruru'],
-                df.at[idx, 'Bobo'],
-                df.at[idx, 'Desconto']
-            )
+        if any(c in campos_atualizar and float(original[c]) != float(df.at[idx, c]) for c in ["Caruru", "Bobo", "Desconto"]):
+            preco = preco_contratado(original)
+            if preco is None:
+                return False, 'Preço histórico não disponível. Preserve os itens ou cadastre um novo pedido com o preço atual.'
+            df.at[idx, 'Valor'] = round((df.at[idx, 'Caruru'] + df.at[idx, 'Bobo']) * preco * (1 - df.at[idx, 'Desconto'] / 100), 2)
+
 
         # Entrada nunca pode exceder o valor do pedido (evita "falta" negativa)
         if 'Entrada' in df.columns:
@@ -179,6 +195,11 @@ def atualizar_pedido(id_pedido, campos_atualizar):
             return False, f"❌ ERRO: Não foi possível salvar as alterações. Tente novamente."
 
         st.session_state.pedidos = carregar_pedidos()
+        # Inclui efeitos derivados (total recalculado/entrada limitada), após commit.
+        alteracoes = [(c, original[c], df.at[idx, c]) for c in df.columns
+                      if str(original[c]) != str(df.at[idx, c])]
+        for campo, antigo, novo in alteracoes:
+            registrar_alteracao("EDITAR", id_pedido, campo, antigo, novo)
 
         if 'Cliente' in campos_atualizar or 'Contato' in campos_atualizar:
             nome_cliente_atual = df.at[idx, 'Cliente']
@@ -199,10 +220,11 @@ def atualizar_pedido(id_pedido, campos_atualizar):
         logger.error(f"Erro atualizar pedido: {e}")
         return False, f"❌ Erro ao atualizar: {e}"
 
+@transacional
 def excluir_pedido(id_pedido, motivo=""):
     """Exclui pedido com registro."""
     try:
-        df = st.session_state.pedidos
+        df = carregar_pedidos().copy(deep=True)
         mask = df['ID_Pedido'] == id_pedido
 
         if not mask.any():
@@ -239,10 +261,11 @@ def buscar_pedido(id_pedido):
 # ==============================================================================
 # SINCRONIZAÇÃO DE CLIENTES
 # ==============================================================================
+@transacional
 def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
     """Sincroniza contatos dos clientes em todos os pedidos existentes."""
-    pedidos = df_pedidos.copy() if df_pedidos is not None else st.session_state.pedidos.copy()
-    clientes = df_clientes if df_clientes is not None else st.session_state.clientes
+    pedidos = carregar_pedidos().copy()
+    clientes = df_clientes if df_clientes is not None else carregar_clientes()
 
     if pedidos is None or clientes is None or pedidos.empty or clientes.empty:
         return 0, 0
@@ -274,6 +297,7 @@ def sincronizar_contatos_pedidos(df_pedidos=None, df_clientes=None):
 
     return atualizados, len(mapa_contatos)
 
+@transacional
 def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, observacoes=""):
     """Sincroniza dados de cliente entre pedidos e cadastro de clientes."""
     try:
@@ -288,7 +312,11 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
 
         logger.info(f"📋 Após limpeza - Nome: '{nome_cliente}', Contato_Limpo: '{contato_limpo}'")
 
-        df_clientes = st.session_state.clientes.copy()
+        df_clientes = carregar_clientes().copy()
+        revisao_clientes = df_clientes.attrs.copy()
+        eventos_cliente = []
+        def _registrar_depois(*args, **kwargs):
+            eventos_cliente.append((args, kwargs))
         logger.info(f"📊 Clientes carregados: {len(df_clientes)} registros")
 
         alterado = False
@@ -315,7 +343,7 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
                     logger.info(f"📝 ATUALIZANDO nome do cliente: '{nome_antigo_cadastro}' → '{nome_cliente}'")
                     df_clientes.loc[idx, 'Nome'] = nome_cliente
 
-                    registrar_alteracao(
+                    _registrar_depois(
                         tipo="ATUALIZAR_CLIENTE",
                         id_pedido=0,
                         campo="Nome",
@@ -346,7 +374,7 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
 
                 df_clientes = pd.concat([df_clientes, pd.DataFrame([novo_cliente])], ignore_index=True)
 
-                registrar_alteracao(
+                _registrar_depois(
                     tipo="CRIAR_CLIENTE",
                     id_pedido=0,
                     campo="Cliente_Completo",
@@ -374,7 +402,7 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
 
                 df_clientes = pd.concat([df_clientes, pd.DataFrame([novo_cliente])], ignore_index=True)
 
-                registrar_alteracao(
+                _registrar_depois(
                     tipo="CRIAR_CLIENTE",
                     id_pedido=0,
                     campo="Cliente_Completo",
@@ -389,7 +417,10 @@ def sincronizar_dados_cliente(nome_cliente, contato, nome_cliente_antigo=None, o
         if alterado:
             logger.info(f"💾 SALVANDO alterações no banco de clientes...")
 
+            df_clientes.attrs = revisao_clientes
             if salvar_clientes(df_clientes):
+                for args, kwargs in eventos_cliente:
+                    registrar_alteracao(*args, **kwargs)
                 logger.info(f"✅ Banco de clientes salvo com sucesso!")
 
                 st.session_state.clientes = carregar_clientes()

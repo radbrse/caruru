@@ -7,97 +7,53 @@ from database import salvar_clientes, carregar_clientes, salvar_pedidos, carrega
 from pedidos import sincronizar_dados_cliente, sincronizar_contatos_pedidos
 from pdf import gerar_lista_clientes_pdf
 from sheets import sincronizar_automaticamente
+from storage import transacional
+from database import restaurar_conjunto
+from config import carregar_config
 
 
 # ==============================================================================
 # OPERAÇÕES RESILIENTES (mesma lógica que as antigas abas Lista/Excluir)
 # ==============================================================================
+@transacional
 def _salvar_edicao_cliente(nome_antigo, nome_novo, contato_novo, obs_nova):
-    """Edita um cliente propagando renome/telefone para os pedidos, com rollback.
-
-    Se a propagação para os pedidos falhar, NADA é salvo (recarrega os pedidos
-    do disco) — evita estado inconsistente (cliente novo, pedidos com dado antigo).
-    Retorna (sucesso: bool, mensagens: list[(tipo, texto)]).
-    """
-    nome_antigo = str(nome_antigo).strip()
-    nome_novo = (nome_novo or "").strip()
-    contato_novo = limpar_telefone(contato_novo)
-    obs_nova = (obs_nova or "").strip()
-
+    nome_antigo, nome_novo = str(nome_antigo).strip(), (nome_novo or '').strip()
     if not nome_novo:
-        return False, [("error", "❌ Nome é obrigatório.")]
-
-    df_cli = st.session_state.clientes.copy()
-    mask_cli = df_cli['Nome'].astype(str).str.strip() == nome_antigo
-    if not mask_cli.any():
-        return False, [("error", f"❌ Cliente '{nome_antigo}' não encontrado.")]
-
-    # Bloqueia renomear para um nome que já existe em OUTRO cliente
-    if nome_novo.lower() != nome_antigo.lower():
-        outros = df_cli[~mask_cli]['Nome'].astype(str).str.strip().str.lower().tolist()
-        if nome_novo.lower() in outros:
-            return False, [("warning", f"⚠️ Já existe um cliente chamado '{nome_novo}'.")]
-
-    idx = df_cli[mask_cli].index[0]
-    contato_antigo = limpar_telefone(df_cli.loc[idx, 'Contato'])
-
-    msgs = []
-    falha = False
-
-    # Propaga renome para os pedidos existentes
-    if nome_novo != nome_antigo:
-        mask_nome = st.session_state.pedidos['Cliente'] == nome_antigo
-        qtd = int(mask_nome.sum())
-        if qtd > 0:
-            st.session_state.pedidos.loc[mask_nome, 'Cliente'] = nome_novo
-            if not salvar_pedidos(st.session_state.pedidos):
-                falha = True
-            else:
-                registrar_alteracao("EDITAR", "CLIENTE", "Nome", nome_antigo, nome_novo)
-                msgs.append(("info", f"✏️ Renomeado em {qtd} pedido(s)."))
-
-    # Propaga telefone para os pedidos (já usando o nome novo)
-    if not falha and contato_novo != contato_antigo:
-        mask_ped = st.session_state.pedidos['Cliente'] == nome_novo
-        qtd2 = int(mask_ped.sum())
-        if qtd2 > 0:
-            st.session_state.pedidos.loc[mask_ped, 'Contato'] = contato_novo
-            if not salvar_pedidos(st.session_state.pedidos):
-                falha = True
-            else:
-                msgs.append(("info", f"📱 Telefone atualizado em {qtd2} pedido(s)."))
-
-    if falha:
-        st.session_state.pedidos = carregar_pedidos()
-        return False, [("error", "❌ Falha ao atualizar os pedidos. Alterações NÃO foram salvas.")]
-
-    # Atualiza o cadastro do cliente
-    df_cli.loc[idx, 'Nome'] = nome_novo
-    df_cli.loc[idx, 'Contato'] = contato_novo
-    df_cli.loc[idx, 'Observacoes'] = obs_nova
-    if not salvar_clientes(df_cli):
-        st.session_state.pedidos = carregar_pedidos()
-        return False, [("error", "❌ Falha ao salvar o cliente. Tente novamente.")]
-
-    st.session_state.clientes = carregar_clientes()
-    sincronizar_automaticamente(operacao="editar_cliente")
-    msgs.append(("success", "💾 Cliente atualizado!"))
-    return True, msgs
+        return False, [('error', 'Nome é obrigatório.')]
+    clientes, pedidos = carregar_clientes(), carregar_pedidos()
+    mask = clientes.Nome.str.strip() == nome_antigo
+    if not mask.any():
+        return False, [('error', 'Cliente não encontrado. Recarregue os dados.')]
+    if nome_novo.lower() != nome_antigo.lower() and nome_novo.lower() in clientes.loc[~mask, 'Nome'].str.strip().str.lower().tolist():
+        return False, [('warning', 'Já existe um cliente com esse nome.')]
+    clientes.loc[mask, ['Nome', 'Contato', 'Observacoes']] = [nome_novo, limpar_telefone(contato_novo), (obs_nova or '').strip()]
+    mask_p = pedidos.Cliente == nome_antigo
+    pedidos.loc[mask_p, ['Cliente', 'Contato']] = [nome_novo, limpar_telefone(contato_novo)]
+    ok, msg = restaurar_conjunto(pedidos, clientes, carregar_config())
+    if not ok:
+        return False, [('error', msg)]
+    st.session_state.pedidos, st.session_state.clientes = carregar_pedidos(), carregar_clientes()
+    registrar_alteracao('EDITAR_CLIENTE', 0, 'Nome/Contato', nome_antigo, nome_novo)
+    sincronizar_automaticamente('editar_cliente')
+    return True, [('success', 'Cliente e pedidos atualizados.')]
 
 
+@transacional
 def _excluir_cliente(nome):
     """Exclui um cliente com a mesma trava da antiga aba Excluir.
 
     Bloqueia se houver pedido(s) ativo(s) (não entregue). Retorna (sucesso, msg).
     """
     nome = str(nome).strip()
-    pedidos_cliente = st.session_state.pedidos[st.session_state.pedidos['Cliente'] == nome]
+    pedidos = carregar_pedidos()
+    pedidos_cliente = pedidos[pedidos['Cliente'] == nome]
     if not pedidos_cliente.empty:
         ativos = pedidos_cliente[pedidos_cliente['Status'] != "✅ Entregue"]
         if not ativos.empty:
             return False, f"🚫 '{nome}' tem {len(ativos)} pedido(s) ativo(s). Não é possível excluir."
 
-    df_atualizado = st.session_state.clientes[st.session_state.clientes['Nome'] != nome]
+    clientes = carregar_clientes()
+    df_atualizado = clientes[clientes['Nome'] != nome]
     if not salvar_clientes(df_atualizado):
         return False, "❌ Não foi possível excluir. Tente novamente."
 
@@ -141,18 +97,10 @@ def render():
                         if msg_tel:
                             st.warning(msg_tel)
 
-                        novo = pd.DataFrame([{
-                            "Nome": n.strip(),
-                            "Contato": tel_limpo,
-                            "Observacoes": o.strip()
-                        }])
-                        st.session_state.clientes = pd.concat([st.session_state.clientes, novo], ignore_index=True)
-
-                        if not salvar_clientes(st.session_state.clientes):
-                            st.error("❌ ERRO: Não foi possível cadastrar o cliente. Tente novamente.")
+                        ok, mensagem, _ = sincronizar_dados_cliente(n.strip(), tel_limpo, observacoes=o.strip())
+                        if not ok:
+                            st.error(mensagem)
                         else:
-                            st.session_state.clientes = carregar_clientes()
-                            sincronizar_automaticamente(operacao="cadastrar_cliente")
                             st.toast(f"Cliente '{n}' cadastrado!", icon="✅")
                             st.rerun()
 
@@ -188,7 +136,7 @@ def render():
                         st.error(f"❌ CSV inválido! Colunas obrigatórias faltando: {', '.join(sorted(colunas_faltantes))}")
                     else:
                         df_c = df_c[colunas_esperadas]
-                        if not salvar_clientes(df_c):
+                        if not salvar_clientes(df_c, substituir=True):
                             st.error("❌ ERRO: Não foi possível importar os clientes. Tente novamente.")
                         else:
                             st.session_state.clientes = carregar_clientes()
@@ -303,7 +251,7 @@ def render():
 
         termo = (busca_base or "").strip().lower()
         if termo:
-            df_ord = df_ord[df_ord['Nome'].str.lower().str.contains(termo, na=False)]
+            df_ord = df_ord[df_ord['Nome'].str.lower().str.contains(termo, regex=False, na=False)]
 
         df_ord = df_ord[df_ord['Nome'].str.strip() != ""]
 

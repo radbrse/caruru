@@ -239,7 +239,7 @@ def calcular_total(caruru, bobo, desconto):
 
     except Exception as e:
         logger.error(f"Erro ao calcular total: {e}", exc_info=True)
-        return 0.0
+        raise ValueError('Preço ou total não confirmado. Recarregue a configuração antes de salvar.') from e
 
 def gerar_link_whatsapp(telefone, mensagem):
     """Gera link do WhatsApp com validação."""

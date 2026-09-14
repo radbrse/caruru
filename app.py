@@ -1,6 +1,6 @@
 """
 Sistema de Gestão de Pedidos - Cantinho do Caruru
-Versão 21.0 - Modularizado
+Versão 21.1 - Persistência e regras financeiras revisadas
 
 Módulos:
   config.py    - Constantes, logger, configurações
@@ -34,6 +34,28 @@ from sheets import (
     verificar_status_sheets, sincronizar_automaticamente,
     sincronizar_com_sheets
 )
+
+# Recupera configuração permanente antes de permitir novos pedidos.
+from config import carregar_config, PrecoNaoConfigurado, atualizar_preco_base
+try:
+    st.session_state.config = carregar_config()
+except PrecoNaoConfigurado as e:
+    st.warning(str(e))
+    st.caption('Informe o preço vigente. Ele será salvo na aba Config do Google Sheets.')
+    preco_inicial = st.number_input('Preço vigente por kg (R$)', min_value=0.01, value=None, step=1.0)
+    if st.button('Confirmar e salvar preço', disabled=preco_inicial is None):
+        ok, mensagem = atualizar_preco_base(preco_inicial)
+        if ok:
+            st.rerun()
+        st.error(mensagem)
+    st.stop()
+except Exception as e:
+    st.error(f'Não foi possível recuperar o preço vigente: {e}')
+    if st.button('Tentar recuperar novamente'):
+        conectar_google_sheets.clear()
+        obter_ou_criar_planilha.clear()
+        st.rerun()
+    st.stop()
 
 # Verificar disponibilidade do gspread
 try:
@@ -69,20 +91,19 @@ if 'auto_restore_tentado' not in st.session_state:
     st.session_state['auto_restore_tentado'] = False
 
 if not st.session_state['auto_restore_tentado']:
-    st.session_state['auto_restore_tentado'] = True  # marca ANTES de qualquer rerun
-    if st.session_state.pedidos.empty and GSPREAD_AVAILABLE:
-        status_ok, _ = verificar_status_sheets()
-        if status_ok:
-            with st.spinner("📥 CSV vazio detectado - Restaurando do Google Sheets..."):
-                sucesso, msg = sincronizar_com_sheets(modo="receber")
-                if sucesso and not st.session_state.pedidos.empty:
-                    st.success("✅ Dados restaurados do backup em nuvem!")
-                    st.toast("☁️ Restauração automática bem-sucedida", icon="✅")
-                    logger.info("🔄 Auto-restore: Dados restaurados do Sheets com sucesso")
-                    st.rerun()
-                else:
-                    st.warning("⚠️ Não foi possível restaurar dados do Sheets")
-                    logger.warning(f"⚠️ Auto-restore falhou: {msg}")
+    from config import ARQUIVO_PEDIDOS, ARQUIVO_CLIENTES
+    st.session_state['auto_restore_tentado'] = True
+    if not os.path.exists(ARQUIVO_PEDIDOS) or not os.path.exists(ARQUIVO_CLIENTES):
+        with st.spinner('Recuperando pedidos, clientes e preço do backup...'):
+            sucesso, msg = sincronizar_com_sheets('receber')
+        if not sucesso:
+            st.session_state['auto_restore_tentado'] = False
+            st.error(f'Recuperação não concluída. Nenhum novo pedido pode ser salvo: {msg}')
+            if st.button('Tentar restaurar novamente'):
+                st.rerun()
+            st.stop()
+        st.toast('Dados restaurados do backup em nuvem.', icon='✅')
+        st.rerun()
 
 # ==============================================================================
 # SIDEBAR
@@ -153,10 +174,9 @@ with st.sidebar:
 
     # 🛡️ INDICADOR DE PROTEÇÃO (sempre visível)
     st.divider()
-    if st.session_state.get('sync_automatico_habilitado', True):
-        st.success("🛡️ **DADOS PROTEGIDOS**\n\nBackup automático ativo")
-    else:
-        st.error("⚠️ **ATENÇÃO**\n\nSem proteção de backup!")
+    from storage import estado_backup
+    nivel_backup, mensagem_backup = estado_backup(st.session_state.get('sync_automatico_habilitado', True))
+    getattr(st, nivel_backup)(mensagem_backup)
 
     st.divider()
     menu = st.radio(
@@ -228,10 +248,13 @@ with st.sidebar:
             else:
                 st.session_state['sync_automatico_habilitado'] = sync_habilitado
 
-            if st.session_state.get('sync_automatico_habilitado', True):
-                st.success("🟢 **PROTEGIDO** - Backup automático ativo")
-            else:
-                st.error("🔴 **SEM PROTEÇÃO** - Dados podem ser perdidos!")
+            nivel, mensagem = estado_backup(st.session_state.get('sync_automatico_habilitado', True))
+            getattr(st, nivel)(mensagem)
+            if st.button('Confirmar backup agora', key='backup_agora_sidebar'):
+                ok, msg = sincronizar_com_sheets('enviar')
+                if ok:
+                    st.rerun()
+                st.error(msg)
 
             st.divider()
             st.markdown("### 📊 Diagnóstico de Sincronização")

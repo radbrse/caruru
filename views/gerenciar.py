@@ -20,7 +20,7 @@ from utils import (
     calcular_total, gerar_link_whatsapp, limpar_telefone
 )
 from database import salvar_pedidos, carregar_pedidos, registrar_alteracao
-from pedidos import sincronizar_dados_cliente
+from pedidos import sincronizar_dados_cliente, atualizar_pedido, excluir_pedido
 from sheets import sincronizar_automaticamente
 
 
@@ -102,7 +102,7 @@ def render():
 
         # Filtro de busca por cliente (case insensitive)
         if busca_cliente:
-            df_view = df_view[df_view['Cliente'].str.contains(busca_cliente, case=False, na=False)]
+            df_view = df_view[df_view['Cliente'].str.contains(busca_cliente, regex=False, case=False, na=False)]
 
         if f_periodo == "Hoje":
             df_view = df_view[df_view['Data'] == hoje_brasil()]
@@ -372,88 +372,21 @@ def render():
                             excluir = st.form_submit_button("🗑️ Excluir Pedido", use_container_width=True, type="secondary")
 
                             if salvar:
-                                # Captura dados antigos ANTES de atualizar (para sincronização)
-                                _antigo_match = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == id_em_edicao]
-                                if _antigo_match.empty:
-                                    st.error(f"❌ Pedido #{id_em_edicao} desapareceu durante a edição. Tente novamente.")
-                                    st.session_state['pedido_em_edicao_id'] = None
-                                    st.stop()
-                                pedido_antigo = _antigo_match.iloc[0]
-                                cliente_antigo = pedido_antigo['Cliente']
-                                contato_antigo = pedido_antigo['Contato']
-
-                                # Atualiza o pedido usando o ID correto
-                                novo_valor = calcular_total(novo_caruru, novo_bobo, novo_desconto)
-                                df_atualizado = st.session_state.pedidos.copy()
-                                mask = df_atualizado['ID_Pedido'] == id_em_edicao
-
-                                # Força object dtype em colunas com tipos Python nativos
-                                # (pandas 2.x + Python 3.13 rejeita atribuição via .loc com dtype inferido)
-                                for _col in ['Data', 'Hora', 'Hora_Entrega']:
-                                    if _col in df_atualizado.columns:
-                                        df_atualizado[_col] = df_atualizado[_col].astype(object)
-
-                                df_atualizado.loc[mask, 'Cliente'] = novo_cliente
-                                df_atualizado.loc[mask, 'Contato'] = novo_contato
-                                df_atualizado.loc[mask, 'Data'] = nova_data
-                                df_atualizado.loc[mask, 'Hora'] = nova_hora
-                                df_atualizado.loc[mask, 'Caruru'] = novo_caruru
-                                df_atualizado.loc[mask, 'Bobo'] = novo_bobo
-                                df_atualizado.loc[mask, 'Desconto'] = novo_desconto
-                                df_atualizado.loc[mask, 'Valor'] = novo_valor
-                                # Entrada nunca pode exceder o valor do pedido
-                                df_atualizado.loc[mask, 'Entrada'] = min(novo_entrada, novo_valor)
-                                df_atualizado.loc[mask, 'Pagamento'] = novo_pagamento
-                                df_atualizado.loc[mask, 'Status'] = novo_status
-                                df_atualizado.loc[mask, 'Observacoes'] = novas_obs
-                                df_atualizado.loc[mask, 'Extra'] = novo_extra
-                                df_atualizado.loc[mask, 'Vegano'] = novo_vegano
-                                df_atualizado.loc[mask, 'Delivery'] = novo_delivery
-
-                                # Hora de entrega: manual (prioritário) ou auto ao marcar Entregue
+                                campos = dict(Cliente=novo_cliente, Contato=novo_contato,
+                                              Data=nova_data, Hora=nova_hora, Caruru=novo_caruru,
+                                              Bobo=novo_bobo, Desconto=novo_desconto, Entrada=novo_entrada,
+                                              Pagamento=novo_pagamento, Status=novo_status,
+                                              Observacoes=novas_obs, Extra=novo_extra,
+                                              Vegano=novo_vegano, Delivery=novo_delivery)
                                 if alterar_hora_entrega and nova_hora_entrega is not None:
-                                    df_atualizado.loc[mask, 'Hora_Entrega'] = nova_hora_entrega
-                                elif novo_status == "✅ Entregue" and pedido_atual['Status'] != "✅ Entregue":
-                                    from config import agora_brasil
-                                    df_atualizado.loc[mask, 'Hora_Entrega'] = agora_brasil().time()
-
-                                if salvar_pedidos(df_atualizado):
-                                    # Recarrega do arquivo para garantir sincronização entre abas
-                                    st.session_state.pedidos = carregar_pedidos()
-
-                                    # SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE SHEETS
-                                    # IMPORTANTE: Sincroniza SEMPRE que houver edição, independente do campo alterado
-                                    sincronizar_automaticamente(operacao="editar")
-                                    logger.info(f"🔄 Sincronização automática disparada após edição do pedido #{id_em_edicao}")
-
-                                    # SINCRONIZAÇÃO AUTOMÁTICA DE DADOS DO CLIENTE
-                                    # Se nome ou contato mudaram, sincroniza com banco de clientes
-                                    cliente_mudou = str(novo_cliente).strip() != str(cliente_antigo).strip()
-                                    contato_mudou = str(novo_contato).strip() != str(contato_antigo).strip()
-
-                                    if cliente_mudou or contato_mudou:
-                                        logger.info(f"🔍 Detectada mudança - Cliente: {cliente_mudou} ('{cliente_antigo}' → '{novo_cliente}'), Contato: {contato_mudou} ('{contato_antigo}' → '{novo_contato}')")
-
-                                        sucesso_sync, msg_sync, tipo_op = sincronizar_dados_cliente(
-                                            nome_cliente=novo_cliente,
-                                            contato=novo_contato,
-                                            nome_cliente_antigo=cliente_antigo if cliente_mudou else None,
-                                            observacoes=""
-                                        )
-
-                                        logger.info(f"📊 Resultado sincronização - Sucesso: {sucesso_sync}, Tipo: {tipo_op}, Msg: {msg_sync}")
-
-                                        if sucesso_sync and tipo_op != "sem_alteracao":
-                                            st.toast(f"🔄 {msg_sync}", icon="🔄")
-                                            logger.info(f"🔄 Sincronização automática: {msg_sync}")
-
-                                    st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
-                                    st.toast(f"✅ Pedido #{id_em_edicao} atualizado!", icon="✅")
-                                    logger.info(f"Pedido {id_em_edicao} editado via Gerenciar Tudo")
-                                    time_module.sleep(0.5)
+                                    campos['Hora_Entrega'] = nova_hora_entrega
+                                ok, mensagem = atualizar_pedido(id_em_edicao, campos)
+                                if ok:
+                                    st.session_state['pedido_em_edicao_id'] = None
+                                    st.toast(mensagem, icon="✅")
                                     st.rerun()
                                 else:
-                                    st.error("❌ Erro ao salvar as alterações.")
+                                    st.error(mensagem)
 
                             if cancelar:
                                 st.session_state['pedido_em_edicao_id'] = None  # Fecha edição
@@ -474,8 +407,8 @@ def render():
                         with col_conf_del_all1:
                             if st.button("✅ SIM, EXCLUIR", key=f"confirmar_sim_all_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
                                 id_para_excluir = int(pedido['ID_Pedido'])
-                                df_atualizado = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] != id_para_excluir].reset_index(drop=True)
-                                if salvar_pedidos(df_atualizado):
+                                ok, mensagem = excluir_pedido(id_para_excluir)
+                                if ok:
                                     # Limpa TODOS os estados relacionados ao pedido
                                     keys_to_delete = [
                                         f"editando_all_{id_para_excluir}",
@@ -549,12 +482,8 @@ def render():
         st.write("### 📥 Fazer Backup")
         try:
             buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "a", zipfile.ZIP_DEFLATED, False) as z:
-                z.writestr("pedidos.csv", st.session_state.pedidos.to_csv(index=False))
-                z.writestr("clientes.csv", st.session_state.clientes.to_csv(index=False))
-                if os.path.exists(ARQUIVO_HISTORICO):
-                    with open(ARQUIVO_HISTORICO, 'r') as f:
-                        z.writestr("historico.csv", f.read())
+            from database import exportar_backup_zip
+            buf = io.BytesIO(exportar_backup_zip())
             st.download_button(
                 "📥 Baixar Backup Completo (ZIP)",
                 buf.getvalue(),
@@ -590,7 +519,7 @@ def render():
                     # Reordena para a ordem canônica completa
                     df_n = df_n[[c for c in COLUNAS_PEDIDOS if c in df_n.columns]]
 
-                    if not salvar_pedidos(df_n):
+                    if not salvar_pedidos(df_n, substituir=True):
                         st.error("❌ ERRO: Não foi possível restaurar os pedidos. Tente novamente.")
                     else:
                         st.session_state.pedidos = carregar_pedidos()
