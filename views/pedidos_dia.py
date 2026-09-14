@@ -48,6 +48,7 @@ def render():
             st.write(f"**Comparação direta (==):** {int((df['Data'] == dt_filter).sum())} match(es)")
             st.write(f"**Comparação type-safe (str):** {int(df['Data'].apply(_data_eq).sum())} match(es)")
 
+        df_financeiro = df_dia.copy()
         df_dia = df_dia[df_dia['Status'] != "✅ Entregue"]
 
         col_busca, col_ord = st.columns([2, 1])
@@ -61,8 +62,8 @@ def render():
         if busca and busca.strip():
             termo = busca.strip().lower()
             df_dia = df_dia[
-                df_dia['Cliente'].str.lower().str.contains(termo, na=False) |
-                df_dia['ID_Pedido'].astype(str).str.contains(termo, na=False)
+                df_dia['Cliente'].str.lower().str.contains(termo, regex=False, na=False) |
+                df_dia['ID_Pedido'].astype(str).str.contains(termo, regex=False, na=False)
             ]
 
         with col_ord:
@@ -105,39 +106,22 @@ def render():
 
         total_dia = int(df['Data'].apply(_data_eq).sum())
 
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1, c2, c3, c4 = st.columns(4)
 
         pend = df_dia[
             (~df_dia['Status'].str.contains("Entregue", na=False)) &
             (~df_dia['Status'].str.contains("Cancelado", na=False))
         ]
 
-        df_nao_cancelados = df_dia[~df_dia['Status'].str.contains("Cancelado", na=False)]
-        faturamento = df_nao_cancelados['Valor'].sum()
-
-        # "A Receber" usa a mesma regra de calcular_falta: entrada (R$) tem prioridade
-        # sobre o status textual; sem entrada, cai no comportamento NÃO PAGO / METADE.
-        def _falta_linha(row):
-            pag = str(row.get('Pagamento', '')).strip().upper()
-            valor = float(row.get('Valor', 0) or 0)
-            if pag == 'PAGO':
-                return 0.0
-            entrada = float(row.get('Entrada', 0) or 0)
-            if entrada > 0:
-                return max(0.0, valor - entrada)
-            if pag == 'NÃO PAGO':
-                return valor
-            if pag == 'METADE':
-                return valor / 2
-            return 0.0
-
-        a_receber = float(df_nao_cancelados.apply(_falta_linha, axis=1).sum()) if not df_nao_cancelados.empty else 0.0
+        from financeiro import totais_financeiros
+        faturamento, a_receber = totais_financeiros(df_financeiro)
 
         c1.metric("📦 Pedidos do dia", total_dia)
         c2.metric("⏳ Falta entregar", len(pend))
         c3.metric("🥘 Caruru (Pend)", int(pend['Caruru'].sum()))
         c4.metric("🦐 Bobó (Pend)", int(pend['Bobo'].sum()))
-        c5.metric("💰 Faturamento", formatar_valor_br(faturamento))
+        c5, c6 = st.columns(2)
+        c5.metric("💰 Faturamento do dia", formatar_valor_br(faturamento))
         c6.metric("📥 A Receber", formatar_valor_br(a_receber), delta_color="inverse")
 
         st.divider()
@@ -202,29 +186,9 @@ def render():
                         col_sim_ent, col_nao_ent = st.columns(2)
                         with col_sim_ent:
                             if st.button("✅ SIM, CONFIRMAR", key=f"sim_entregue_{pedido['ID_Pedido']}", use_container_width=True, type="primary"):
-                                from config import agora_brasil
-                                _match = st.session_state.pedidos[st.session_state.pedidos['ID_Pedido'] == pedido['ID_Pedido']]
-                                if _match.empty:
-                                    st.warning(f"⚠️ Pedido #{int(pedido['ID_Pedido'])} não está mais disponível (pode ter sido excluído ou sincronizado).")
-                                    del st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"]
-                                    st.stop()
-                                idx_original = _match.index[0]
-                                status_antigo = st.session_state.pedidos.at[idx_original, 'Status']
-                                pagamento_antigo = st.session_state.pedidos.at[idx_original, 'Pagamento']
-
-                                # Força object dtype antes de .at[] com tipos nativos (pandas 2.x + Python 3.13)
-                                for _col in ['Status', 'Pagamento', 'Hora_Entrega']:
-                                    if _col in st.session_state.pedidos.columns:
-                                        st.session_state.pedidos[_col] = st.session_state.pedidos[_col].astype(object)
-
-                                st.session_state.pedidos.at[idx_original, 'Status'] = "✅ Entregue"
-                                st.session_state.pedidos.at[idx_original, 'Pagamento'] = "PAGO"
-                                st.session_state.pedidos.at[idx_original, 'Hora_Entrega'] = agora_brasil().time()
-
-                                if salvar_pedidos(st.session_state.pedidos):
-                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Status", status_antigo, "✅ Entregue")
-                                    registrar_alteracao("EDITAR", pedido['ID_Pedido'], "Pagamento", pagamento_antigo, "PAGO")
-                                    sincronizar_automaticamente('editar')
+                                ok, mensagem = atualizar_pedido(int(pedido['ID_Pedido']),
+                                                                {"Status": "✅ Entregue", "Pagamento": "PAGO"})
+                                if ok:
                                     del st.session_state[f"confirmar_entregue_{pedido['ID_Pedido']}"]
                                     st.toast(f"Pedido #{int(pedido['ID_Pedido'])} marcado como entregue e pago!", icon="✅")
                                     st.rerun()

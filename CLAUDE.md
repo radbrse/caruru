@@ -1,6 +1,12 @@
 # Cantinho do Caruru — Documentação Técnica
 
-Sistema de gestão de pedidos para uma confeitaria baiana. Desenvolvido em Streamlit, hospedado no Streamlit Community Cloud. Versão atual: **21.0**.
+Sistema de gestão de pedidos para uma confeitaria baiana. Desenvolvido em Streamlit, hospedado no Streamlit Community Cloud. Versão atual: **21.1**.
+
+---
+
+## Atualização 21.1 — regras vigentes (13/09/2026)
+
+Consulte `docs/AUDITORIA_ONLINE_2026-09-13.md` para as regras atuais e implantação. Essa atualização substitui descrições históricas de locking, auto-recovery, preço e backup neste documento. O lock reentrante de `storage.py` protege transações completas; loads retornam revisão; gravações normais exigem a revisão atual; somente importação/restauração explícita usa `substituir=True`. Não escrever DataFrames de sessão diretamente no Sheets. Configuração sem preço deve ser recuperada ou confirmada, nunca reinicializada silenciosamente. Quitação exige saldo zero; valores financeiros incluem entregues não pagos. Rodar `python -m pytest tests -q` antes de entregar mudanças.
 
 ---
 
@@ -10,7 +16,10 @@ Sistema de gestão de pedidos para uma confeitaria baiana. Desenvolvido em Strea
 app.py              — Entrypoint: login, init de session_state, sidebar, roteamento de abas
 auth.py             — Autenticação por senha (rate-limit + secrets.compare_digest)
 config.py           — Constantes, logger rotativo, fuso horário, preço base
-database.py         — I/O CSV com file locking (fcntl), backups, histórico de alterações
+database.py         — I/O CSV, revisões, restauração do conjunto e histórico
+storage.py          — Trava transacional, assinaturas e confirmação de backup
+financeiro.py       — Total, recebido, saldo e preço histórico
+telegram_envio.py   — Divisão e envio confirmado de mensagens
 sheets.py           — Integração Google Sheets (backup em nuvem + restauração)
 pedidos.py          — CRUD de pedidos + sincronização de clientes
 utils.py            — Validações (telefone, hora), formatação (BRL, WhatsApp links), badges HTML

@@ -39,8 +39,8 @@ Peça já o seu! 😋
         filtro = st.text_input("🔍 Buscar cliente:")
         if filtro:
             df_c = df_c[
-                df_c['Nome'].str.contains(filtro, case=False, na=False) |
-                df_c['Contato'].str.contains(filtro, na=False)
+                df_c['Nome'].str.contains(filtro, regex=False, case=False, na=False) |
+                df_c['Contato'].str.contains(filtro, regex=False, na=False)
             ]
 
         msg_enc = urllib.parse.quote(msg)

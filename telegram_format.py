@@ -70,7 +70,7 @@ def formatar_data_extenso(data_alvo: date) -> str:
 
 
 def formatar_mensagem(pedidos, data_alvo: date, rotulo_data: str = "Pedidos") -> str:
-    """Monta a mensagem de Telegram (Markdown v1) a partir dos pedidos.
+    """Monta a mensagem de Telegram (texto simples) a partir dos pedidos.
 
     Args:
         pedidos: lista de dict-like (dict ou pandas Series).
@@ -81,7 +81,7 @@ def formatar_mensagem(pedidos, data_alvo: date, rotulo_data: str = "Pedidos") ->
 
     if not pedidos:
         return (
-            f"🍛 *Cantinho do Caruru*\n\n"
+            f"🍛 Cantinho do Caruru\n\n"
             f"📅 {rotulo_data}: {data_fmt}\n\n"
             f"📭 Nenhum pedido cadastrado para esta data."
         )
@@ -127,16 +127,16 @@ def formatar_mensagem(pedidos, data_alvo: date, rotulo_data: str = "Pedidos") ->
         else:
             pag_label = "✅ Pedido pago"
 
-        linha1 = f"• *{nome}*{hora_str}"
+        linha1 = f"• {nome}{hora_str}"
         linha2 = "  " + "  ".join(itens + flags + [pag_label])
         linhas.append(f"{linha1}\n{linha2}")
 
     return (
-        f"🍛 *Cantinho do Caruru*\n\n"
-        f"📅 {rotulo_data}: *{data_fmt}*\n\n"
-        f"📦 *{len(pedidos)} pedido(s)*\n"
-        f"🥘 Caruru: *{total_caruru} kg*  |  🦐 Bobó: *{total_bobo} kg*\n"
-        f"💰 Total: *{brl(total_valor)}*\n"
-        + (f"💸 A receber: *{brl(total_pendente)}*\n" if total_pendente > 0 else "")
-        + f"\n👥 *Clientes:*\n" + "\n\n".join(linhas)
+        f"🍛 Cantinho do Caruru\n\n"
+        f"📅 {rotulo_data}: {data_fmt}\n\n"
+        f"📦 {len(pedidos)} pedido(s)\n"
+        f"🥘 Caruru: {total_caruru} kg  |  🦐 Bobó: {total_bobo} kg\n"
+        f"💰 Total: {brl(total_valor)}\n"
+        + (f"💸 A receber: {brl(total_pendente)}\n" if total_pendente > 0 else "")
+        + f"\n👥 Clientes:\n" + "\n\n".join(linhas)
     )

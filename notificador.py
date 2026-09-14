@@ -189,32 +189,8 @@ def carregar_pedidos_amanha(client: gspread.Client, data_alvo: date) -> list[dic
 
 
 def enviar_telegram(token: str, chat_id: str, mensagem: str) -> dict:
-    url  = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(url, json={
-        "chat_id":    chat_id,
-        "text":       mensagem,
-        "parse_mode": "Markdown",
-    }, timeout=15)
-
-    if resp.status_code != 200:
-        try:
-            erro = resp.json()
-            desc = erro.get("description", resp.text)
-        except Exception:
-            desc = resp.text
-
-        if resp.status_code == 401:
-            gh_error(f"TELEGRAM_BOT_TOKEN inválido — Telegram rejeitou: {desc}")
-        elif resp.status_code == 400 and "chat not found" in desc.lower():
-            gh_error(f"TELEGRAM_CHAT_ID '{_mascarar(chat_id)}' não encontrado. Você enviou alguma mensagem ao bot primeiro? Detalhe: {desc}")
-        elif resp.status_code == 403:
-            gh_error(f"Bot bloqueado ou sem permissão no chat {_mascarar(chat_id)}. Detalhe: {desc}")
-        else:
-            gh_error(f"Telegram retornou HTTP {resp.status_code}: {desc}")
-
-        resp.raise_for_status()
-
-    return resp.json()
+    from telegram_envio import enviar_mensagem
+    return enviar_mensagem(token, chat_id, mensagem)
 
 
 def main():

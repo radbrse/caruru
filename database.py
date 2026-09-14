@@ -4,7 +4,6 @@ Operações de banco de dados (CSV): file locking, backup, carregar/salvar.
 
 import os
 import shutil
-import fcntl
 import time as time_module
 import pandas as pd
 from datetime import datetime, time
@@ -17,42 +16,81 @@ from config import (
     COLUNAS_PEDIDOS, COLUNAS_PEDIDOS_OBRIGATORIAS, COLUNAS_PEDIDOS_OPCIONAIS_DEFAULTS
 )
 from utils import validar_hora, limpar_telefone
+from storage import transacional, transacao_dados, com_revisao, conferir_revisao
+
+
+@transacional
+def exportar_backup_zip():
+    import io
+    import json
+    import zipfile
+    from config import carregar_config
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('pedidos.csv', carregar_pedidos().to_csv(index=False))
+        z.writestr('clientes.csv', carregar_clientes().to_csv(index=False))
+        z.writestr('config.json', json.dumps(carregar_config(), ensure_ascii=False))
+        if os.path.exists(ARQUIVO_HISTORICO):
+            with open(ARQUIVO_HISTORICO, encoding='utf-8') as handle:
+                z.writestr('historico.csv', handle.read())
+    return buffer.getvalue()
+
+
+@transacional
+def restaurar_conjunto(df_pedidos, df_clientes, config):
+    """Valida tudo primeiro e desfaz o conjunto se qualquer gravação falhar."""
+    from pathlib import Path
+    from config import ARQUIVO_CONFIG, salvar_config, validar_config
+    arquivos = [ARQUIVO_PEDIDOS, ARQUIVO_CLIENTES, ARQUIVO_CONFIG]
+    try:
+        config = validar_config(config)
+        if not set(COLUNAS_PEDIDOS_OBRIGATORIAS).issubset(df_pedidos.columns):
+            raise ValueError('Cabeçalho de pedidos incompleto')
+        if not {'Nome', 'Contato', 'Observacoes'}.issubset(df_clientes.columns):
+            raise ValueError('Cabeçalho de clientes incompleto')
+        datas = pd.to_datetime(df_pedidos['Data'], errors='coerce')
+        ids = pd.to_numeric(df_pedidos['ID_Pedido'], errors='coerce')
+        if datas.isna().any() or ids.isna().any() or ids.duplicated().any() or (ids <= 0).any() or (ids % 1 != 0).any():
+            raise ValueError('Pedidos com data ou ID inválido/duplicado')
+        for campo in ['Caruru', 'Bobo', 'Valor', 'Desconto', 'Entrada']:
+            if campo in df_pedidos:
+                valores = pd.to_numeric(df_pedidos[campo], errors='coerce')
+                import math
+                if valores.isna().any() or not valores.map(math.isfinite).all() or (valores < 0).any():
+                    raise ValueError(f'Valores inválidos em {campo}')
+        anteriores = {p: Path(p).read_bytes() if Path(p).exists() else None for p in arquivos}
+        for p in arquivos:
+            criar_backup_com_timestamp(p)
+        try:
+            if not salvar_pedidos(df_pedidos, substituir=True):
+                raise OSError('Falha ao salvar pedidos')
+            if not salvar_clientes(df_clientes, substituir=True):
+                raise OSError('Falha ao salvar clientes')
+            if not salvar_config(config):
+                raise OSError('Falha ao salvar preço base')
+            Path('.config-recuperar').unlink(missing_ok=True)
+        except Exception:
+            for arquivo, conteudo in anteriores.items():
+                if conteudo is None:
+                    Path(arquivo).unlink(missing_ok=True)
+                else:
+                    temp = Path(arquivo + '.rollback.tmp')
+                    temp.write_bytes(conteudo)
+                    os.replace(temp, arquivo)
+            raise
+        return True, 'Pedidos, clientes e preço restaurados em conjunto.'
+    except Exception as e:
+        logger.error(f'Restauração não concluída: {e}', exc_info=True)
+        return False, f'Restauração não concluída: {e}. Confira os backups antes de tentar novamente.'
 
 # ==============================================================================
 # FILE LOCKING
 # ==============================================================================
 @contextmanager
-def file_lock(filepath, timeout=30):
-    """Context manager para file locking com timeout."""
-    lock_file = f"{filepath}.lock"
-    lock_fd = None
-    start_time = time_module.time()
-
-    try:
-        lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
-
-        while True:
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                logger.info(f"Lock adquirido: {filepath}")
-                break
-            except IOError:
-                if time_module.time() - start_time >= timeout:
-                    raise TimeoutError(f"Timeout ao tentar adquirir lock para {filepath}")
-                time_module.sleep(0.1)
-
-        yield lock_fd
-
-    finally:
-        if lock_fd is not None:
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_UN)
-                os.close(lock_fd)
-                # NÃO remover o lockfile: deixar o inode estável evita race
-                # condition onde dois processos travam inodes diferentes.
-                logger.info(f"Lock liberado: {filepath}")
-            except Exception as e:
-                logger.error(f"Erro ao liberar lock: {e}")
+def file_lock(filepath, timeout=60):
+    """Uma trava reentrante cobre todos os arquivos e transações compostas."""
+    with transacao_dados().acquire(timeout=timeout):
+        yield
 
 # ==============================================================================
 # BACKUPS
@@ -79,7 +117,7 @@ def limpar_backups_antigos(arquivo_base):
 def criar_backup_com_timestamp(arquivo):
     """Cria backup com timestamp."""
     if os.path.exists(arquivo):
-        timestamp = agora_brasil().strftime("%Y%m%d_%H%M%S")
+        timestamp = agora_brasil().strftime("%Y%m%d_%H%M%S_%f")
         backup = f"{arquivo}.{timestamp}.bak"
         shutil.copy(arquivo, backup)
         logger.info(f"Backup criado: {backup}")
@@ -123,6 +161,7 @@ def listar_backups():
         logger.error(f"Erro ao listar backups: {e}", exc_info=True)
         return pd.DataFrame(columns=['Arquivo', 'Origem', 'Data/Hora', 'Tamanho_KB', 'Caminho'])
 
+@transacional
 def restaurar_backup(arquivo_backup, arquivo_destino):
     """Restaura um backup específico."""
     try:
@@ -168,6 +207,7 @@ def limpar_backups_por_data(dias):
         logger.error(f"Erro ao limpar backups por data: {e}", exc_info=True)
         return False, f"❌ Erro: {e}"
 
+@transacional
 def importar_csv_externo(arquivo_upload, destino):
     """Importa CSV externo para um dos arquivos do sistema."""
     try:
@@ -265,38 +305,18 @@ def importar_csv_externo(arquivo_upload, destino):
 # ==============================================================================
 # CARREGAR / SALVAR DADOS
 # ==============================================================================
+@transacional
 def carregar_clientes():
-    """Carrega banco de clientes com file locking e auto-recovery do Google Sheets."""
+    """Carrega clientes e a revisão do disco, sob a trava compartilhada."""
     import streamlit as st
     colunas = ["Nome", "Contato", "Observacoes"]
-    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
-
-    # AUTO-RECOVERY do Google Sheets
-    if not os.path.exists(ARQUIVO_CLIENTES):
-        try:
-            from sheets import conectar_google_sheets, carregar_do_sheets
-            if "gcp_service_account" in st.secrets:
-                logger.warning("⚠️ Arquivo de clientes não encontrado. Tentando Auto-Recovery do Google Sheets...")
-                client = conectar_google_sheets()
-                if client:
-                    df_cloud, msg = carregar_do_sheets(client, "Clientes")
-                    if df_cloud is not None and not df_cloud.empty:
-                        if salvar_clientes(df_cloud):
-                            logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} clientes recuperados do Google Sheets!")
-                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
-        except Exception as e:
-            logger.error(f"❌ Falha no Auto-Recovery de Clientes: {e}")
 
     if not os.path.exists(ARQUIVO_CLIENTES):
         logger.info("Arquivo de clientes não existe, criando novo DataFrame")
-        return pd.DataFrame(columns=colunas)
+        return com_revisao(pd.DataFrame(columns=colunas), ARQUIVO_CLIENTES)
 
     try:
-        if _df_recuperado is not None:
-            df = _df_recuperado.copy()
-        else:
-            with file_lock(ARQUIVO_CLIENTES):
-                df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
+        df = pd.read_csv(ARQUIVO_CLIENTES, dtype=str)
 
         df = df.fillna("")
 
@@ -308,44 +328,24 @@ def carregar_clientes():
         df["Contato"] = df["Contato"].str.replace(".0", "", regex=False)
 
         logger.info(f"Clientes carregados: {len(df)} registros")
-        return df[colunas]
+        return com_revisao(df[colunas], ARQUIVO_CLIENTES)
 
     except Exception as e:
         logger.error(f"Erro ao carregar clientes: {e}", exc_info=True)
-        return pd.DataFrame(columns=colunas)
+        raise RuntimeError("Falha ao ler clientes; gravação interrompida para preservar os dados.") from e
 
+@transacional
 def carregar_pedidos():
-    """Carrega banco de pedidos com validação completa, file locking e auto-recovery."""
+    """Carrega pedidos e a revisão do disco, sob a trava compartilhada."""
     import streamlit as st
     colunas_padrao = list(COLUNAS_PEDIDOS)
-    _df_recuperado = None  # Guardará df_cloud se recovery bem-sucedido (evita re-leitura do CSV)
-
-    # AUTO-RECOVERY do Google Sheets
-    if not os.path.exists(ARQUIVO_PEDIDOS):
-        try:
-            from sheets import conectar_google_sheets, carregar_do_sheets
-            if "gcp_service_account" in st.secrets:
-                logger.warning("⚠️ Arquivo de pedidos não encontrado. Tentando Auto-Recovery do Google Sheets...")
-                client = conectar_google_sheets()
-                if client:
-                    df_cloud, msg = carregar_do_sheets(client, "Pedidos")
-                    if df_cloud is not None and not df_cloud.empty:
-                        if salvar_pedidos(df_cloud):
-                            logger.info(f"✅ AUTO-RECOVERY: {len(df_cloud)} pedidos recuperados do Google Sheets!")
-                            _df_recuperado = df_cloud  # Dados já em memória — pula re-leitura do CSV
-        except Exception as e:
-            logger.error(f"❌ Falha no Auto-Recovery de Pedidos: {e}")
 
     if not os.path.exists(ARQUIVO_PEDIDOS):
         logger.info("Arquivo de pedidos não existe, criando novo DataFrame")
-        return pd.DataFrame(columns=colunas_padrao)
+        return com_revisao(pd.DataFrame(columns=colunas_padrao), ARQUIVO_PEDIDOS)
 
     try:
-        if _df_recuperado is not None:
-            df = _df_recuperado.copy()
-        else:
-            with file_lock(ARQUIVO_PEDIDOS):
-                df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
+        df = pd.read_csv(ARQUIVO_PEDIDOS, dtype={'Contato': str})
 
         logger.info(f"📊 Dados carregados: {len(df)} pedidos, colunas: {list(df.columns)}")
 
@@ -403,13 +403,14 @@ def carregar_pedidos():
             df.loc[invalid_payment, 'Pagamento'] = "NÃO PAGO"
 
         logger.info(f"Pedidos carregados: {len(df)} registros")
-        return df[colunas_padrao]
+        return com_revisao(df[colunas_padrao], ARQUIVO_PEDIDOS)
 
     except Exception as e:
         logger.error(f"Erro ao carregar pedidos: {e}", exc_info=True)
-        return pd.DataFrame(columns=colunas_padrao)
+        raise RuntimeError("Falha ao ler pedidos; gravação interrompida para preservar os dados.") from e
 
-def salvar_pedidos(df):
+@transacional
+def salvar_pedidos(df, *, substituir=False):
     """Salva pedidos com backup automático, file locking e transação."""
     if df is None or not isinstance(df, pd.DataFrame):
         logger.error("DataFrame inválido para salvar")
@@ -418,6 +419,7 @@ def salvar_pedidos(df):
     backup_path = None
     try:
         with file_lock(ARQUIVO_PEDIDOS):
+            conferir_revisao(df, ARQUIVO_PEDIDOS, substituir)
             backup_path = criar_backup_com_timestamp(ARQUIVO_PEDIDOS)
 
             salvar = df.copy()
@@ -507,7 +509,8 @@ def salvar_pedidos(df):
 
         return False
 
-def salvar_clientes(df):
+@transacional
+def salvar_clientes(df, *, substituir=False):
     """Salva clientes com backup automático, file locking e transação."""
     if df is None or not isinstance(df, pd.DataFrame):
         logger.error("DataFrame inválido para salvar")
@@ -516,6 +519,7 @@ def salvar_clientes(df):
     backup_path = None
     try:
         with file_lock(ARQUIVO_CLIENTES):
+            conferir_revisao(df, ARQUIVO_CLIENTES, substituir)
             backup_path = criar_backup_com_timestamp(ARQUIVO_CLIENTES)
 
             salvar = df.copy()
@@ -544,6 +548,7 @@ def salvar_clientes(df):
 # ==============================================================================
 # HISTÓRICO DE ALTERAÇÕES
 # ==============================================================================
+@transacional
 def salvar_historico(df):
     """Salva histórico de alterações com backup automático, file locking e transação."""
     if df is None or not isinstance(df, pd.DataFrame):
@@ -574,6 +579,7 @@ def salvar_historico(df):
 
         return False
 
+@transacional
 def registrar_alteracao(tipo, id_pedido, campo, valor_antigo, valor_novo):
     """
     Registra alterações para auditoria. Read+append+write tudo dentro do lock.

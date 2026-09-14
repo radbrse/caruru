@@ -32,206 +32,72 @@ def desenhar_cabecalho(p, titulo):
     p.line(20, 740, 570, 740)
 
 def gerar_recibo_pdf(dados):
-    """Gera recibo individual em PDF."""
+    """Comprovante com total, valor recebido e saldo, sem quitação indevida."""
+    from xml.sax.saxutils import escape
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from financeiro import resumo_pagamento, preco_contratado
+
     try:
         buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        id_p = dados.get('ID_Pedido', 'NOVO')
-        desenhar_cabecalho(p, f"Pedido #{id_p}")
-
-        y = 700
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(30, y, "DADOS DO CLIENTE")
-        y -= 20
-        p.setFont("Helvetica", 12)
-        p.drawString(30, y, f"Nome: {dados.get('Cliente', '')}")
-        p.drawString(300, y, f"WhatsApp: {dados.get('Contato', '')}")
-        y -= 20
-
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=36, leftMargin=36,
+                                topMargin=36, bottomMargin=42)
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle('Marca', parent=styles['Title'], textColor=colors.HexColor('#9a3412'), alignment=0))
+        styles.add(ParagraphStyle('Texto', parent=styles['BodyText'], leading=15, spaceAfter=8))
+        def par(text, style='Texto'):
+            return Paragraph(escape(str(text)), styles[style])
+        total, recebido, saldo = resumo_pagamento(dados)
+        quitado = saldo == 0
+        titulo = 'Recibo de pagamento' if quitado else 'Comprovante do pedido'
+        story = [par('Cantinho do Caruru', 'Marca'), par(titulo, 'Heading2'),
+                 par(f"Pedido #{dados.get('ID_Pedido', 'NOVO')}"),
+                 par(f"Cliente: {dados.get('Cliente', '')}"),
+                 par(f"WhatsApp: {dados.get('Contato', '')}")]
         dt = dados.get('Data')
-        dt_s = dt.strftime('%d/%m/%Y') if hasattr(dt, 'strftime') else str(dt)
+        data = dt.strftime('%d/%m/%Y') if hasattr(dt, 'strftime') else str(dt or '')
         hr = dados.get('Hora')
-        hr_s = hr.strftime('%H:%M') if isinstance(hr, time) else str(hr)[:5] if hr else "12:00"
-        p.drawString(30, y, f"Data: {dt_s}")
-        p.drawString(300, y, f"Hora: {hr_s}")
-
-        y -= 40
-        p.setFillColor(colors.lightgrey)
-        p.rect(30, y - 5, 535, 20, fill=1, stroke=0)
-        p.setFillColor(colors.black)
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(40, y, "ITEM")
-        p.drawString(350, y, "QTD")
-        p.drawString(450, y, "UNIT")
-        y -= 25
-        p.setFont("Helvetica", 10)
-
-        preco_atual = obter_preco_base()
-        preco_formatado = f"{preco_atual:.2f}".replace(".", ",")
-        if float(dados.get('Caruru', 0)) > 0:
-            p.drawString(40, y, "Caruru Tradicional")
-            p.drawString(350, y, f"{int(float(dados.get('Caruru')))} kg")
-            p.drawString(450, y, f"R$ {preco_formatado}")
-            y -= 15
-        if float(dados.get('Bobo', 0)) > 0:
-            p.drawString(40, y, "Bobó de Camarão")
-            p.drawString(350, y, f"{int(float(dados.get('Bobo')))} kg")
-            p.drawString(450, y, f"R$ {preco_formatado}")
-            y -= 15
-
-        if float(dados.get('Desconto', 0)) > 0:
-            y -= 10
-            p.setFont("Helvetica-Oblique", 10)
-            p.drawString(40, y, f"Desconto aplicado: {float(dados.get('Desconto')):.0f}%")
-            y -= 15
-
-        p.line(30, y - 5, 565, y - 5)
-
-        y -= 40
-        p.setFont("Helvetica-Bold", 14)
-        lbl = "TOTAL PAGO" if dados.get('Pagamento') == "PAGO" else "VALOR A PAGAR"
-        valor_total_formatado = f"{float(dados.get('Valor', 0)):.2f}".replace(".", ",")
-        p.drawString(350, y, f"{lbl}: R$ {valor_total_formatado}")
-
-        y -= 25
-        p.setFont("Helvetica-Bold", 12)
-        sit = dados.get('Pagamento')
-        if sit == "PAGO":
-            p.setFillColor(colors.green)
-            p.drawString(30, y + 25, "SITUAÇÃO: PAGO ✅")
-        elif sit == "METADE":
-            p.setFillColor(colors.orange)
-            p.drawString(30, y + 25, "SITUAÇÃO: METADE PAGO ⚠️")
-            p.setFillColor(colors.black)
-            p.setFont("Helvetica", 10)
-            p.drawString(30, y, f"Pix para pagamento restante: {CHAVE_PIX}")
+        hora = hr.strftime('%H:%M') if isinstance(hr, time) else str(hr or '')[:5]
+        story += [par(f'Data: {data} | Horário: {hora}'), Spacer(1, 12)]
+        preco = preco_contratado(dados)
+        linhas = [['Item', 'Quantidade', 'Preço por kg']]
+        for campo, nome in [('Caruru', 'Caruru Tradicional'), ('Bobo', 'Bobó de Camarão')]:
+            qtd = float(dados.get(campo, 0) or 0)
+            if qtd > 0:
+                linhas.append([nome, f'{qtd:g} kg', formatar_valor_br(preco) if preco is not None else 'Não disponível'])
+        tabela = Table(linhas, colWidths=[260, 115, 148], hAlign='LEFT')
+        tabela.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#fff1e8')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LINEBELOW', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+        ]))
+        story += [tabela, Spacer(1, 16), par(f"Desconto: {float(dados.get('Desconto', 0) or 0):g}%"),
+                  par(f'Total do pedido: {formatar_valor_br(total)}', 'Heading3'),
+                  par(f'Valor recebido: {formatar_valor_br(recebido)}'),
+                  par(f'Saldo a pagar: {formatar_valor_br(saldo)}', 'Heading3')]
+        if quitado:
+            story += [par('Situação: quitado'),
+                      par(f'Declaramos o recebimento de {formatar_valor_br(recebido)}, dando plena quitação deste pedido.')]
+        elif recebido > 0:
+            story += [par('Situação: pagamento parcial'),
+                      par(f'Declaramos o recebimento parcial de {formatar_valor_br(recebido)}. '
+                          f'Permanece em aberto o saldo de {formatar_valor_br(saldo)}. Este documento não comprova quitação integral.')]
         else:
-            p.setFillColor(colors.red)
-            p.drawString(30, y + 25, "SITUAÇÃO: PENDENTE ❌")
-            p.setFillColor(colors.black)
-            p.setFont("Helvetica", 10)
-            p.drawString(30, y, f"Pix: {CHAVE_PIX}")
-
-        p.setFillColor(colors.black)
-
-        # Declaração de recebimento
-        y -= 50
-        p.setFont("Helvetica-Bold", 11)
-        p.drawString(30, y, "DECLARAÇÃO DE RECEBIMENTO")
-        y -= 20
-
-        p.setFont("Helvetica", 9)
-        produtos = []
-        caruru_qtd = 0
-        bobo_qtd = 0
-
-        try:
-            caruru_qtd = int(float(dados.get('Caruru', 0)))
-            if caruru_qtd > 0:
-                produtos.append(f"{caruru_qtd} kg de Caruru Tradicional")
-        except (ValueError, TypeError):
-            pass
-
-        try:
-            bobo_qtd = int(float(dados.get('Bobo', 0)))
-            if bobo_qtd > 0:
-                produtos.append(f"{bobo_qtd} kg de Bobó de Camarão")
-        except (ValueError, TypeError):
-            pass
-
-        produtos_texto = " e ".join(produtos) if len(produtos) == 2 else produtos[0] if produtos else "produtos"
-        total_unidades = caruru_qtd + bobo_qtd
-
-        try:
-            valor_num = float(dados.get('Valor', 0))
-        except (ValueError, TypeError):
-            valor_num = 0.0
-
-        valor_br = f"{valor_num:.2f}".replace(".", ",")
-        cliente_nome = str(dados.get('Cliente', '')).strip() or "o cliente"
-
-        texto = f"Declaramos que recebemos de {cliente_nome} o valor total de R$ {valor_br}, "
-        texto += f"referente à compra de {produtos_texto}, "
-        texto += "conforme discriminado neste comprovante."
-
-        width = 535
-        lines = []
-        words = texto.split()
-        line = ""
-
-        for word in words:
-            test_line = f"{line} {word}".strip()
-            if p.stringWidth(test_line, "Helvetica", 9) < width:
-                line = test_line
-            else:
-                lines.append(line)
-                line = word
-        if line:
-            lines.append(line)
-
-        for line in lines:
-            p.drawString(30, y, line)
-            y -= 12
-
-        y -= 8
-        texto2 = "O pagamento foi realizado e devidamente confirmado na data informada, "
-        texto2 += "dando plena quitação do valor acima."
-
-        lines2 = []
-        words2 = texto2.split()
-        line2 = ""
-
-        for word in words2:
-            test_line2 = f"{line2} {word}".strip()
-            if p.stringWidth(test_line2, "Helvetica", 9) < width:
-                line2 = test_line2
-            else:
-                lines2.append(line2)
-                line2 = word
-        if line2:
-            lines2.append(line2)
-
-        for line in lines2:
-            p.drawString(30, y, line)
-            y -= 12
-
+            story += [par('Situação: pagamento pendente'),
+                      par('Este documento registra o pedido e não comprova recebimento de pagamento.')]
+        if saldo > 0:
+            story.append(par(f'PIX para pagamento do saldo: {CHAVE_PIX}'))
         if dados.get('Observacoes'):
-            y -= 15
-            p.setFont("Helvetica-Oblique", 9)
-
-            obs_texto = f"Obs: {dados.get('Observacoes')}"
-            obs_lines = []
-            obs_words = obs_texto.split()
-            obs_line = ""
-
-            for word in obs_words:
-                test_line = f"{obs_line} {word}".strip()
-                if p.stringWidth(test_line, "Helvetica-Oblique", 9) < width:
-                    obs_line = test_line
-                else:
-                    obs_lines.append(obs_line)
-                    obs_line = word
-            if obs_line:
-                obs_lines.append(obs_line)
-
-            for obs_l in obs_lines:
-                p.drawString(30, y, obs_l)
-                y -= 12
-
-        y_ass = 150
-        p.setLineWidth(1)
-        p.line(150, y_ass, 450, y_ass)
-        p.setFont("Helvetica", 10)
-        p.drawCentredString(300, y_ass - 15, "Cantinho do Caruru")
-        p.setFont("Helvetica-Oblique", 8)
-        p.drawCentredString(300, y_ass - 30, f"Emitido em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")
-
-        p.showPage()
-        p.save()
+            story += [Spacer(1, 12), par(f"Observações: {dados['Observacoes']}")]
+        story += [Spacer(1, 20), par(f"Emitido em: {agora_brasil().strftime('%d/%m/%Y %H:%M')}")]
+        doc.build(story)
         buffer.seek(0)
         return buffer
     except Exception as e:
-        logger.error(f"Erro gerar recibo PDF: {e}")
+        logger.error(f'Erro gerar recibo PDF: {e}', exc_info=True)
         return None
 
 def gerar_relatorio_pdf(df_filtrado, titulo_relatorio):
